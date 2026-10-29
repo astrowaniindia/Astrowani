@@ -868,6 +868,79 @@ async function configChecks() {
     garbageLimits.limits.minWordsEn === quality.DEFAULT_LIMITS.minWordsEn);
 }
 
+
+// ── The commercial keyword rotation ─────────────────────────────────────────
+//
+// The brief was three target keywords per article, nine a day across three
+// articles, continuing indefinitely. These assert that property directly rather
+// than asserting the implementation, so the rotation can be reimplemented
+// without rewriting the tests.
+function commercialRotationChecks() {
+  const n = seo.COMMERCIAL.length;
+  ok('COMMERCIAL has enough entries for 9 distinct a day', n >= 9, `only ${n}`);
+
+  // Every key must be a real link target, or the rotation silently drops it.
+  let allReal = true;
+  for (const k of seo.COMMERCIAL) if (!seo.LINK_TARGETS[k]) { allReal = false; ok(`COMMERCIAL key "${k}" is a real link target`, false); }
+  if (allReal) ok('every COMMERCIAL key is a real link target', true);
+
+  // THE ACTUAL REQUIREMENT: three per article, nine distinct per day, every day.
+  let badDays = 0;
+  for (let day = 0; day < 40; day++) {
+    const keys = [];
+    for (let a = 0; a < 3; a++) keys.push(...seo.commercialLinksFor(day * 3 + a, `s${day}-${a}`).map((l) => l.key));
+    if (keys.length !== 9 || new Set(keys).size !== 9) badDays++;
+  }
+  eq('40 consecutive days each give 9 distinct targets', badDays, 0);
+
+  // Exactly three, never more or fewer.
+  let wrongCount = 0;
+  for (let i = 0; i < 60; i++) if (seo.commercialLinksFor(i, `x${i}`).length !== 3) wrongCount++;
+  eq('every article gets exactly 3 commercial targets', wrongCount, 0);
+
+  // Continuous: nothing starves. Over a fortnight every target must appear.
+  const seen = new Set();
+  for (let i = 0; i < 42; i++) seo.commercialLinksFor(i, `y${i}`).forEach((l) => seen.add(l.key));
+  eq('all commercial targets used within 14 days', seen.size, n);
+
+  // Deterministic -- the same article must always render the same way, or a
+  // regenerate would rewrite its own links.
+  const a1 = seo.commercialLinksFor(7, 'stable-slug').map((l) => l.anchor).join('|');
+  const a2 = seo.commercialLinksFor(7, 'stable-slug').map((l) => l.anchor).join('|');
+  eq('the same article always gets the same anchors', a1, a2);
+
+  // Anchors must vary BETWEEN articles, which is the whole point of the bank.
+  const anchorsA = seo.commercialLinksFor(0, 'slug-one').map((l) => l.anchor).join('|');
+  const anchorsB = seo.commercialLinksFor(11, 'slug-two').map((l) => l.anchor).join('|');
+  ok('two articles on the same targets use different anchors', anchorsA !== anchorsB, `${anchorsA} === ${anchorsB}`);
+
+  // No sequence -> still returns three, by hash. Older callers must not break.
+  eq('falls back to a hash when no sequence is given', seo.commercialLinksFor(null, 'some-slug').length, 3);
+
+  // linksForArticle must lead with the commercial three.
+  const la = seo.linksForArticle('Marriage', { sequence: 4, seed: 'abc', count: 6 });
+  const firstThree = la.slice(0, 3).map((l) => l.key);
+  const expected = seo.commercialLinksFor(4, 'abc').map((l) => l.key);
+  eq('linksForArticle leads with the commercial targets', firstThree.join(','), expected.join(','));
+  ok('linksForArticle has no duplicate targets', new Set(la.map((l) => l.key)).size === la.length);
+
+  // THE NOINDEX TRAP: chat.html and call.html are the live consultation screens
+  // and carry noindex. A link target pointing at one wastes every link on it.
+  let noindexed = 0;
+  for (const [k, t] of Object.entries(seo.LINK_TARGETS)) {
+    if (/\/(chat|call|wallet|concept-hero)\.html/.test(t.url)) { noindexed++; ok(`link target "${k}" does not point at a noindex page`, false, t.url); }
+  }
+  if (!noindexed) ok('no link target points at a noindex page', true);
+
+  // Every service landing page must be reachable from the blog.
+  for (const k of ['kundliReading', 'tarotReading', 'numerology', 'careerAstrology', 'vastu', 'lalKitab']) {
+    ok(`service page "${k}" is a link target`, !!seo.LINK_TARGETS[k]);
+    ok(`service page "${k}" is in the commercial rotation`, seo.COMMERCIAL.includes(k));
+  }
+}
+
+commercialRotationChecks();
+
 configChecks().then(() => {
   console.log(`\n${'═'.repeat(60)}`);
   console.log(`${pass} passed, ${fail} failed`);

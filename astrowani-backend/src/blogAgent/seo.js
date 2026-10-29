@@ -35,8 +35,15 @@ const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.astrow
 const LINK_TARGETS = {
   astrologers: { url: `${SITE_BASE}/astrologers.html`, anchor: 'verified astrologers on Astrowani' },
   consult: { url: `${SITE_BASE}/consult.html`, anchor: 'talk to an astrologer on Astrowani' },
-  chat: { url: `${SITE_BASE}/chat.html`, anchor: 'chat with an astrologer' },
-  call: { url: `${SITE_BASE}/call.html`, anchor: 'call an astrologer' },
+  // chat.html and call.html ARE NOT LANDING PAGES, and these no longer point at
+  // them. They are the live consultation screens -- whole content "Connecting... /
+  // Mute / End chat" -- and as of 2026-10-29 both carry noindex and are
+  // disallowed in robots.txt. Pointing a thousand articles at a noindex page
+  // wastes every one of those links. consult.html actually serves this intent,
+  // so both keys resolve there while keeping their own anchor vocabulary, which
+  // is the part that carries the meaning.
+  chat: { url: `${SITE_BASE}/consult.html?mode=chat`, anchor: 'chat with an astrologer' },
+  call: { url: `${SITE_BASE}/consult.html?mode=call`, anchor: 'call an astrologer' },
   marriage: { url: `${SITE_BASE}/marriage.html`, anchor: 'free kundali matching' },
   horoscope: { url: `${SITE_BASE}/horoscope.html`, anchor: 'daily horoscope' },
   panchang: { url: `${SITE_BASE}/panchang.html`, anchor: "today's panchang" },
@@ -46,6 +53,21 @@ const LINK_TARGETS = {
   bookCall: { url: `${SITE_BASE}/book-call.html`, anchor: 'book a call with an astrologer' },
   shop: { url: `${SITE_BASE}/index.html#wanishop`, anchor: 'Wani Shop' },
   blog: { url: `${SITE_BASE}/blog.html`, anchor: 'Astrowani blog' },
+
+  // The six service landing pages, added 2026-10-29. Each exists because one of
+  // the owner's target keywords had no URL to land on -- the site menu pointed
+  // at hash fragments, and Google strips a fragment entirely.
+  //
+  // THESE ARE THE PAGES THE BLOG EXISTS TO FEED. An article does not try to rank
+  // for "vastu consultation" itself; it passes authority to the page that
+  // should. That distinction is what stops a thousand posts competing with the
+  // handful of pages that convert.
+  kundliReading: { url: `${SITE_BASE}/kundli-reading.html`, anchor: 'online kundli reading' },
+  tarotReading: { url: `${SITE_BASE}/tarot-reading.html`, anchor: 'online tarot card reading' },
+  numerology: { url: `${SITE_BASE}/numerology.html`, anchor: 'numerology consultation' },
+  careerAstrology: { url: `${SITE_BASE}/career-astrology.html`, anchor: 'career astrology consultation' },
+  vastu: { url: `${SITE_BASE}/vastu.html`, anchor: 'vastu consultation' },
+  lalKitab: { url: `${SITE_BASE}/lal-kitab.html`, anchor: 'lal kitab consultation' },
 };
 
 /**
@@ -68,6 +90,91 @@ const CATEGORY_LINKS = {
 };
 
 const DEFAULT_LINKS = ['astrologers', 'consult', 'horoscope', 'blog'];
+
+/**
+ * THE COMMERCIAL ROTATION — the owner's target keywords, as link destinations.
+ *
+ * The brief: three keywords per article, nine a day across three articles,
+ * continuing indefinitely. This is that, with one deliberate reading of it.
+ *
+ * The keywords are used as LINK TARGETS, not as article topics. An article that
+ * tried to rank for "vastu consultation" would compete with vastu.html, and at
+ * three posts a day there would be a thousand such competitors within a year —
+ * every one of them fighting the page that actually converts. Used as anchors
+ * instead, those same thousand articles all push authority TOWARD it. Same
+ * keywords, same frequency, opposite effect.
+ *
+ * ORDERED, AND THE ORDER MATTERS. Article N takes entries N*3, N*3+1, N*3+2
+ * modulo the list length, so three consecutive articles never overlap and the
+ * whole list cycles continuously. With 11 entries and 9 used a day the cycle
+ * closes roughly every 1.2 days, so every money page keeps earning links
+ * forever rather than a burst and then nothing.
+ *
+ * Each entry maps to one of the ten supplied keywords:
+ *   astrologers     Online Verified Astrologer / Ask an Astrologer
+ *   consult         Astrology consultation online
+ *   bookCall        Talk to astrologer by phone
+ *   chat            Chat with astrologer
+ *   kundliReading   Online Muhurat Kundli reading
+ *   marriage        Online Kundli matching for marriage
+ *   tarotReading    Tarot card reading / Online tarot reader
+ *   numerology      Numerology consultation
+ *   careerAstrology Online business career astrology consultation
+ *   vastu           Vastu consultation
+ *   lalKitab        Lal Kitab consultation
+ */
+const COMMERCIAL = [
+  'astrologers', 'kundliReading', 'marriage',
+  'consult', 'tarotReading', 'numerology',
+  'bookCall', 'careerAstrology', 'vastu',
+  'chat', 'lalKitab',
+];
+
+/**
+ * The three commercial targets for article number `sequence`.
+ *
+ * `sequence` is the agent's own run count (history.usedTopicKeys.size), which
+ * only ever increases — so the rotation survives restarts and does not depend on
+ * the clock. Without one it falls back to a hash of the seed, which still spreads
+ * but cannot guarantee nine distinct targets in a day.
+ */
+function commercialLinksFor(sequence, seed = '', count = 3) {
+  const n = COMMERCIAL.length;
+  let base;
+  if (Number.isInteger(sequence) && sequence >= 0) {
+    base = (sequence * count) % n;
+  } else {
+    let h = 0;
+    for (const ch of String(seed)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    base = h % n;
+  }
+  const out = [];
+  for (let i = 0; i < count && i < n; i++) {
+    const k = COMMERCIAL[(base + i) % n];
+    if (!LINK_TARGETS[k] || out.some((l) => l.key === k)) continue;
+    const anchor = seed ? (kw.anchorFor(k, seed) || LINK_TARGETS[k].anchor) : LINK_TARGETS[k].anchor;
+    out.push({ key: k, url: LINK_TARGETS[k].url, anchor });
+  }
+  return out;
+}
+
+/**
+ * Every link an article should carry: its three commercial targets first, then
+ * topically relevant ones to fill out `count`.
+ *
+ * Commercial first on purpose — generate.js links the FIRST occurrence of each
+ * anchor phrase, and an article that runs short should still have spent its
+ * links on the pages that matter.
+ */
+function linksForArticle(category, { sequence = null, seed = '', count = 5 } = {}) {
+  const out = commercialLinksFor(sequence, seed, 3);
+  for (const l of linksForCategory(category, count, seed)) {
+    if (out.length >= count) break;
+    if (out.some((x) => x.key === l.key)) continue;
+    out.push(l);
+  }
+  return out;
+}
 
 // ── Slugs ───────────────────────────────────────────────────────────────────
 
@@ -346,6 +453,9 @@ module.exports = {
   keywordDensity,
   escAttr,
   linksForCategory,
+  linksForArticle,
+  commercialLinksFor,
+  COMMERCIAL,
   postUrl,
   relatedLinksHtml,
   ctaHtml,

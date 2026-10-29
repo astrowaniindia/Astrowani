@@ -93,6 +93,10 @@ async function runOnce({ db, cfg, log, dryRun = false, forcedTopic = null, state
         limits,
         related,
         recentTitles: state.recent.map((r) => r.title).filter(Boolean),
+        // The article's position in the whole run history. It only ever
+        // increases, so the commercial-keyword rotation survives restarts and
+        // never depends on the clock -- see seo.COMMERCIAL.
+        sequence: history.usedTopicKeys.size,
         log,
       });
 
@@ -158,6 +162,7 @@ async function runOnce({ db, cfg, log, dryRun = false, forcedTopic = null, state
     const publishedAt = new Date().toISOString();
     const assembled = generate.assemble(article, {
       topic, slug, imageUrl: image.url, imageAlt: article.imageAlt, related, publishedAt,
+      sequence: history.usedTopicKeys.size,
     });
 
     // Unsplash's licence asks for a credit; the other providers' do not. Appended

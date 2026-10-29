@@ -75,9 +75,11 @@ THE BRAND
  * stage 2 — the model is never given a URL to reproduce, because it will
  * eventually reproduce one wrong.
  */
-function buildPrompt({ topic, limits, related, recentTitles }) {
+function buildPrompt({ topic, limits, related, recentTitles, sequence = null }) {
   const minWords = limits.minWordsEn + 150; // ask above the floor so a short answer still passes
-  const links = seo.linksForCategory(topic.category, 4, topic.key);
+  // The three commercial targets for this article come FIRST, then topical
+  // ones. See seo.COMMERCIAL: three a post, nine a day, cycling continuously.
+  const links = seo.linksForArticle(topic.category, { sequence, seed: topic.key, count: 5 });
   // The long tail. One keyword per article leaves most of the available search
   // traffic unclaimed, and giving every article the SAME extra keywords would just
   // move the repetition problem rather than fix it — so these are drawn from a
@@ -293,7 +295,7 @@ function normaliseFaqs(v) {
  * because a check that lives inside the generator cannot be run against a
  * fixture in a test.
  */
-async function draftEnglish({ topic, limits, related = [], recentTitles = [], log = () => {} }) {
+async function draftEnglish({ topic, limits, related = [], recentTitles = [], sequence = null, log = () => {} }) {
   // TWO CALLS, NOT ONE, AND THIS IS THE REASON. The first version asked for both
   // languages plus the FAQs in a single reply, and measured against the real API
   // on 2026-10-13 it failed every time: gemini-3.5-flash-lite returned ~8,000
@@ -304,7 +306,7 @@ async function draftEnglish({ topic, limits, related = [], recentTitles = [], lo
   // and 1,117 Hindi words and passed on the first attempt.
   const first = await callGemini({
     system: SYSTEM,
-    prompt: buildPrompt({ topic, limits, related, recentTitles }),
+    prompt: buildPrompt({ topic, limits, related, recentTitles, sequence }),
     json: true,
     temperature: 0.9, // these are a thousand articles on adjacent subjects; sameness is the risk
     maxOutputTokens: 16384,
@@ -398,10 +400,10 @@ async function draft(opts) {
  * Anchors are only placed inside <p> text, never inside a heading — a linked
  * heading looks broken on both the website and in the app.
  */
-function weaveInternalLinks(html, category, { max = 3, seed = '' } = {}) {
+function weaveInternalLinks(html, category, { max = 3, seed = '', sequence = null } = {}) {
   let out = String(html || '');
   let placed = 0;
-  const targets = seo.linksForCategory(category, 6, seed);
+  const targets = seo.linksForArticle(category, { sequence, seed, count: 7 });
 
   for (const t of targets) {
     if (placed >= max) break;
@@ -431,7 +433,7 @@ function weaveInternalLinks(html, category, { max = 3, seed = '' } = {}) {
   // pointing at calculators.html — a mismatch that wastes the anchor as a signal
   // and reads oddly. "Astrowani" as anchor text belongs on the astrologers page.
   if (placed < max) {
-    const fallback = seo.linksForCategory(category, 1, seed)[0] || seo.LINK_TARGETS.astrologers;
+    const fallback = seo.linksForArticle(category, { sequence, seed, count: 1 })[0] || seo.LINK_TARGETS.astrologers;
     const re = /(?<!<a[^>]*>)\b(Astrowani)\b(?![^<]*>)(?![^<]*<\/a>)/;
     if (re.test(out)) {
       out = out.replace(re, `<a href="${seo.escAttr(fallback.url)}">$1</a>`);
@@ -450,14 +452,14 @@ function weaveInternalLinks(html, category, { max = 3, seed = '' } = {}) {
  * article's own sentences rather than in the boilerplate at the bottom — which
  * is where every low-effort auto-blog puts them, and where they are worth least.
  */
-function assemble(draftArticle, { topic, slug, imageUrl, imageAlt, related = [], publishedAt } = {}) {
+function assemble(draftArticle, { topic, slug, imageUrl, imageAlt, related = [], publishedAt, sequence = null } = {}) {
   const category = topic.category;
 
   // The slug seeds every rotation, so one article renders consistently while the
   // blog as a whole varies.
   const seed = slug || topic.key || draftArticle.titleEn;
-  const woven = weaveInternalLinks(draftArticle.contentEn, category, { max: 3, seed });
-  const wovenHi = weaveInternalLinks(draftArticle.contentHi, category, { max: 2, seed });
+  const woven = weaveInternalLinks(draftArticle.contentEn, category, { max: 3, seed, sequence });
+  const wovenHi = weaveInternalLinks(draftArticle.contentHi, category, { max: 2, seed, sequence });
 
   // ORDER: article -> read next -> CTA -> FAQ.
   //

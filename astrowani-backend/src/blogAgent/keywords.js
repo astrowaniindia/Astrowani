@@ -256,6 +256,48 @@ const ANCHORS = {
     'astrology courses', 'learn Vedic astrology', 'jyotish courses on Astrowani',
     'study astrology properly', 'astrology classes online',
   ],
+  // ── The six service landing pages ──────────────────────────────────────
+  //
+  // Anchors here are built from the owner's own target keywords (supplied
+  // 2026-10-29), because anchor text is where those keywords do real work: a
+  // link reading "vastu consultation" teaches a crawler what the destination is
+  // FOR, which is exactly what the landing page needs and what the article
+  // itself should not be competing for.
+  //
+  // Hinglish variants are deliberate -- "kundli dikhana" and "haath dekhna" are
+  // what people actually type, and an anchor set that is all formal English
+  // covers half the vocabulary.
+  kundliReading: [
+    'online kundli reading', 'get your kundli read', 'janam kundali reading online',
+    'birth chart reading by an astrologer', 'kundli reading on Astrowani',
+    'have your birth chart read', 'online janam patri reading', 'kundli analysis online',
+  ],
+  tarotReading: [
+    'online tarot card reading', 'talk to an online tarot reader', 'tarot card reading online',
+    'book a tarot reading', 'tarot reading on Astrowani', 'ask a tarot reader',
+    'get a tarot spread read', 'online tarot consultation',
+  ],
+  numerology: [
+    'numerology consultation', 'online numerology consultation', 'get your numbers read',
+    'numerology reading on Astrowani', 'talk to a numerologist', 'life path number reading',
+    'name numerology consultation', 'ank jyotish consultation',
+  ],
+  careerAstrology: [
+    'career astrology consultation', 'business astrology consultation',
+    'online career astrology consultation', 'astrology for career decisions',
+    'talk to an astrologer about your career', 'career and business astrology',
+    'business astrology on Astrowani', 'career guidance from an astrologer',
+  ],
+  vastu: [
+    'vastu consultation', 'online vastu consultation', 'vastu for your home',
+    'talk to a vastu consultant', 'vastu consultation on Astrowani',
+    'vastu advice for your house', 'vastu shastra consultation', 'ghar ka vastu',
+  ],
+  lalKitab: [
+    'lal kitab consultation', 'lal kitab remedies', 'online lal kitab consultation',
+    'consult a lal kitab astrologer', 'lal kitab upay', 'lal kitab reading on Astrowani',
+    'lal kitab astrology consultation', 'simple lal kitab remedies',
+  ],
   freeServices: [
     'free astrology services', 'free kundali report', 'free astrology tools on Astrowani',
     'try the free services', 'free horoscope services',
