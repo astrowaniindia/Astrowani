@@ -555,9 +555,15 @@ vestigial. Live streaming reuses this same WebRTC stack as a **mesh** (see below
   flag.
 
 **Operational**
-- Node 20 has no global `WebSocket`, which `@supabase/realtime-js` needs at import — the
-  backend throws on boot without a `ws` shim for local-only debugging (never fix this in repo
-  code; it doesn't affect the VPS's actual Node version situation).
+- Node 20 has no global `WebSocket`, which `@supabase/realtime-js` needs at import — anything
+  importing it throws without a `ws` shim. **This rule used to end "never fix this in repo
+  code; it doesn't affect the VPS's actual Node version situation". THAT WAS WRONG**, and it
+  cost the blog agent entirely: the VPS runs **v20.20.1** (measured 2026-10-29), so every
+  scheduled run of `scripts/runBlogAgent.js` died on its first require, and nobody noticed
+  because the installer had never been run. That script now shims it itself (EO3); `ws` is
+  already a transitive dependency, so a shim installs nothing. The original warning holds for
+  one thing only: do not shim it in order to boot `index.js` locally — that starts the billing
+  worker against production (see the `local-backend-bills-production` memory).
 - The VPS runs backend + Socket.io + TURN relay + OTP sending + billing — all single points of
   failure on one Hostinger box. A past ~13h outage took all of them down together.
 - GEMINI_API_KEY (free chat AI) and all other third-party secrets live only in the VPS `.env`,
@@ -4008,3 +4014,123 @@ to fail on two deliberate regressions** — freezing the rotation gives 2 failur
 - **The website still says 11 and 12 minutes** for the free call (`about.html` twice,
   `index.html` plus `assets/promo-free-11min-woman.webp`) while the database, the customer app
   and the blueprint all say **7**. Owner's decision: fix it last, before launch.
+
+---
+
+## Session 2026-10-29 (later): the VPS work — and the agent that could never have run (EO)
+
+Three things applied on the server, and one discovery that mattered more than the other two.
+
+### EO1. Getting root, and why the `deploy` user is not enough
+
+`ssh -i ~/.ssh/astrodilip_deploy -p 2222 deploy@76.13.243.165` works, and that user has exactly
+**one** sudo right — `sudo -n -l` prints it in full:
+
+```
+(root) NOPASSWD: /usr/bin/systemctl reload nginx
+```
+
+It cannot write `/etc/nginx`, cannot run `nginx -t`, and cannot install a systemd unit. CLAUDE.md
+contradicted itself on this (DP says no sudo, the 2026-09-25 investigation says ufw/tcpdump are
+allowed); **the list above is the live answer, so read it rather than trusting either note.**
+
+Root comes from **hPanel → VPS → Manage → Web console**, which logs straight in as root. It is
+xterm.js and typing into it works, but `get_page_text` on that tab can hang for its full 45s
+timeout — screenshots are the reliable read. The terminal also needs a click to take focus
+before the first keystroke.
+
+> **A `curl` FROM the VPS to its own sites returns 000.** `snippets/astrowani-cloudflare-only.conf`
+> allows only Cloudflare's ranges, and 127.0.0.1 is not one of them. Port 80 additionally 301s to
+> HTTPS, so a quick `curl http://127.0.0.1/...` looks like a redirect and a `curl -k https://...`
+> looks like a dead server. **Verify anything user-facing from OUTSIDE the box**, through the real
+> hostname.
+
+### EO2. The 404 cause was one line, and it belonged to the shop
+
+`GET /test-site/no-such-page-xyz` answered **200** because the website is served inside the
+shop's server block, which ends:
+
+```nginx
+location / {
+    try_files $uri $uri/ /index.html;   # correct for the SHOP, wrong for the site under it
+}
+```
+
+A SPA fallback is right for `astrowani-shop` and wrong for `astrowani-website` beneath it: every
+typo and every stale link became a page Google is entitled to index, without limit.
+
+**Fixed in `/etc/nginx/sites-available/astrowani-shop`** with a `location /test-site/` block
+placed BEFORE `location /` (longest-prefix wins, so the shop is untouched), plus an internal
+`404.html` and two regex locations giving the versioned CSS/JS `immutable` and images a week.
+The config is backed up as `astrowani-shop.bak-<timestamp>` in the same directory; `nginx -t`
+passed before the reload. **This change is NOT in the repo** — `vps-deployment/website-nginx-seo.conf`
+is the generic version of it and the live file is the authority.
+
+Verified from outside afterwards: missing page **404** with the styled page, real page 200,
+homepage 200, shop root 200, `style.css?v=50` immutable, `vastu.html` no-cache.
+
+> **A first read of the cache headers showed nothing on the CSS.** That was the uncached request
+> racing the measurement, not a missing directive — the second read showed it. Re-read before
+> reporting a header as absent.
+
+### EO3. THE BLOG AGENT COULD NEVER HAVE RUN ON THIS VPS
+
+Its first `require` died:
+
+```
+FATAL: Node.js 20 detected without native WebSocket support
+```
+
+The box runs **v20.20.1**, `@supabase/realtime-js` reaches for a global `WebSocket` at import, and
+**every systemd run the installer schedules would have failed before doing anything.** The
+installer had never been run, which is exactly why nobody had seen it — the agent was written,
+tested, documented and shipped, and would have produced nothing but failed units.
+
+> **CLAUDE.md's standing rule said "never fix this in repo code; it doesn't affect the VPS's
+> actual Node version situation". THAT WAS WRONG.** It is the VPS's Node version that breaks it.
+> The note was written about booting `index.js` locally and was never re-checked against the one
+> script that actually runs there. Fixed in `scripts/runBlogAgent.js` (commit `761a4a1f`) with
+> three guarded lines using `ws`, which is already a transitive dependency so nothing is installed.
+
+### EO4. The install order, which is the part that would have published by accident
+
+**`app_settings.blog_agent_config` was `{"enabled": true}`** — set during the 2026-10-13 build and
+never turned back off. `install.sh` ends by printing "The agent is still DISABLED in the database",
+which was true when it was written and false here. Running it first would have armed three timers
+against a live `enabled: true` and published within hours.
+
+**So: disable FIRST, install second.**
+
+```
+node --env-file=.env scripts/runBlogAgent.js --disable     # before anything else
+bash vps-deployment/blog-agent/install.sh
+```
+
+State now: three timers installed and armed — `astrowani-blog-morning/midday/evening.timer`,
+03:30 / 09:30 / 17:30 IST — and the agent **OFF**. The timers fire and exit immediately while the
+flag is false, which is the designed resting state.
+
+**Still missing: an image provider key.** `--status` reports `image providers none set`, so every
+article would get a locally generated gradient card rather than a photograph. A free
+`PEXELS_API_KEY` takes two minutes.
+
+### EO5. The admin switch
+
+`GET`/`PATCH /api/admin/blog-agent` plus `astrowani-admin/src/components/BlogAgentCard.jsx`, shown
+at the top of the **Blogs** page — next to the list of what the agent produced rather than on a
+page of its own. Shows ON/OFF, how many published in 24 hours, and the last ten runs with their
+status and rejection reasons, because **a quiet agent and a broken one look identical otherwise**
+(the same failure mode already recorded for `astrologerFanout`).
+
+- **A switch, not a "run now" button, on purpose.** The timers fire whatever the flag says, so
+  turning the agent on IS only this flag, and turning it off stops the next article without
+  anybody touching the server.
+- **It does not use the generic `PATCH /api/admin/settings`.** That route stores `String(value)`
+  and would happily write `"[object Object]"` into the one setting that starts a publishing bot.
+  The dedicated route takes a real boolean only and **MERGES** rather than replaces — the row also
+  carries `articlesPerRun`, `maxPerDay` and the quality limits, and a replace would silently reset
+  them to code defaults.
+- Switching it ON asks for confirmation and states plainly that nobody reviews the articles first.
+
+Verified in the live admin: the card renders `OFF`, reports 0 published in 24 h, and lists the
+four runs from 2026-10-13 including the rejected Mangal Dosh attempt.
