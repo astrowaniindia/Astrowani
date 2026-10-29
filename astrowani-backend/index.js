@@ -3210,6 +3210,9 @@ app.get('/api/categories', async (req, res) => {
   }
 });
 
+require('./src/blogPublic').register(app, supabase);
+require('./src/blogArchive').register(app, supabase);
+
 // Blogs — admin-authored & published (table `blogs`), mapped to the shape that
 // BlogList.js / BlogScreen.js / Home.js already consume.
 app.get('/api/blogs', async (req, res) => {
