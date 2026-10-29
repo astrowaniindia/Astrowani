@@ -570,6 +570,31 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ---------- homepage category grid: the real app categories, linking into the filtered directory ----------
+  // WHERE A CONCERN CARD SHOULD SEND SOMEBODY.
+  //
+  // Every card used to go to astrologers.html?cat=<Category> -- a filtered list.
+  // The supplied blueprint is explicit about this: "Each card should link to its
+  // own relevant service landing page rather than sending all users to the same
+  // generic astrologer listing." A filtered listing cannot rank for "vastu
+  // consultation"; it has no title, no H1 and no content of its own, because the
+  // filter lives in a query string.
+  //
+  // Seven of the ten categories now have a real page. Palmistry and Health
+  // deliberately do not: Palmistry has 23 astrologers and simply has not been
+  // written yet, and HEALTH IS LEFT ALONE ON PURPOSE -- it is a "your money or
+  // your life" topic Google holds to a far higher bar, and the Wani Shop health
+  // claims already had to be reworded once for the App Store (fc964c0). Those
+  // two keep the filtered listing, which is honest if unambitious.
+  const CATEGORY_PAGES = {
+    'Vedic Astrology': 'kundli-reading.html',
+    'Marriage': 'marriage.html',
+    'Tarot Reading': 'tarot-reading.html',
+    'Numerology': 'numerology.html',
+    'Vastu': 'vastu.html',
+    'Career': 'career-astrology.html',
+    'Business': 'career-astrology.html',
+  };
+
   const homeCatGrid = document.getElementById('home-cat-grid');
   if (homeCatGrid && window.ASTROWANI_CATEGORIES) {
     homeCatGrid.innerHTML = window.ASTROWANI_CATEGORIES.map((cat, i) => {
@@ -577,7 +602,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const ring = i % 2 === 0 ? 'var(--gold)' : 'var(--maroon)';
       const stroke = i % 2 === 0 ? 'var(--maroon)' : 'var(--cream)';
       const iconSvg = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${info.icon}</svg>`;
-      return `<a href="astrologers.html?cat=${encodeURIComponent(cat)}" class="cat-tile reveal reveal-pop" style="text-decoration:none;">
+      const href = CATEGORY_PAGES[cat] || `astrologers.html?cat=${encodeURIComponent(cat)}`;
+      return `<a href="${href}" class="cat-tile reveal reveal-pop" style="text-decoration:none;">
         <div class="cat-icon" style="background:${ring};">${iconSvg}</div>
         <div class="cat-body">
           <div class="cat-name">${cat}</div>
