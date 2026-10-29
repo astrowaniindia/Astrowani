@@ -30,14 +30,14 @@
 <link rel="alternate" hreflang="hi-IN" href="https://shop.astrowani.com/test-site/hi/panchang.html">
 <link rel="alternate" hreflang="x-default" href="https://shop.astrowani.com/test-site/panchang.html">
 <script type="application/ld+json">
-{"@context":"https://schema.org","@graph":[{"@type":"Organization","@id":"https://shop.astrowani.com/test-site/#organization","name":"Astrowani","url":"https://shop.astrowani.com/test-site/","logo":{"@type":"ImageObject","@id":"https://shop.astrowani.com/test-site/#logo","url":"https://shop.astrowani.com/test-site/assets/logo.png","width":1024,"height":1024},"description":"Astrowani connects people with verified Indian astrologers for live one-to-one chat, voice and video consultations.","sameAs":["https://www.facebook.com/jyotishjagrati","https://www.instagram.com/astrowani_official/","https://x.com/astrowani_","https://www.linkedin.com/company/astrowani/","https://www.youtube.com/@Astrowani"],"contactPoint":{"@type":"ContactPoint","contactType":"customer support","email":"support@astrowani.com","areaServed":"IN","availableLanguage":["en","hi"]}},{"@type":"WebSite","@id":"https://shop.astrowani.com/test-site/#website","url":"https://shop.astrowani.com/test-site/","name":"Astrowani","inLanguage":["en-IN","hi-IN"],"publisher":{"@id":"https://shop.astrowani.com/test-site/#organization"}},{"@type":"BreadcrumbList","@id":"https://shop.astrowani.com/test-site/panchang.html#breadcrumb","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://shop.astrowani.com/test-site/"},{"@type":"ListItem","position":2,"name":"Panchang"}]}]}
+{"@context":"https://schema.org","@graph":[{"@type":"Organization","@id":"https://shop.astrowani.com/test-site/#organization","name":"Astrowani","url":"https://shop.astrowani.com/test-site/","logo":{"@type":"ImageObject","@id":"https://shop.astrowani.com/test-site/#logo","url":"https://shop.astrowani.com/test-site/assets/logo.png","width":1024,"height":1024},"description":"Astrowani connects people with verified Indian astrologers for live one-to-one chat, voice and video consultations.","sameAs":["https://www.facebook.com/jyotishjagrati","https://www.instagram.com/astrowani_official/","https://x.com/astrowani_","https://www.linkedin.com/company/astrowani/","https://www.youtube.com/@Astrowani"],"contactPoint":{"@type":"ContactPoint","contactType":"customer support","email":"support@astrowani.com","areaServed":"IN","availableLanguage":["en","hi"]}},{"@type":"WebSite","@id":"https://shop.astrowani.com/test-site/#website","url":"https://shop.astrowani.com/test-site/","name":"Astrowani","inLanguage":["en-IN","hi-IN"],"publisher":{"@id":"https://shop.astrowani.com/test-site/#organization"}},{"@type":"BreadcrumbList","@id":"https://shop.astrowani.com/test-site/panchang.html#breadcrumb","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://shop.astrowani.com/test-site/"},{"@type":"ListItem","position":2,"name":"Panchang"}]},{"@type":"FAQPage","@id":"https://shop.astrowani.com/test-site/panchang.html#faq","mainEntity":[{"@type":"Question","name":"Why does the tithi not change at midnight?","acceptedAnswer":{"@type":"Answer","text":"Because a tithi is defined by the Moon's position relative to the Sun, not by the clock. It ends when that angle reaches the next twelve-degree step, which can fall at any hour of the day or night. The same is true of the nakshatra, the yoga and the karana."}},{"@type":"Question","name":"Can I use Rahu Kaal to plan around a fixed appointment?","acceptedAnswer":{"@type":"Answer","text":"It is traditionally used for choosing when to begin something you control — signing, travelling, opening — rather than for avoiding something already scheduled by somebody else. Treat it as one consideration among the practical ones."}},{"@type":"Question","name":"Is this Panchang accurate enough to fix a wedding date?","acceptedAnswer":{"@type":"Answer","text":"No. Use it to get a sense of the day, then have the muhurat checked properly. Wedding, housewarming and business-opening dates are normally chosen against the charts of the people involved, which this page does not know."}}]}]}
 </script>
 <!-- SEO:END -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=53">
-<link rel="stylesheet" href="aw/aw.css?v=51">
+<link rel="stylesheet" href="style.css?v=54">
+<link rel="stylesheet" href="aw/aw.css?v=54">
 </head>
 <body>
 
@@ -107,7 +107,7 @@
     <div class="calc-card" id="choghadiya">
       <div class="calc-card-title">Choghadiya</div>
       <div class="calc-card-desc">Day and night divided into 8 auspicious/inauspicious windows each.</div>
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:28px;">
+      <div class="panchang-split" style="display:grid; grid-template-columns:1fr 1fr; gap:28px;">
         <div><div class="panchang-stat-label" style="margin-bottom:10px;">Day</div><table class="panchang-table" id="chogh-day"></table></div>
         <div><div class="panchang-stat-label" style="margin-bottom:10px;">Night</div><table class="panchang-table" id="chogh-night"></table></div>
       </div>
@@ -116,7 +116,7 @@
     <div class="calc-card" id="hora">
       <div class="calc-card-title">Hora (Planetary Hours)</div>
       <div class="calc-card-desc">Each hour of the day and night is ruled by a different planet, in a fixed Chaldean sequence.</div>
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:28px;">
+      <div class="panchang-split" style="display:grid; grid-template-columns:1fr 1fr; gap:28px;">
         <div><div class="panchang-stat-label" style="margin-bottom:10px;">Day</div><table class="panchang-table" id="hora-day"></table></div>
         <div><div class="panchang-stat-label" style="margin-bottom:10px;">Night</div><table class="panchang-table" id="hora-night"></table></div>
       </div>
@@ -132,6 +132,15 @@
   </div>
 </div>
 
+<section class="landing-guide" aria-labelledby="pan-guide"><h2 id="pan-guide">Reading today's Panchang</h2>
+<p>Panchang means five limbs, and the five are the tithi, the vaar, the nakshatra, the yoga and the karana. Together they describe the character of a day in the traditional Indian calendar, which is lunisolar rather than purely solar — which is also why festival dates move against the Gregorian calendar each year.</p>
+<h3>The five limbs</h3><p>The tithi is a lunar day, measured by the angle between the Sun and the Moon, and it does not begin at midnight. The vaar is the weekday and its ruling planet. The nakshatra is the lunar mansion the Moon is passing through, one of twenty-seven. The yoga and the karana are further divisions used when choosing timings. All five change during the day rather than at a fixed hour.</p>
+<h3>Why the timings depend on your city</h3><p>Rahu Kaal, the Choghadiya periods, the Hora and the Abhijit Muhurat are all derived from local sunrise and sunset, so they genuinely differ from city to city — by well over half an hour across India on the same date. Set the city above to the one nearest you before relying on any timing on this page.</p>
+<h3>Auspicious and inauspicious periods</h3><p>Rahu Kaal is the part of the day traditionally avoided for starting something new. The Choghadiya divides daylight and night into eight periods each, some favourable and some not. The Abhijit Muhurat is the short window around local solar noon treated as the most generally auspicious time of the day. These are conventions for choosing when to begin something, not predictions of what will happen.</p>
+<h3>Before you fix a date</h3><p>The timings here are computed from a simplified model. They are close enough to get a sense of the day, but they are not a professional ephemeris. For anything that has to be right — a wedding, a griha pravesh, the opening of a business — have the muhurat confirmed by an astrologer against the charts of the people involved, because a genuinely good date depends on the chart as well as the day. <a href="consult.html">Talk it through with an astrologer</a> before committing.</p>
+<h3>Why does the tithi not change at midnight?</h3><p>Because a tithi is defined by the Moon's position relative to the Sun, not by the clock. It ends when that angle reaches the next twelve-degree step, which can fall at any hour of the day or night. The same is true of the nakshatra, the yoga and the karana.</p>
+<h3>Can I use Rahu Kaal to plan around a fixed appointment?</h3><p>It is traditionally used for choosing when to begin something you control — signing, travelling, opening — rather than for avoiding something already scheduled by somebody else. Treat it as one consideration among the practical ones.</p>
+<h3>Is this Panchang accurate enough to fix a wedding date?</h3><p>No. Use it to get a sense of the day, then have the muhurat checked properly. Wedding, housewarming and business-opening dates are normally chosen against the charts of the people involved, which this page does not know.</p></section>
 </main>
 
 <footer class="site-footer">
@@ -170,8 +179,8 @@
 
 <script src="astro-engine.js"></script>
 <script src="astrologers-data.js"></script>
-<script src="script.js?v=53"></script>
-<script type="module" src="aw/boot.js?v=51"></script>
+<script src="script.js?v=54"></script>
+<script type="module" src="aw/boot.js?v=54"></script>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
   const hash = (window.location.hash || '#today').replace('#', '');

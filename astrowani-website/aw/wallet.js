@@ -1,6 +1,6 @@
-import { api, ApiError } from './api.js?v=51';
-import { getUser, isSignedIn, onAuthChange } from './session.js?v=51';
-import { loadScript } from './ui.js?v=51';
+import { api, ApiError } from './api.js?v=54';
+import { getUser, isSignedIn, onAuthChange } from './session.js?v=54';
+import { loadScript } from './ui.js?v=54';
 
 /**
  * The wallet. Deliberately thin: it reads and tops up the SAME balance the app

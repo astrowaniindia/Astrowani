@@ -1135,6 +1135,11 @@ html[data-lang="hi"] .lang-en { display: none; }
   .astro-marquee-wrap { width: 100%; margin-left: 0; padding-inline: 0; }
   .app-panel { padding: 28px 20px; gap: 24px; }
   .svc-grid[style] { grid-template-columns: minmax(0, 1fr) !important; }
+  /* The Choghadiya and Hora tables are a Day/Night pair. Two columns of timings
+     do not fit a phone -- measured at 375px, the Night table ran to a document
+     width of 581px, which is a horizontal scroll on the whole page. The grid is
+     set inline on the element, so this needs !important to win. */
+  .panchang-split[style] { grid-template-columns: minmax(0, 1fr) !important; gap: 20px !important; }
   .landing-guide { padding: 28px 20px 44px; }
 }
 @media (prefers-reduced-motion: reduce) {

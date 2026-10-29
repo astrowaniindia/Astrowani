@@ -1,5 +1,5 @@
-import { api, ApiError } from './api.js?v=51';
-import { toast } from './ui.js?v=51';
+import { api, ApiError } from './api.js?v=54';
+import { toast } from './ui.js?v=54';
 import {
   ASPECTS,
   BRUSHES,
@@ -16,7 +16,7 @@ import {
   orientedToCanvas,
   rotateEditsClockwise,
   shouldKeepPoint,
-} from './chat-image-geometry.js?v=51';
+} from './chat-image-geometry.js?v=54';
 
 /**
  * Attaching a photo to a website chat — pick, crop, draw, write, send.
