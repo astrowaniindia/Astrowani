@@ -49,6 +49,36 @@ const BANNED_PATTERNS = [
 ];
 
 /**
+ * EXACT-MATCH KEYWORD PHRASES JAMMED INTO PROSE. The SEO audit found
+ * "through an astrologer online india" in a published article: a search query
+ * pasted in where a sentence should be. It reads as machine filler to a human
+ * and as keyword stuffing to Google, which is the opposite of what the keyword
+ * was for. The fix is a sentence that happens to contain the words, so the
+ * mangled word order is what gets rejected, not the topic.
+ */
+const AWKWARD_KEYWORD_PATTERNS = [
+  // "...astrologer online india...", and the same shape for every service noun.
+  new RegExp('\\b(?:astrologer|astrology|kundli|horoscope|tarot|vastu|numerology|palmistry)\\s+online\\s+india\\b', 'i'),
+  new RegExp('\\bonline\\s+(?:astrologer|astrology|kundli|horoscope|tarot|vastu|numerology|palmistry)\\s+india\\b', 'i'),
+  // A superlative about ourselves, which is both unprovable and off-brand.
+  new RegExp('\\b(?:best|top|no\\.?\\s?1|number\\s+one)\\s+astrologer\\s+(?:in|of)\\s+india\\b', 'i'),
+];
+
+/**
+ * APPEALS TO CLASSICAL AUTHORITY WITH NOTHING NAMED. "Ancient texts say" is
+ * unverifiable by a reader and was one of the audit's specific findings about
+ * the sampled article. The rule is deliberately blunt: if an article wants to
+ * lean on a classical source it must name one, so the vague form is rejected
+ * rather than scored. Traditions genuinely disagree here, and naming the text
+ * is what lets a reader see which one is being followed.
+ */
+const VAGUE_SOURCE_PATTERNS = [
+  new RegExp('\\b(?:ancient|classical|old|sacred)\\s+(?:texts?|scriptures?|literature|books?|writings?)\\s+(?:say|says|state|states|mention|mentions|tell|tells|suggest|suggests|describe|describes)\\b', 'i'),
+  new RegExp('\\baccording\\s+to\\s+(?:the\\s+)?(?:ancient|classical|sacred)\\s+(?:texts?|scriptures?|literature|writings?)\\b', 'i'),
+  new RegExp('\\bit\\s+is\\s+(?:said|believed|written)\\s+in\\s+(?:the\\s+)?(?:ancient|classical|old)\\s+(?:texts?|scriptures?)\\b', 'i'),
+];
+
+/**
  * Model scaffolding that must never reach a reader. These do not reject — they
  * are evidence the generation was interrupted or the prompt leaked, so the
  * article is retried rather than published with "[insert conclusion here]" in it.
@@ -302,6 +332,14 @@ function check(article, opts = {}) {
     const hit = re.exec(plainEn) || re.exec(plainHi) || re.exec(titleEn) || re.exec(titleHi);
     if (hit) fail('SCAFFOLD_LEAKED', `"${String(hit[0]).slice(0, 60)}"`);
   }
+  for (const re of AWKWARD_KEYWORD_PATTERNS) {
+    const hit = re.exec(plainEn) || re.exec(titleEn);
+    if (hit) fail('KEYWORD_STUFFED', `"${String(hit[0]).slice(0, 60)}"`);
+  }
+  for (const re of VAGUE_SOURCE_PATTERNS) {
+    const hit = re.exec(plainEn);
+    if (hit) fail('VAGUE_SOURCE', `"${String(hit[0]).slice(0, 60)}"`);
+  }
 
   // ── Near-duplicate of something already published ─────────────────────────
   let maxSim = 0;
@@ -389,4 +427,6 @@ module.exports = {
   DEFAULT_LIMITS,
   BANNED_PATTERNS,
   SCAFFOLD_PATTERNS,
+  AWKWARD_KEYWORD_PATTERNS,
+  VAGUE_SOURCE_PATTERNS,
 };

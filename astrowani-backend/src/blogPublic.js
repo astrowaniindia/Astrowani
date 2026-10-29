@@ -70,6 +70,23 @@ function articleUrl(post, base, hi = false) {
   return `${base}/${hi ? 'hi/' : ''}blog-post.html?${key}`;
 }
 
+/**
+ * The visible provenance line. The author is the ORGANISATION, which is what the
+ * Article schema already claims and what Google accepts; it deliberately does not
+ * say "editorial team" or name a reviewer, because nobody reviews these before
+ * they publish and a byline implying otherwise is the kind of credibility claim
+ * the SEO audit asked us to stop making, not to make more of.
+ */
+function fmtDate(value, hi) {
+  try {
+    return new Date(value).toLocaleDateString(hi ? 'hi-IN' : 'en-IN', {
+      day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata',
+    });
+  } catch (_) {
+    return '';
+  }
+}
+
 function renderArticle(shell, post, { base = SITE_BASE, hi = false, status = 200 } = {}) {
   base = base.replace(/\/$/, '');
   const translated = !!(post?.hindi.title && post?.hindi.content);
@@ -118,7 +135,7 @@ ${tags.join('\n')}</head>`);
   const body = post
     ? `<a href="${back}" class="blog-back-link">${hi ? '← सभी लेख' : '← Back to all articles'}</a>
       ${post.thumbnail ? `<img class="blog-hero-image" src="${escape(image)}" alt="">` : ''}
-      <div class="blog-meta"><time datetime="${escape(post.createdAt)}">${escape(new Date(post.createdAt).toLocaleDateString(hi ? 'hi-IN' : 'en-IN', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' }))}</time></div>
+      <div class="blog-meta">${escape(hi ? 'Astrowani' : 'By Astrowani')}<span class="dot-sep">·</span><time datetime="${escape(post.createdAt)}">${escape(fmtDate(post.createdAt, hi))}</time>${post.updatedAt && post.updatedAt !== post.createdAt ? `<span class="dot-sep">·</span>${escape(hi ? 'अद्यतन' : 'Updated')} <time datetime="${escape(post.updatedAt)}">${escape(fmtDate(post.updatedAt, hi))}</time>` : ''}</div>
       <h1 class="serif blog-article-title">${escape(title)}</h1>
       <div class="legal-content" style="max-width:none;padding:0">${hi ? post.hindi.content : post.english.content}</div>
       <div id="blog-related-root" data-post-id="${escape(post._id)}"></div>`

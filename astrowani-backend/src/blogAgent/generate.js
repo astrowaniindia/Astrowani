@@ -103,6 +103,20 @@ KEYWORD RULES - this article has to be findable
 ${secondary.map((k) => `    - ${k}`).join('\n')}
   These are the related things people search for. A sentence that answers one of them
   earns the article a second and third way to be found.
+- NEVER paste a search phrase in where a sentence belongs. "through an astrologer online
+  india" is a query, not English, and an article containing one is DISCARDED. Write the
+  sentence first; if the phrase does not fit it grammatically, use a variation that does.
+- Do not call Astrowani or anyone on it the "best astrologer in India" or similar. It is
+  unprovable and it is rejected.
+
+SOURCING - what makes this trustworthy rather than generic
+- If you attribute something to classical astrology, NAME THE TEXT - Brihat Parashara Hora
+  Shastra, Phaladeepika, Saravali, Lal Kitab, whichever it actually is. "Ancient texts say"
+  is unverifiable and an article containing it is DISCARDED.
+- Where traditions genuinely disagree, say so and say which one you are following. That is
+  more credible than a single confident answer, not less.
+- Describe what a placement SUGGESTS or is TRADITIONALLY READ AS. Never state that it will
+  cause a specific event.
 
 LENGTH - READ THIS TWICE, IT IS THE MOST COMMON FAILURE
 - The English body MUST be at least ${minWords} words. Aim for ${minWords + 300}. An article under

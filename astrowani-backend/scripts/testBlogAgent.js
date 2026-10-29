@@ -352,6 +352,43 @@ for (const sentence of legitimate) {
   ok(`legitimate sentence passes: "${sentence.slice(0, 44)}…"`, !v.rejections.some((r) => r.startsWith('BANNED_CLAIM')), v.rejections.join('; '));
 }
 
+section('quality gate — pasted search phrases and unnamed sources');
+// The audit found "through an astrologer online india" in a published article: a
+// query pasted in where a sentence belongs. It reads as filler to a human and as
+// stuffing to Google, so it is now rejected outright rather than scored.
+for (const [name, sentence] of [
+  ['a pasted keyword phrase', 'You can book this through an astrologer online india today.'],
+  ['the same shape with the words reordered', 'Try online astrology india for a reading.'],
+  ['a superlative about ourselves', 'Astrowani has the best astrologer in India.'],
+]) {
+  rejects(`${name} is rejected`, { contentEn: `${goodArticle().contentEn}<p>${sentence}</p>` }, 'KEYWORD_STUFFED');
+}
+// An appeal to classical authority has to name the text, because a reader cannot
+// check "ancient texts say" and the tradition being followed is exactly what a
+// disagreement between schools turns on.
+for (const [name, sentence] of [
+  ['an unnamed classical source', 'Ancient texts say that Mars in the seventh house delays marriage.'],
+  ['the according-to form', 'According to classical scriptures, this placement is difficult.'],
+  ['the it-is-written form', 'It is written in the ancient texts that Saturn rewards patience.'],
+]) {
+  rejects(`${name} is rejected`, { contentEn: `${goodArticle().contentEn}<p>${sentence}</p>` }, 'VAGUE_SOURCE');
+}
+// THE CONTROLS. Both rules sit on top of ordinary, correct sentences about the
+// same subjects — a gate that also rejected these would stop the agent writing
+// about where it operates or what tradition it follows, which is most of the
+// credibility the rules exist to protect.
+for (const sentence of [
+  'You can talk to an astrologer online in India at any hour.',
+  'Astrologers on Astrowani consult online, and most of them are in India.',
+  'The Brihat Parashara Hora Shastra says this placement needs a cancellation.',
+  'Phaladeepika describes the same house differently, and practitioners disagree.',
+  'Vastu consultation online suits homes in India and abroad equally.',
+]) {
+  const v = quality.check(goodArticle({ contentEn: `${goodArticle().contentEn}<p>${sentence}</p>` }), { keyword: KEYWORD, limits: LIMITS, stage: 'draft' });
+  const flagged = v.rejections.filter((r) => r.startsWith('KEYWORD_STUFFED') || r.startsWith('VAGUE_SOURCE'));
+  ok(`legitimate sentence passes: "${sentence.slice(0, 44)}…"`, flagged.length === 0, flagged.join('; '));
+}
+
 section('quality gate — model scaffolding must never reach a reader');
 for (const [name, text] of [
   ['a bracket placeholder', '[insert conclusion here]'],
@@ -730,7 +767,7 @@ section('sitemap and robots.txt must agree');
 // ═══════════════════════════════════════════════════════════════════════════
 const fs = require('fs');
 const path = require('path');
-const { buildSitemap, STATIC_PAGES } = require('../src/blogSitemap');
+const { buildSitemap, STATIC_PAGES, hindiPages } = require('../src/blogSitemap');
 
 const sm = buildSitemap([
   { slug: 'mangal-dosh-in-the-kundali', created_at: '2026-10-13T00:00:00Z', updated_at: '2026-10-13T06:00:00Z' },
@@ -765,9 +802,18 @@ ok('a hostile slug cannot break out of <loc>', (() => {
 eq('xmlEscape handles an ampersand', require('../src/blogAgent/seo').escAttr('a & b'), 'a &amp; b');
 // On a database failure the route still returns the static pages, so a crawler
 // gets a short sitemap rather than an error it may back off from for days.
+// THIS ASSERTION USED TO BE `=== STATIC_PAGES.length` AND HAD BEEN FAILING SINCE
+// the Hindi URLs were added to the sitemap: every translated page now emits a
+// second <url> for its /hi/ counterpart, so the count is the static pages plus
+// however many of them have a Hindi twin on disk. Computing it keeps the check
+// honest as pages are added in either language, which a constant could not.
 ok('the degraded sitemap (no posts) is still valid', (() => {
+  const hindi = hindiPages();
+  const expected = STATIC_PAGES.length
+    + STATIC_PAGES.filter(([page]) => hindi.has(page || 'index.html')).length;
   const x = buildSitemap([]);
-  return x.includes('<urlset') && x.includes('</urlset>') && (x.match(/<url>/g) || []).length === STATIC_PAGES.length;
+  return x.includes('<urlset') && x.includes('</urlset>')
+    && (x.match(/<url>/g) || []).length === expected;
 })());
 
 // THE CROSS-CHECK: submitting a URL in the sitemap while blocking it in

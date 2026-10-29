@@ -71,6 +71,7 @@ const STATIC_PAGES = [
   ['career-astrology.html', '0.8', 'monthly'],
   ['vastu.html', '0.8', 'monthly'],
   ['lal-kitab.html', '0.8', 'monthly'],
+  ['palmistry.html', '0.8', 'monthly'],
   ['courses.html', '0.6', 'monthly'],
   // chat.html and call.html were here and have been REMOVED. They are not
   // landing pages -- they are the live consultation screens, and their entire

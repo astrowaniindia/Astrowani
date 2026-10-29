@@ -1,0 +1,46 @@
+# robots.txt for the HOST shop.astrowani.com
+#
+# WHY THIS FILE EXISTS, AND WHY IT IS NOT astrowani-website/robots.txt.
+# robots.txt is only ever read from a host root. The new website is served at
+# shop.astrowani.com/test-site/, so a crawler reads shop.astrowani.com/robots.txt
+# and never sees the file inside that directory — both its rules and its Sitemap
+# line are dead today. Measured 2026-10-29: that root returned a Cloudflare
+# content-signals file followed by the shop's own HTML document, because nginx
+# has no route for the path and the SPA fallback answered instead.
+#
+# THIS HOST SERVES TWO THINGS: the Wani Shop storefront at / and the new website
+# under /test-site/. So the policy below is deliberately permissive by default —
+# nothing here restricts the storefront, which was crawlable before this file and
+# stays crawlable after it. The only Disallow rules name live consultation
+# screens, which are per-session app views with no content to index.
+#
+# THE RULES BELOW MUST STAY IN STEP WITH astrowani-backend/src/blogSitemap.js.
+# Submitting a URL in the sitemap while blocking it here is a Search Console
+# error, and scripts/testBlogAgent.js cross-checks the two — but only against
+# astrowani-website/robots.txt. When this file changes, change that one too.
+#
+# TEMPORARY. When the site moves to astrowani.com this is replaced by
+# astrowani-website/robots.txt served from that host's root, and the Sitemap
+# line below points at the production domain.
+
+User-agent: *
+Allow: /
+
+# Live consultation screens. These are per-session views of a chat or call in
+# progress — "Connecting…", "Mute", "End chat" — with no indexable content, and
+# they already carry a noindex meta tag. The landing pages for those intents are
+# /test-site/consult.html and /test-site/book-call.html, which are NOT blocked.
+Disallow: /test-site/chat.html
+Disallow: /test-site/call.html
+Disallow: /test-site/wallet.html
+Disallow: /test-site/hi/chat.html
+Disallow: /test-site/hi/call.html
+Disallow: /test-site/hi/wallet.html
+
+# A leftover design experiment: reachable, linked from nothing, not in the sitemap.
+Disallow: /test-site/concept-hero.html
+
+
+# Generated from the database, because the blog agent publishes three articles a
+# day and cannot commit to a git-deployed directory.
+Sitemap: https://backend.astrowani.com/api/blogs/sitemap.xml
