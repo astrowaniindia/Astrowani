@@ -20,7 +20,30 @@
 // NOTE the site is not on astrowani.com yet, so these URLs use the same
 // BLOG_SITE_BASE_URL as the agent's internal links. Change it in one place.
 // ─────────────────────────────────────────────────────────────────────────────
+const fs = require('fs');
+const path = require('path');
 const { SITE_BASE, postUrl } = require('./blogAgent/seo');
+
+/**
+ * Which pages exist in Hindi, READ FROM DISK rather than listed here.
+ *
+ * aw/make-hindi-pages.js writes a page only once its text is translated past a
+ * threshold, so the set grows as translations land. A copy of that list kept in
+ * this file would go stale silently, and the sitemap would then invite Google to
+ * crawl a /hi/ URL that 404s — worse than omitting it, because a sitemap is a
+ * claim that these URLs are good.
+ *
+ * Fails CLOSED: if the directory cannot be read, no Hindi entries are emitted
+ * and the English sitemap is served exactly as before.
+ */
+const WEBSITE_ROOT = path.resolve(__dirname, '../../astrowani-website');
+function hindiPages() {
+  try {
+    return new Set(fs.readdirSync(path.join(WEBSITE_ROOT, 'hi')).filter((f) => f.endsWith('.html')));
+  } catch (_) {
+    return new Set();
+  }
+}
 
 /**
  * Static pages, in rough priority order. Hand-maintained because it is short and
@@ -72,18 +95,47 @@ function xmlEscape(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 }
 
-function urlEntry({ loc, lastmod, priority, changefreq }) {
+function urlEntry({ loc, lastmod, priority, changefreq, alternates }) {
   return `  <url>\n    <loc>${xmlEscape(loc)}</loc>\n`
+    + (alternates ? `${alternates}\n` : '')
     + (lastmod ? `    <lastmod>${xmlEscape(lastmod)}</lastmod>\n` : '')
     + (changefreq ? `    <changefreq>${changefreq}</changefreq>\n` : '')
     + (priority ? `    <priority>${priority}</priority>\n` : '')
     + '  </url>';
 }
 
-function buildSitemap(posts) {
-  const entries = STATIC_PAGES.map(([page, priority, changefreq]) => urlEntry({
-    loc: `${SITE_BASE}/${page}`, priority, changefreq,
-  }));
+/**
+ * The <xhtml:link> alternates for one page, in both languages.
+ *
+ * Google asks that each URL in a sitemap carry the alternates for EVERY
+ * language INCLUDING ITSELF, and that the relationship be reciprocal — an
+ * English entry naming the Hindi page while the Hindi entry does not name the
+ * English one is ignored wholesale rather than half-honoured. Both entries are
+ * therefore built from one list.
+ */
+function altLinks(enLoc, hiLoc) {
+  return [['en-IN', enLoc], ['hi-IN', hiLoc], ['x-default', enLoc]]
+    .map(([lang, href]) => `    <xhtml:link rel="alternate" hreflang="${lang}" href="${xmlEscape(href)}"/>`)
+    .join('\n');
+}
+
+function buildSitemap(posts, hindi = hindiPages()) {
+  const entries = [];
+  for (const [page, priority, changefreq] of STATIC_PAGES) {
+    const enLoc = `${SITE_BASE}/${page}`;
+    // The home page is listed as '' but its Hindi counterpart is a real file.
+    const file = page || 'index.html';
+    if (!hindi.has(file)) {
+      entries.push(urlEntry({ loc: enLoc, priority, changefreq }));
+      continue;
+    }
+    const hiLoc = `${SITE_BASE}/hi/${file}`;
+    const alts = altLinks(enLoc, hiLoc);
+    entries.push(urlEntry({ loc: enLoc, priority, changefreq, alternates: alts }));
+    // Same priority: it is the same page. A lower one would be a claim that the
+    // Hindi version matters less, which is not what we mean.
+    entries.push(urlEntry({ loc: hiLoc, priority, changefreq, alternates: alts }));
+  }
 
   for (const p of posts) {
     // A post with no slug is skipped DELIBERATELY. Its only URL is
@@ -93,16 +145,28 @@ function buildSitemap(posts) {
     // later. The five pre-agent posts therefore stay out until they are given
     // slugs; nothing the agent writes is ever affected.
     if (!p.slug) continue;
-    entries.push(urlEntry({
-      loc: postUrl(p.slug),
-      lastmod: new Date(p.updated_at || p.created_at).toISOString(),
-      priority: '0.7',
-      changefreq: 'monthly',
-    }));
+    const lastmod = new Date(p.updated_at || p.created_at).toISOString();
+    const enLoc = postUrl(p.slug);
+    // An article is listed in Hindi only when it HAS Hindi. The blog agent
+    // writes both languages, but quality.checkHindi() may drop a weak
+    // translation and keep the English article — and the five pre-agent posts
+    // never had any. A Hindi URL for one of those renders the ENGLISH body
+    // under hreflang="hi-IN", which is a duplicate of the English page rather
+    // than a translation of it. blogPublic.js makes the same test before it
+    // emits an article's own hreflang tags, and the two must agree.
+    if (!p.hasHindi) {
+      entries.push(urlEntry({ loc: enLoc, lastmod, priority: '0.7', changefreq: 'monthly' }));
+      continue;
+    }
+    const hiLoc = `${SITE_BASE}/hi/blog-post.html?slug=${encodeURIComponent(p.slug)}`;
+    const alts = altLinks(enLoc, hiLoc);
+    entries.push(urlEntry({ loc: enLoc, lastmod, priority: '0.7', changefreq: 'monthly', alternates: alts }));
+    entries.push(urlEntry({ loc: hiLoc, lastmod, priority: '0.7', changefreq: 'monthly', alternates: alts }));
   }
 
   return `<?xml version="1.0" encoding="UTF-8"?>\n`
-    + `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${entries.join('\n')}\n</urlset>\n`;
+    + `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"`
+    + ` xmlns:xhtml="http://www.w3.org/1999/xhtml">\n${entries.join('\n')}\n</urlset>\n`;
 }
 
 module.exports = function registerBlogSitemap(app, supabase) {
@@ -118,6 +182,31 @@ module.exports = function registerBlogSitemap(app, supabase) {
         .order('created_at', { ascending: false })
         .limit(5000);
       if (error) throw error;
+
+      // Which of those have Hindi, as a SECOND query returning slugs only.
+      // Selecting content_hi on the first query would be the obvious move and
+      // the wrong one: an article body is several KB and this route caps at
+      // 5,000 rows, so asking "is this column empty" would pull tens of MB out
+      // of the database on every cache miss — and cached storage egress is
+      // exactly what put this project over its quota in October (CLAUDE.md EC).
+      // A failure here costs the Hindi alternates, not the sitemap.
+      let hindi = new Set();
+      try {
+        const { data: hi, error: hiErr } = await supabase
+          .from('blogs')
+          .select('slug')
+          .eq('is_published', true)
+          .not('slug', 'is', null)
+          .not('content_hi', 'is', null)
+          .neq('content_hi', '')
+          .not('title_hi', 'is', null)
+          .neq('title_hi', '')
+          .limit(5000);
+        if (!hiErr) hindi = new Set((hi || []).map((r) => r.slug));
+      } catch (hiErr) {
+        console.error('[blog-sitemap] hindi slugs:', hiErr.message);
+      }
+      for (const row of data || []) row.hasHindi = hindi.has(row.slug);
 
       res.set('Content-Type', 'application/xml; charset=utf-8');
       // An hour of caching. Crawlers fetch this far more often than it changes,
@@ -138,3 +227,4 @@ module.exports = function registerBlogSitemap(app, supabase) {
 
 module.exports.buildSitemap = buildSitemap;
 module.exports.STATIC_PAGES = STATIC_PAGES;
+module.exports.hindiPages = hindiPages;
