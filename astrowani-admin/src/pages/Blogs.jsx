@@ -3,6 +3,7 @@ import client from '../api/client';
 import Modal from '../components/Modal';
 import RichText from '../components/RichText';
 import ImageField from '../components/ImageField';
+import BlogAgentCard from '../components/BlogAgentCard';
 
 const EMPTY = {
   title: '', excerpt: '', excerpt_hi: '', meta_description: '', meta_description_hi: '', thumbnail: '', category_id: '',
@@ -60,6 +61,11 @@ export default function Blogs() {
         <h1 className="page-title" style={{ margin: 0 }}>Blogs</h1>
         <button className="btn" onClick={openNew}>+ New Blog</button>
       </div>
+
+      {/* The agent that writes most of what is in the list below. It sits here
+          rather than on a page of its own so switching it on and reading what
+          it produced are the same screen. */}
+      <BlogAgentCard />
 
       <div className="table-wrap">
         <table>

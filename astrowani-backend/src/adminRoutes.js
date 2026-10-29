@@ -2068,6 +2068,89 @@ module.exports = function registerAdminRoutes(app) {
     });
   }));
 
+  // ── The blog agent's switch ────────────────────────────────────────────────
+  //
+  // The agent writes three articles a day to a live site with nobody reading
+  // first, so the only thing standing between "installed" and "publishing" is
+  // this one flag. It had no admin control at all: the only way to flip it was
+  // editing app_settings by hand or SSHing to the VPS and running the CLI.
+  //
+  // THE TIMERS ARE ALREADY ARMED (installed 2026-10-29, 03:30 / 09:30 / 17:30
+  // IST). They fire regardless and exit immediately while this is false, so
+  // turning the agent on really is just this switch — and turning it off stops
+  // the next article without touching the server.
+  //
+  // The generic PATCH /api/admin/settings could write this key, but it stores
+  // String(value) and would happily save "[object Object]" or a half-typed blob
+  // into the one setting that decides whether a bot publishes to a live site.
+  // This route writes a known-good shape instead.
+  app.get('/api/admin/blog-agent', requireAdmin, h(async (req, res) => {
+    const { data, error } = await db
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'blog_agent_config')
+      .maybeSingle();
+    if (error) throw error;
+
+    let cfg = {};
+    try { cfg = data && data.value ? JSON.parse(data.value) : {}; } catch (_) { cfg = {}; }
+
+    // Recent runs, so the page can show whether it is actually working rather
+    // than only whether it is switched on. A quiet agent and a broken one look
+    // identical without this.
+    let runs = [];
+    try {
+      const r = await db
+        .from('blog_agent_runs')
+        .select('started_at, status, topic_title, slug, word_count, error')
+        .order('started_at', { ascending: false })
+        .limit(10);
+      runs = r.data || [];
+    } catch (_) { /* ledger unreadable — report the switch anyway */ }
+
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const publishedToday = runs.filter((x) => x.status === 'published' && x.started_at > since).length;
+
+    return res.json({
+      success: true,
+      enabled: cfg.enabled === true,
+      config: cfg,
+      publishedLast24h: publishedToday,
+      runs,
+    });
+  }));
+
+  app.patch('/api/admin/blog-agent', requireAdmin, h(async (req, res) => {
+    const { enabled } = req.body || {};
+    // Only a real boolean. A missing or stringy value must not be read as "on"
+    // for the flag that starts a publishing bot.
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({ success: false, message: 'enabled must be true or false' });
+    }
+
+    const { data } = await db
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'blog_agent_config')
+      .maybeSingle();
+    let cfg = {};
+    try { cfg = data && data.value ? JSON.parse(data.value) : {}; } catch (_) { cfg = {}; }
+
+    // Merge, never replace: the row also carries articlesPerRun, maxPerDay and
+    // the quality limits, and a replace here would silently reset them to the
+    // code defaults.
+    const next = { ...cfg, enabled };
+    const { error } = await db
+      .from('app_settings')
+      .upsert(
+        { key: 'blog_agent_config', value: JSON.stringify(next), updated_at: new Date().toISOString() },
+        { onConflict: 'key' },
+      );
+    if (error) throw error;
+
+    return res.json({ success: true, enabled, config: next });
+  }));
+
   app.patch('/api/admin/settings', requireAdmin, h(async (req, res) => {
     const { key, value } = req.body || {};
     if (!key) return res.status(400).json({ success: false, message: 'key required' });
