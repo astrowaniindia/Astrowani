@@ -17,6 +17,30 @@
 // production` memory). This script starts no workers and no server; it does one
 // job and exits. --dry-run writes nothing at all.
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Node 20 has no global WebSocket, and @supabase/realtime-js reaches for one AT
+// IMPORT — so without this the script dies on its first require with
+// "FATAL: Node.js 20 detected without native WebSocket support" and never runs
+// at all.
+//
+// CLAUDE.md said not to fix this in repo code, on the grounds that it only
+// affected local debugging. THAT WAS WRONG, and this is where it showed:
+// measured on the VPS 2026-10-29, `node -v` is v20.20.1, so every systemd run
+// of this agent would have failed on import. The installer had never been run,
+// which is why nobody had seen it.
+//
+// `ws` is already present in node_modules as a transitive dependency, so this
+// adds nothing to install. It is guarded both ways: a Node that already has
+// WebSocket keeps its own, and a missing `ws` leaves the original error rather
+// than masking it with a confusing one.
+if (typeof globalThis.WebSocket === 'undefined') {
+  try {
+    globalThis.WebSocket = require('ws');
+  } catch (_) {
+    // fall through — the supabase import will report the real problem
+  }
+}
+
 const agent = require('../src/blogAgent');
 const configModule = require('../src/blogAgent/config');
 const topicsModule = require('../src/blogAgent/topics');
