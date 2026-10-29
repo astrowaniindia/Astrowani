@@ -52,7 +52,7 @@ const listMissing = process.argv.includes('--missing');
 const PAGES = [
   'index.html', 'consult.html', 'astrologers.html', 'book-call.html',
   'kundli-reading.html', 'marriage.html', 'tarot-reading.html', 'numerology.html',
-  'career-astrology.html', 'vastu.html', 'lal-kitab.html',
+  'career-astrology.html', 'vastu.html', 'lal-kitab.html', 'palmistry.html',
   'horoscope.html', 'panchang.html', 'calculators.html', 'free-services.html',
   'courses.html', 'about.html', 'blog.html', 'blog-post.html',
   'privacy-policy.html', 'terms-and-conditions.html', 'refund-cancellation.html',
@@ -164,6 +164,11 @@ function reroot(html, translated) {
     .replace(/href="([\w-]+\.html)([?#][^"]*)?"/g, (tag, file, suffix = '') =>
       `href="${translated.has(file) ? '' : '../'}${file}${suffix}"`)
     .replace(/(["'(])(assets\/)/g, '$1../$2')
+    // A srcset holds SEVERAL urls, and only the first one is preceded by a
+    // quote — the rest follow a comma. Without this the Hindi pages pointed at
+    // /hi/assets/... for every variant after the first, which 404s and silently
+    // falls back to the full-size original.
+    .replace(/(,\s*)(assets\/)/g, '$1../$2')
     .replace(/(["'(])(aw\/)/g, '$1../$2')
     .replace(/(["'])(style\.css)/g, '$1../$2')
     .replace(/(["'])(script\.js)/g, '$1../$2')

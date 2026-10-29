@@ -67,6 +67,7 @@ const ASTROWANI_NAV_MENUS = [
       ['Career & Business Astrology', 'career-astrology.html'],
       ['Vastu Consultation', 'vastu.html'],
       ['Lal Kitab Consultation', 'lal-kitab.html'],
+      ['Palm Reading', 'palmistry.html'],
       ['Muhurat & Panchang', 'panchang.html'],
     ],
   },

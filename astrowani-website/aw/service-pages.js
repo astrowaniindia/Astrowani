@@ -56,6 +56,7 @@ const ICON = {
   hash: '<path d="M4 9h16M4 15h16M10 3L8 21M16 3l-2 18"/>',
   briefcase: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
   compass: '<circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/>',
+  hand: '<path d="M9 11V5.5a1.5 1.5 0 0 1 3 0V11"/><path d="M12 11V4.5a1.5 1.5 0 0 1 3 0V11"/><path d="M15 11V6.5a1.5 1.5 0 0 1 3 0V14a6 6 0 0 1-6 6h-1a6 6 0 0 1-6-6v-2.5a1.5 1.5 0 0 1 3 0"/>',
 };
 
 /**
@@ -226,6 +227,36 @@ const PAGES = [
       ['Do I need my birth details?', 'Yes, the same as for any chart reading: date, time and place of birth. Birth time matters for the house positions.'],
     ],
     cta: ['Want a Lal Kitab reading?', 'Find an astrologer who works in the Lal Kitab tradition and talk through your chart.', 'Find an astrologer'],
+  },
+  {
+    file: 'palmistry.html',
+    crumb: 'Palmistry',
+    staffed: '23 (Palmistry)',
+    h1: 'Online palm reading',
+    lead: 'Send a photograph of your palm and talk it through with a verified palmist — no birth details needed.',
+    title: 'Online Palm Reading by Verified Palmists | Astrowani',
+    desc: 'Get an online palm reading from a verified palmist on Astrowani. Send a clear photograph of your palm and discuss what the lines suggest by chat, call or video.',
+    tiles: [
+      [ICON.hand, 'Photograph your palm', 'Your dominant hand, in daylight, with the fingers open and the whole palm in frame. Both hands if you can.'],
+      [ICON.chat, 'Send it in the chat', 'You can attach the photograph inside the consultation, so the palmist reads the hand rather than a description of it.'],
+      [ICON.star, 'Talk through what it shows', 'The major lines and the shape of the hand, discussed live, with room to ask what any of it means.'],
+    ],
+    prose: [
+      ['What a palm reading looks at',
+       'Palmistry reads the hand itself: the three major lines that most people know as the heart, head and life lines, the mounts below the fingers, the shape and proportion of the palm and fingers, and the smaller marks that cross or break a line. A palmist works from what is actually in front of them, which is why the photograph matters more than anything you write.',
+       'It needs no birth details at all. That makes it the one reading available to somebody who does not know their time of birth, and it is a common reason people choose it over a chart reading.'],
+      ['How to take a usable photograph',
+       'Use daylight rather than a flash, hold the hand flat with the fingers slightly apart, and fill the frame with the palm from wrist to fingertips. Avoid a hard shadow across the centre of the hand, which is where the major lines meet. Your dominant hand is the one usually read as the present; the other is often read alongside it, so send both if you can.'],
+      ['What it can and cannot tell you',
+       'Treat a palm reading the way you would any traditional reading: as a lens for thinking about a situation, not a forecast of events. A palmist on Astrowani should talk about tendencies and timing in general terms, and should never claim a line fixes how long you will live or guarantee a specific outcome. If you want something read against a specific date or decision, a kundli reading works from a chart and is the better fit.'],
+    ],
+    faqs: [
+      ['Do I need my birth details for a palm reading?', 'No. Palmistry reads the hand, so it needs no date, time or place of birth. That is why it suits people who do not know their birth time.'],
+      ['How do I send a photograph of my palm?', 'Attach it inside the consultation chat. Daylight, fingers slightly apart, and the whole palm from wrist to fingertips in frame.'],
+      ['Which hand should I send?', 'Your dominant hand is the one usually read as the present. Many palmists read the other alongside it, so send both if you can.'],
+      ['Can a palm reading tell me how long I will live?', 'No, and a palmist who claims otherwise is not reading the tradition honestly. The life line is read for vitality and broad periods, not as a lifespan.'],
+    ],
+    cta: ['Ready for a palm reading?', 'Find a palmist, send a clear photograph of your hand and talk through what it shows.', 'Find an astrologer'],
   },
 ];
 

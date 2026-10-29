@@ -1,5 +1,5 @@
-import { api } from './api.js?v=55';
-import { track } from './analytics.js?v=55';
+import { api } from './api.js?v=56';
+import { track } from './analytics.js?v=56';
 
 /**
  * The blog section.
@@ -75,7 +75,9 @@ function mapPost(row) {
     thumbnail: row.thumbnail || '',
     category: row.category?.name || '',
     createdAt: row.createdAt,
+    updatedAt: row.updatedAt || '',
     dateLabel: formatDate(row.createdAt),
+    updatedLabel: row.updatedAt && row.updatedAt !== row.createdAt ? formatDate(row.updatedAt) : '',
     readMinutes: readMinutes(contentEn || contentHi),
   };
 }
@@ -196,7 +198,11 @@ function articleTemplate(post, all) {
     <a href="${document.documentElement.lang === 'hi' ? '../blog.html' : 'blog.html'}" class="blog-back-link">← Back to all articles</a>
     ${post.thumbnail ? `<img class="blog-hero-image" src="${esc(post.thumbnail)}" alt="">` : ''}
     ${post.category ? `<span class="blog-badge">${esc(post.category)}</span>` : ''}
-    <div class="blog-meta">${esc(post.dateLabel)}<span class="dot-sep">·</span>${post.readMinutes} min read</div>
+    <!-- The author is the ORGANISATION, matching what the Article schema claims.
+         It deliberately does not name a reviewer: nobody reviews these before they
+         publish, and implying otherwise is the credibility claim the audit asked us
+         to stop making. -->
+    <div class="blog-meta">By Astrowani<span class="dot-sep">·</span>${esc(post.dateLabel)}${post.updatedLabel ? `<span class="dot-sep">·</span>Updated ${esc(post.updatedLabel)}` : ''}<span class="dot-sep">·</span>${post.readMinutes} min read</div>
     <h1 class="serif blog-article-title lang-en">${esc(post.titleEn)}</h1>
     <h1 class="serif blog-article-title lang-hi">${esc(post.titleHi)}</h1>
     <div class="legal-content lang-en" style="max-width:none; padding:0;">${post.contentEn}</div>

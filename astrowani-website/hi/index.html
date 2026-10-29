@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="hi" data-lang="hi">
 <head>
-<script>window.ASTROWANI_HI_PAGES=["index.html","consult.html","astrologers.html","book-call.html","kundli-reading.html","marriage.html","tarot-reading.html","numerology.html","career-astrology.html","vastu.html","lal-kitab.html","horoscope.html","panchang.html","calculators.html","free-services.html","courses.html","about.html","blog.html","blog-post.html","privacy-policy.html","terms-and-conditions.html","refund-cancellation.html","safety-guidelines.html","child-safety.html","delete-account.html","report-vulnerability.html","404.html"];</script>
+<script>window.ASTROWANI_HI_PAGES=["index.html","consult.html","astrologers.html","book-call.html","kundli-reading.html","marriage.html","tarot-reading.html","numerology.html","career-astrology.html","vastu.html","lal-kitab.html","palmistry.html","horoscope.html","panchang.html","calculators.html","free-services.html","courses.html","about.html","blog.html","blog-post.html","privacy-policy.html","terms-and-conditions.html","refund-cancellation.html","safety-guidelines.html","child-safety.html","delete-account.html","report-vulnerability.html","404.html"];</script>
 <script src="_strings.js"></script>
 <meta charset="utf-8">
 <script>if('scrollRestoration' in history){history.scrollRestoration='manual';}if(!location.hash){window.scrollTo(0,0);}try{if(localStorage.getItem('astro-lang')==='hi')document.documentElement.setAttribute('data-lang','hi');}catch(e){}</script>
@@ -38,8 +38,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../style.css?v=55">
-<link rel="stylesheet" href="../aw/aw.css?v=55">
+<link rel="stylesheet" href="../style.css?v=56">
+<link rel="stylesheet" href="../aw/aw.css?v=56">
 
 </head>
 <body>
@@ -47,7 +47,7 @@
 <div id="scroll-progress"></div>
 
 <!-- Floating nav: hidden above the viewport, slides down once the hero's own pill nav
-     scrolls out of view (see script.js?v=55 onScroll), reverses on the way back up. -->
+     scrolls out of view (see script.js?v=56 onScroll), reverses on the way back up. -->
 <div id="site-nav-floating">
   <div class="nav-inner">
     <a href="index.html" style="display:flex; align-items:center; gap:10px;">
@@ -65,9 +65,10 @@
   </div>
 </div>
 
+<main id="content">
 <!-- ============ NAV + HERO (dark concept) ============ -->
 <div class="ch-wrap">
-  <img width="506" height="493" class="ch-zodiac-bg" src="../assets/zodiac-wheel.png" alt="" aria-hidden="true">
+  <img width="506" height="493" class="ch-zodiac-bg" srcset="../assets/responsive/zodiac-wheel-320.png 320w, ../assets/zodiac-wheel.png 506w" sizes="(max-width: 700px) 290px, 500px" src="../assets/zodiac-wheel.png" alt="" aria-hidden="true">
   <div class="ch-nav-wrap">
     <div class="ch-nav-pill">
       <div class="ch-nav-brand"><img width="240" height="240" src="../assets/logo-240.jpg" alt="Astrowani"><span class="serif">Astrowani</span></div>
@@ -103,13 +104,13 @@
 
     <div class="ch-stage">
       <a href="https://play.google.com/store/apps/details?id=com.astrowanicustomer&amp;hl=en_IN" class="ch-phone ch-phone-side reveal reveal-grow-left" aria-label="Astrowani को Google Play पर पाएं">
-        <img loading="lazy" decoding="async" width="960" height="1920" src="../assets/promo-free-5min-guru.webp" alt="आज 5 मिनट की चैट मुफ़्त पाएँ" class="ch-phone-screen">
+        <img loading="lazy" decoding="async" width="960" height="1920" srcset="../assets/responsive/promo-free-5min-guru-96.webp 1x, ../assets/responsive/promo-free-5min-guru-192.webp 2x" src="../assets/promo-free-5min-guru.webp" alt="आज 5 मिनट की चैट मुफ़्त पाएँ" class="ch-phone-screen">
       </a>
       <a href="https://play.google.com/store/apps/details?id=com.astrowanicustomer&amp;hl=en_IN" class="ch-phone ch-phone-side reveal reveal-grow-right" aria-label="Astrowani को Google Play पर पाएं">
-        <img loading="lazy" decoding="async" width="1024" height="1536" src="../assets/app-screenshot-home-2.webp" alt="Astrowani चैट स्क्रीन" class="ch-phone-screen">
+        <img loading="lazy" decoding="async" width="1024" height="1536" srcset="../assets/responsive/app-screenshot-home-2-96.webp 1x, ../assets/responsive/app-screenshot-home-2-192.webp 2x" src="../assets/app-screenshot-home-2.webp" alt="Astrowani चैट स्क्रीन" class="ch-phone-screen">
       </a>
       <a href="https://play.google.com/store/apps/details?id=com.astrowanicustomer&amp;hl=en_IN" class="ch-phone reveal reveal-grow" aria-label="Astrowani को Google Play पर पाएं">
-        <img loading="lazy" decoding="async" width="960" height="1920" src="../assets/promo-free-11min-woman.webp" alt="ज्योतिषी से 7 मिनट मुफ़्त बात करें" class="ch-phone-screen">
+        <img loading="lazy" decoding="async" width="960" height="1920" srcset="../assets/responsive/promo-free-11min-woman-192.webp 1x, ../assets/responsive/promo-free-11min-woman-368.webp 2x" src="../assets/promo-free-11min-woman.webp" alt="ज्योतिषी से 7 मिनट मुफ़्त बात करें" class="ch-phone-screen">
       </a>
     </div>
   </div>
@@ -161,7 +162,7 @@
   <!-- full-bleed: breaks out of the centered .block so the fade sits at the real screen edges -->
   <div class="astro-marquee-wrap">
     <div class="astro-marquee-track astro-marquee-track-ltr" id="astro-marquee-track">
-      <!-- astrologer cards (half the featured set) are injected twice by script.js?v=55 for a seamless loop -->
+      <!-- astrologer cards (half the featured set) are injected twice by script.js?v=56 for a seamless loop -->
     </div>
   </div>
   <div class="astro-marquee-wrap" style="margin-top:20px;">
@@ -206,7 +207,7 @@
         </div>
         <div class="review-quote">&ldquo;मैं जीवन के बहुत उलझे हुए दौर से गुज़र रहा था, भविष्य के बारे में अनिश्चित। ज्योतिष सत्र ने मुझे न केवल स्पष्टता दी, बल्कि आगे बढ़ने की शक्ति भी दी। उपायों से मेरे जीवन में शांति और समृद्धि आई है।&rdquo;</div>
         <div class="review-person">
-          <img loading="lazy" decoding="async" width="319" height="319" src="../assets/testimonial-rohit.png" alt="रोहित शर्मा" style="width:38px; height:38px; border-radius:50%; object-fit:cover;">
+          <img loading="lazy" decoding="async" width="319" height="319" srcset="../assets/responsive/testimonial-rohit-48.png 1x, ../assets/responsive/testimonial-rohit-96.png 2x" src="../assets/testimonial-rohit.png" alt="रोहित शर्मा" style="width:38px; height:38px; border-radius:50%; object-fit:cover;">
           <div><div style="font-size:13.5px; font-weight:800; color:var(--maroon);">रोहित शर्मा</div><div style="font-size:11.5px; color:var(--ink-soft); font-weight:600;">वैदिक ज्योतिषी से परामर्श लिया</div></div>
         </div>
       </div>
@@ -380,7 +381,7 @@
     </div>
 
     <div class="cat-grid" id="home-cat-grid">
-      <!-- rendered by script.js?v=55 from the real app categories in astrologers-data.js -->
+      <!-- rendered by script.js?v=56 from the real app categories in astrologers-data.js -->
     </div>
   </div>
 </div>
@@ -402,7 +403,7 @@
           <div class="svc-title">ज्योतिषी से चैट</div>
           <div class="svc-desc">सत्यापित ज्योतिषी से निजी, असीमित टेक्स्ट चैट — आपके पहले कुछ मिनट हमारी ओर से।</div>
         </div>
-        <img loading="lazy" decoding="async" width="612" height="408" src="../assets/svc-chat.png" alt="" class="svc-illus-img" aria-hidden="true">
+        <img loading="lazy" decoding="async" width="612" height="408" srcset="../assets/responsive/svc-chat-160.png 1x, ../assets/responsive/svc-chat-304.png 2x" src="../assets/svc-chat.png" alt="" class="svc-illus-img" aria-hidden="true">
       </div>
 
       <div class="svc-tile reveal reveal-slide-right tilt-card">
@@ -418,7 +419,7 @@
           <div class="svc-title">वीडियो परामर्श</div>
           <div class="svc-desc">हस्तरेखा, पूजा मार्गदर्शन और गहरे विश्लेषण के लिए आमने-सामने वीडियो सत्र।</div>
         </div>
-        <img loading="lazy" decoding="async" width="247" height="253" src="../assets/svc-video.png" alt="" class="svc-illus-img" aria-hidden="true">
+        <img loading="lazy" decoding="async" width="247" height="253" srcset="../assets/responsive/svc-video-160.png 1x, ../assets/svc-video.png 2x" src="../assets/svc-video.png" alt="" class="svc-illus-img" aria-hidden="true">
       </div>
 
       <div class="svc-tile reveal reveal-slide-right tilt-card">
@@ -426,7 +427,7 @@
           <div class="svc-title">दैनिक राशिफल</div>
           <div class="svc-desc">प्रेम, करियर, स्वास्थ्य और धन के लिए मुफ़्त, व्यक्तिगत दैनिक राशिफल।</div>
         </div>
-        <img loading="lazy" decoding="async" width="506" height="493" src="../assets/svc-horoscope.png" alt="" class="svc-illus-img" aria-hidden="true">
+        <img loading="lazy" decoding="async" width="506" height="493" srcset="../assets/responsive/svc-horoscope-160.png 1x, ../assets/responsive/svc-horoscope-304.png 2x" src="../assets/svc-horoscope.png" alt="" class="svc-illus-img" aria-hidden="true">
       </div>
 
       <div class="svc-tile reveal reveal-slide-left tilt-card">
@@ -434,7 +435,7 @@
           <div class="svc-title">मुफ़्त कुंडली</div>
           <div class="svc-desc">ग्रह स्थितियों और दशाओं सहित विस्तृत जन्म कुंडली कुछ ही पलों में बनाएँ।</div>
         </div>
-        <img loading="lazy" decoding="async" width="231" height="273" src="../assets/svc-kundli.png" alt="" class="svc-illus-img" aria-hidden="true">
+        <img loading="lazy" decoding="async" width="231" height="273" srcset="../assets/responsive/svc-kundli-160.png 1x, ../assets/svc-kundli.png 2x" src="../assets/svc-kundli.png" alt="" class="svc-illus-img" aria-hidden="true">
       </div>
 
       <div class="svc-tile reveal reveal-slide-right tilt-card">
@@ -442,7 +443,7 @@
           <div class="svc-title">वाणी शॉप</div>
           <div class="svc-desc">रत्न, रुद्राक्ष और पूजा सामग्री, आपकी कुंडली के अनुसार सुझाए गए और घर तक भेजे गए।</div>
         </div>
-        <img loading="lazy" decoding="async" width="229" height="212" src="../assets/svc-waniShop.png" alt="" class="svc-illus-img" aria-hidden="true">
+        <img loading="lazy" decoding="async" width="229" height="212" srcset="../assets/responsive/svc-waniShop-160.png 1x, ../assets/svc-waniShop.png 2x" src="../assets/svc-waniShop.png" alt="" class="svc-illus-img" aria-hidden="true">
       </div>
 
     </div>
@@ -460,7 +461,7 @@
       <a href="astrologers.html" class="magnetic" style="font-size:14.5px; font-weight:800; color:var(--maroon); border:1.5px solid var(--border-soft); padding:11px 20px; border-radius:999px;">सभी ज्योतिषी देखें →</a>
     </div>
     <div id="home-more-astrologers" class="astro-grid" style="grid-template-columns:repeat(4, minmax(0,1fr));">
-      <!-- rendered by script.js?v=55 from astrologers-data.js, a fresh batch not shown in the marquee -->
+      <!-- rendered by script.js?v=56 from astrologers-data.js, a fresh batch not shown in the marquee -->
     </div>
   </div>
 </div>
@@ -493,7 +494,7 @@
     </p>
 
     <p style="font-size:15.5px; line-height:1.9; color:var(--ink-soft); margin:0 0 20px;">
-      व्यावहारिक मामलों के लिए व्यावहारिक विश्लेषण भी हैं। <a href="career-astrology.html">करियर और व्यवसाय ज्योतिष</a> उन भावों को देखता है जिन्हें परंपरा कार्य, आय और साझेदारी से जोड़ती है, और यह किसी सामान्य दृष्टिकोण के बजाय किसी ठोस निर्णय के सामने सबसे उपयोगी होता है। <a href="vastu.html">वास्तु परामर्श</a> घर या कार्यस्थल की दिशा और नक्शे को देखता है, और दूर से भी अच्छा चलता है क्योंकि इसका बड़ा हिस्सा फ़्लोर प्लान से ही पढ़ा जाता है। <a href="lal-kitab.html">लाल किताब</a> उसी कुंडली को अपने नियमों से पढ़ती है और जानबूझकर साधारण रखे गए उपायों के लिए जानी जाती है। किसी नई शुरुआत का समय तय करने के लिए <a href="panchang.html">पंचांग और मुहूर्त</a> से ही अधिकतर लोग शुरुआत करते हैं।
+      व्यावहारिक मामलों के लिए व्यावहारिक विश्लेषण भी हैं। <a href="career-astrology.html">करियर और व्यवसाय ज्योतिष</a> उन भावों को देखता है जिन्हें परंपरा कार्य, आय और साझेदारी से जोड़ती है, और यह किसी सामान्य दृष्टिकोण के बजाय किसी ठोस निर्णय के सामने सबसे उपयोगी होता है। <a href="vastu.html">वास्तु परामर्श</a> घर या कार्यस्थल की दिशा और नक्शे को देखता है, और दूर से भी अच्छा चलता है क्योंकि इसका बड़ा हिस्सा फ़्लोर प्लान से ही पढ़ा जाता है। <a href="lal-kitab.html">लाल किताब</a> उसी कुंडली को अपने ही नियमों से पढ़ता है और अपने जान-बूझकर सरल रखे गए उपायों के लिए जाना जाता है। <a href="palmistry.html">हस्तरेखा विश्लेषण</a> के लिए जन्म विवरण की आवश्यकता ही नहीं होती, इसलिए यह उन लोगों के लिए भी उपलब्ध है जिन्हें अपना जन्म समय नहीं पता। किसी नई शुरुआत का समय तय करने के लिए <a href="panchang.html">पंचांग और मुहूर्त</a> से ही अधिकतर लोग शुरुआत करते हैं।
     </p>
 
     <h2 class="serif section-title" style="margin:44px 0 22px;">लोग Astrowani को क्यों चुनते हैं</h2>
@@ -576,6 +577,8 @@
   </div>
 </div>
 
+</main>
+
 <!-- ============ FOOTER ============ -->
 <footer class="site-footer">
   <div class="footer-top">
@@ -586,7 +589,7 @@
       </div>
       <div style="font-size:13.5px; line-height:1.7; max-width:280px;">सत्यापित ज्योतिषियों से तुरंत मार्गदर्शन पाने का भारत का ज्योतिष मंच — चैट, कॉल और वीडियो, कभी भी।</div>
       <a href="https://play.google.com/store/apps/details?id=com.astrowanicustomer&amp;hl=en_IN" class="footer-playstore" aria-label="Astrowani को Google Play पर पाएं">
-        <img width="719" height="278" src="../assets/google-play-badge.png" alt="Google Play पर पाएं" loading="lazy">
+        <img width="719" height="278" srcset="../assets/responsive/google-play-badge-160.png 1x, ../assets/responsive/google-play-badge-304.png 2x" src="../assets/google-play-badge.png" alt="Google Play पर पाएं" loading="lazy">
       </a>
     </div>
     <div>
@@ -595,7 +598,7 @@
     </div>
     <div>
       <div class="footer-col-title">सेवाएं</div>
-      <div class="footer-links"><a href="astrologers.html">सभी ज्योतिषी</a><a href="consult.html">ज्योतिष परामर्श</a><a href="kundli-reading.html">कुंडली विश्लेषण</a><a href="marriage.html">कुंडली मिलान</a><a href="tarot-reading.html">टैरो रीडिंग</a><a href="numerology.html">अंक विद्या</a><a href="career-astrology.html">करियर और व्यवसाय</a><a href="vastu.html">वास्तु परामर्श</a><a href="lal-kitab.html">लाल किताब</a><a href="courses.html">पाठ्यक्रम</a><a href="#wanishop">वाणी शॉप</a></div>
+      <div class="footer-links"><a href="astrologers.html">सभी ज्योतिषी</a><a href="consult.html">ज्योतिष परामर्श</a><a href="kundli-reading.html">कुंडली विश्लेषण</a><a href="marriage.html">कुंडली मिलान</a><a href="tarot-reading.html">टैरो रीडिंग</a><a href="numerology.html">अंक विद्या</a><a href="career-astrology.html">करियर और व्यवसाय</a><a href="vastu.html">वास्तु परामर्श</a><a href="lal-kitab.html">लाल किताब</a><a href="palmistry.html">हस्तरेखा</a><a href="courses.html">पाठ्यक्रम</a><a href="#wanishop">वाणी शॉप</a></div>
     </div>
     <div>
       <div class="footer-col-title">कानूनी</div>
@@ -612,7 +615,7 @@
 </footer>
 
 <script src="../astrologers-data.js"></script>
-<script src="../script.js?v=55"></script>
-<script type="module" src="../aw/boot.js?v=55"></script>
+<script src="../script.js?v=56"></script>
+<script type="module" src="../aw/boot.js?v=56"></script>
 </body>
 </html>
