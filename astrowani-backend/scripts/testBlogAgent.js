@@ -838,6 +838,24 @@ if (fs.existsSync(robotsPath)) {
   ok('robots.txt exists', false, robotsPath);
 }
 
+// THE TWO robots.txt FILES MUST AGREE. astrowani-website/robots.txt is written
+// for the eventual astrowani.com root; astrowani-shop/robots.txt is the one
+// actually served today, at shop.astrowani.com, with every path prefixed
+// /test-site/. A rule in one and not the other is a divergence that nothing
+// else would catch, and the whole point of the second file is that it expresses
+// the SAME policy from a different root.
+const shopRobotsPath = path.join(__dirname, '..', '..', 'astrowani-shop', 'robots.txt');
+if (fs.existsSync(robotsPath) && fs.existsSync(shopRobotsPath)) {
+  const rules = (file, strip) => [...fs.readFileSync(file, 'utf8').matchAll(/^Disallow:\s*(\S+)\s*$/gm)]
+    .map((m) => m[1].replace(strip, '/'))
+    .sort();
+  const site = rules(robotsPath, /^\//);
+  const shop = rules(shopRobotsPath, /^\/test-site\//);
+  ok('the two robots.txt files disallow the same paths',
+    JSON.stringify(site) === JSON.stringify(shop),
+    `website ${JSON.stringify(site)} vs shop ${JSON.stringify(shop)}`);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // config.load is async, so the rest runs inside a function. Deliberately NOT
 // top-level await: Node then reclassifies this .js file as an ES module and

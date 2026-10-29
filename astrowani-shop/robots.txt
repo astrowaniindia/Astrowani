@@ -1,5 +1,21 @@
 # robots.txt for the HOST shop.astrowani.com
 #
+# IT LIVES HERE, IN astrowani-shop/, BECAUSE THAT IS WHAT THE DEPLOY COPIES.
+# deploy-shop.yml does `cp -r astrowani-shop/. /var/www/astrowani/shop/`, and the
+# shop's nginx block ends in `try_files $uri $uri/ /index.html` — so a real file
+# at this path is served before the SPA fallback and NO nginx change is needed.
+# Verified against the live site: /store.css sits beside this file and returns
+# 200 text/css, so try_files is reaching real root files already.
+#
+# WHAT IS ACTUALLY WRONG TODAY, measured 2026-10-30: the URL answers 200
+# text/plain with Cloudflare's content-signals policy FOLLOWED BY the shop's
+# entire index.html, ending in </html>. Cloudflare prepends its managed block
+# and then proxies whatever the origin returns — and the origin, having no
+# robots.txt, returns the SPA fallback. Adding this file replaces that HTML with
+# real directives. Cloudflare's own block stays, which is fine: it only adds
+# AI-crawler rules and its own `User-agent: * / Allow: /` merges with the group
+# below rather than overriding it.
+#
 # WHY THIS FILE EXISTS, AND WHY IT IS NOT astrowani-website/robots.txt.
 # robots.txt is only ever read from a host root. The new website is served at
 # shop.astrowani.com/test-site/, so a crawler reads shop.astrowani.com/robots.txt
@@ -33,9 +49,6 @@ Allow: /
 Disallow: /test-site/chat.html
 Disallow: /test-site/call.html
 Disallow: /test-site/wallet.html
-Disallow: /test-site/hi/chat.html
-Disallow: /test-site/hi/call.html
-Disallow: /test-site/hi/wallet.html
 
 # A leftover design experiment: reachable, linked from nothing, not in the sitemap.
 Disallow: /test-site/concept-hero.html
