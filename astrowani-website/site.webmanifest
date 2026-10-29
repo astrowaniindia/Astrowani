@@ -1,0 +1,14 @@
+{
+  "name": "Astrowani",
+  "short_name": "Astrowani",
+  "description": "Chat, call or video with India's verified astrologers.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F4D8BC",
+  "theme_color": "#592A19",
+  "icons": [
+    { "src": "assets/favicon-32.png", "sizes": "32x32", "type": "image/png" },
+    { "src": "assets/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "assets/logo.png", "sizes": "1024x1024", "type": "image/png" }
+  ]
+}

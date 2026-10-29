@@ -325,7 +325,7 @@ html { scroll-behavior: smooth; }
 body { margin: 0; font-family: 'Manrope', sans-serif; background: var(--page-bg); color: var(--ink); overflow-x: hidden; }
 a { color: inherit; text-decoration: none; }
 * { box-sizing: border-box; }
-img { max-width: 100%; display: block; }
+img { max-width: 100%; height: auto; display: block; }
 .serif { font-family: 'Marcellus', serif; }
 .wrap { max-width: 1280px; margin: 0 auto; padding: 0 24px; }
 
