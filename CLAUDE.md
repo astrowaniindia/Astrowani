@@ -3999,6 +3999,12 @@ to fail on two deliberate regressions** — freezing the rotation gives 2 failur
 
 ### Still open on the website (owner)
 
+> **MOSTLY CLOSED — READ EQ BELOW BEFORE ACTING ON THIS LIST.** Six of the nine were
+> done on 2026-10-30: the nginx work, the Hindi URLs and hreflang, the Palmistry page,
+> the blog-agent timers (already stale here — see EO4), the robots.txt, and Palmistry
+> in the sitemap. What is genuinely left is the DOMAIN MOVE, Search Console, the Lal
+> Kitab category and the promotional artwork that still shows 11 minutes.
+
 - **`vps-deployment/website-nginx-seo.conf` — NOT APPLIED.** 404 status and cache headers.
 - **The domain move**, last, before launch. Then `BLOG_SITE_BASE_URL` and a one-off UPDATE over
   `blogs.content_en`/`content_hi`, whose internal links are absolute and point at the test path.
@@ -4240,6 +4246,8 @@ analytics of any kind.
   only the one intended privacy-policy line changed; 52 pages of JSON-LD still parse with
   **0 invalid blocks and 0 FAQ text mismatches**; `hindi-strings.json` still **1,173
   entries**; every asset reference at `?v=55` with no `?v=50..54` anywhere.
+  (Both numbers are a record of THAT commit and have moved since: the site is at
+  **`?v=58`** with **1,203** Hindi strings as of the same evening — see EQ.)
 
 **Not yet done, and the other half of A1: Search Console.** Verifying `astrowani.com` as a
 Domain property is a browser job on the owner's account, and worth doing **before** the site
@@ -4247,3 +4255,176 @@ move so there is a baseline of the WordPress site's existing queries. Also still
 site has **no consent banner** (the policy's cookie section covers India; the EU is a live
 question, since the 27 EU states were removed from the App Store but the website is still
 reachable from there).
+
+---
+
+## Session 2026-10-30: deployed, measured, and the shift nobody on wifi could see (EQ)
+
+Everything from EP and from the 2026-10-29 audit is now **live**. This section is what
+happened after it shipped, and two of the four things in it were found only because the
+deploy forced a real measurement.
+
+### EQ1. The generators now have an ORDER, and getting it wrong is silent
+
+`aw/` holds five generators. They must run in this order, because each consumes what the
+previous one wrote:
+
+```
+node aw/apply-roster-reserve.js   # min-heights, from the roster count
+node aw/apply-srcset.js           # srcset on the ROOT pages only
+node aw/bump-version.js <N>       # ?v= on root html + aw/*.js imports
+node aw/make-hindi-pages.js       # regenerates hi/ FROM the root pages
+node aw/apply-seo.js              # the /hi/ pages have no SEO block until this runs
+```
+
+**`make-hindi-pages` copies the root pages, so anything that must reach Hindi has to be
+written before it.** `apply-srcset` only touches root `.html`; `bump-version` only touches
+root `.html` plus `aw/*.js` — neither knows `hi/` exists. Running the Hindi build first
+produces 28 pages missing whatever you just added, and nothing errors.
+
+`make-hindi-pages` prints `NOW RUN: node aw/apply-seo.js` for the same reason, and that is
+not advice: it strips the SEO block as it regenerates.
+
+> **A generator that is not idempotent lies about its own state.** `apply-roster-reserve`
+> reported "would change: 2 pages" on every run until the block was built with the FILE's
+> own line endings rather than a bare newline — these pages are checked out CRLF, so a
+> re-written block differed from the identical one already there. The same CRLF trap as EN2,
+> in a new place. Every generator here must report 0 on a second run; if one does not, that
+> is the bug, not a quirk.
+
+### EQ2. CLS 0.967 — and it was invisible to everyone who tested it
+
+Lighthouse on a GitHub runner with simulated mobile throttling, the first real Core Web
+Vitals this project has ever had:
+
+| page | CLS before | after | score |
+|---|---|---|---|
+| consult.html | **0.967** | 0.023 | 73 → 93 |
+| astrologers.html | **0.959** | 0.021 | 74 → 94 |
+| an article | 0.206 | **0.000** | 82 → 92 |
+
+The target is 0.1. Both grids ship EMPTY — the HTML holds a comment where the cards go —
+and `script.js` fills them from `astrologers-data.js` once 119KB of JavaScript has parsed.
+Until then the grid is zero pixels tall, so everything below is shoved down by the full
+height of the roster: **over 23,000px at phone width**.
+
+> **THE PART THAT MATTERS: on a fast connection the measured CLS is EXACTLY 0.** Confirmed
+> in a real browser against the live site. The shift only exists under throttling — so it
+> only ever happened to people on Indian mobile data, and never to anyone testing on wifi.
+> Neither the audit nor a local browser pass could see it. **A layout-shift number from an
+> unthrottled machine is not evidence of anything.**
+
+`aw/apply-roster-reserve.js` writes a `min-height` per breakpoint, counting astrologers from
+the snapshot so it stays right as the roster changes; the card heights were measured off the
+live site at 1440/700/375px. `min-height` applies only while content is SHORTER, so once the
+real cards render it stops mattering and no gap can persist — which is also why
+over-reserving slightly is free and under-reserving is not.
+
+**min-height rather than skeleton cards** because card heights are content-driven and vary
+330–397px; placeholders would have to guess each one and would shift anyway.
+
+**The article page was a different cause, and the first guess was wrong.** Reserving the
+related-articles block moved it 0.206 → 0.188, i.e. barely. The actual cause was
+`.blog-hero-image`: `width: 100%` with `max-height` and **no intrinsic dimensions**, so it
+is zero pixels tall until the bytes arrive. A fixed `height` (the `object-fit: cover` was
+already there) took it to **0.000**.
+
+### EQ3. The nginx blog routes — shipped on 2026-10-29, dormant until today
+
+`c4b04a13` added server-rendered blog pages and they did nothing, because the live nginx had
+no route to them: the test site still served the empty `#blog-post-root` shell. That is **B2
+in the audit, the single biggest technical item in it**, sitting inactive for a day.
+
+Applied by `.github/workflows/apply-nginx-blog-routes.yml` — manual trigger, backup,
+`nginx -t` gate, restore-on-failure, idempotent. **A workflow rather than the hPanel root
+console**, because a console session leaves no record, cannot be reviewed before it runs and
+cannot be repeated. Both files it uses are in the repo:
+`vps-deployment/nginx/blog-locations.conf` and `vps-deployment/scripts/apply-blog-locations.sh`.
+
+> **The `deploy` SSH user can READ `/etc/nginx/sites-available/astrowani-shop` even though it
+> cannot write it.** That is what made this safe: the live file was pulled down, diffed
+> against the repo mirror, and the splice dry-run against a copy of it BEFORE anything ran on
+> the server — braces 14/14, all 8 Certbot lines intact, the `/test-site/` 404 fix untouched,
+> 4,098 → 5,781 bytes. Do that before any future nginx change; it costs one SSH call.
+
+Verified from outside: article 200/19,068 B with its own `<h1>`, an article-specific
+canonical, `og:title`, `og:url` and Article JSON-LD **in the initial HTML**; archive
+200/52,384 B; the Hindi article serving its Hindi title; an unknown slug a real **404**.
+Previously: the generic "Blog — Astrowani" title, a canonical pointing at the bare template,
+and **zero `<h1>`**.
+
+### EQ4. robots.txt was a FILE, not an nginx problem
+
+`shop.astrowani.com/robots.txt` answered 200 `text/plain` with Cloudflare's content-signals
+policy **followed by the shop's entire index.html, ending in a closing html tag** —
+Cloudflare prepends its managed block and proxies the origin, and the origin had no
+robots.txt so the SPA fallback answered.
+
+**No nginx change was needed.** `location /` already ends in `try_files $uri $uri/
+/index.html`, so a real file is served before the fallback — confirmed against the live site
+rather than assumed (`/store.css` sits in the same directory and returns 200 `text/css`). So
+it lives at **`astrowani-shop/robots.txt`**, which `deploy-shop.yml` copies into the webroot:
+version-controlled, reinstated by every deploy, no root needed.
+
+> **The two robots.txt files must express the same policy from different roots**, and
+> `scripts/testBlogAgent.js` now asserts their Disallow sets match. It failed on its first
+> run — the new file blocked `/hi/chat.html`, `/hi/call.html` and `/hi/wallet.html`, none of
+> which exist, because `make-hindi-pages` translates landing pages only.
+
+### EQ5. Measuring Core Web Vitals at all
+
+`.github/workflows/lighthouse.yml` (manual, five URLs, reports kept 14 days) plus
+`.github/scripts/lighthouse-summary.js`.
+
+It runs on a runner because this machine cannot do it: **PageSpeed answers 429 with
+"Quota exceeded for quota metric 'Queries' and limit 'Queries per day'"** — the shared
+anonymous quota, spent, across four attempts over two days — and a local Lighthouse crashed
+Chrome twice (`ERR_INSUFFICIENT_RESOURCES`, then a DevTools timeout). Even working, the
+numbers would describe this ISP, per the 2026-09-25 finding.
+
+> **Run it twice before concluding anything.** Across two post-fix runs consult's LCP read
+> 2268ms then 2608ms, with TTFB 321ms then 641ms. The pages sit ON the 2500ms line and the
+> origin's response time decides which side. **TBT is the lab stand-in for INP and is a
+> different metric**; INP and CrUX need Search Console and cannot be produced here.
+
+### EQ6. Everything else that shipped today
+
+- **srcset and image weight.** `aw/make-image-variants.js` + `aw/apply-srcset.js`, 18
+  variants, density descriptors for the fixed-size images and width descriptors for the one
+  fluid one. The shop cards are CSS backgrounds so srcset cannot reach them — resized in
+  place, 592KB → 187KB — and `zodiac-wheel.png` has REAL transparency (min alpha 0, checked
+  with `stats()` per EC) so it stayed PNG and was palette re-encoded, 156KB → 52KB.
+  Homepage images at 375px: **757KB → 247KB**.
+  > **A file resized IN PLACE keeps its URL, so Cloudflare never refetches it.** Measured
+  > after the deploy: the edge still served 159,772 / 288,023 / 180,637 / 137,827 bytes at
+  > `Age: ~52,000s` while the origin served 52,989 / 82,525 / 70,583 / 37,385. **A purge of
+  > those four URLs is still outstanding**, and the durable fix is versioning image URLs the
+  > way `style.css?v=` already works.
+- **`palmistry.html`**, the seventh service page, EN + HI, backed by the 23 astrologers
+  really in that category. 30 new Hindi strings → **1,203**.
+- **`<main id="content">`** on `index.html` and both article templates. It was never
+  site-wide: 51 of 58 pages already had one.
+- **Editorial credibility.** Two new gate rules — `KEYWORD_STUFFED` (a pasted search phrase;
+  it deliberately does NOT match "talk to an astrologer online in India", an ordinary
+  sentence an earlier pattern rejected) and `VAGUE_SOURCE` ("ancient texts say", while a
+  named text passes). Articles now show **"By Astrowani"** and an Updated date — the
+  ORGANISATION, never an invented reviewer, because nobody reads these before they publish.
+  Two published articles were corrected in production; 8 scanned, 0 violations left.
+- **A stale assertion had been failing unnoticed**: `testBlogAgent`'s "degraded sitemap"
+  check compared one url entry per static page against a sitemap that has emitted a second
+  one per translated page since the Hindi URLs landed — 48 against 24. Now computed.
+
+### Still open after today (and this list IS current)
+
+1. **The Cloudflare purge** of the four resized assets, above. Owner's dashboard.
+2. **The blog agent is OFF** (`app_settings.blog_agent_config`). Timers armed; nothing
+   publishes until the admin switch is flipped.
+3. **`assets/promo-free-11min-woman.webp` still SHOWS 11 minutes** on both homepages, under
+   alt text that correctly says 7. Artwork, not code.
+4. **The Lal Kitab category** in admin, with an icon, then astrologers tagged. `name_hi` is
+   लाल किताब. Production has 10 categories, all with icons, and none is Lal Kitab.
+5. **Search Console** — the owner's browser, and the only route to CrUX and INP.
+6. **LCP**: homepage 3937ms and the blog listing 2998ms against a 2500ms target, with TTFB
+   640–1630ms. That is load time and the Cloudflare-to-origin leg, not layout — it overlaps
+   with the purge and with the Argo/Tunnel question in the 2026-09-25 notes.
+7. **The domain move**, unchanged and still last.
