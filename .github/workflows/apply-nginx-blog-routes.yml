@@ -1,0 +1,56 @@
+# Add the three server-rendered blog locations to the live shop nginx config.
+#
+# MANUAL ONLY, and deliberately not part of any deploy. The shop's nginx file is
+# hand-maintained on the server: Certbot rewrote it in place to add TLS, and
+# deploy-shop.yml installs it on first deploy only. Copying the repo's mirror
+# over the live file would strip the certificate block — and on 2026-10-29 would
+# also have silently undone the /test-site/ 404 fix. So this MERGES three
+# locations in and touches nothing else.
+#
+# WHY A WORKFLOW RATHER THAN THE hPanel ROOT CONSOLE. Editing nginx by hand in a
+# web terminal works, but it leaves no record, cannot be reviewed before it runs
+# and cannot be repeated. This runs the way the deploys do, with the same
+# secrets, from files that are in the repo and reviewable:
+#
+#   vps-deployment/nginx/blog-locations.conf     what gets inserted
+#   vps-deployment/scripts/apply-blog-locations.sh   how, with backup + nginx -t
+#
+# PRECONDITION, AND IT IS A REAL ONE: these locations proxy to
+# /api/blogs/article-page and /api/blogs/archive-page, which exist only in
+# src/blogPublic.js and src/blogArchive.js. Applying them before that backend is
+# deployed turns the blog into a 502. Both were confirmed answering 200 from
+# backend.astrowani.com before this workflow was written.
+#
+# The splice was also dry-run against a copy of the real live file first: braces
+# balanced, all 8 Certbot lines intact, the 404 fix and the /test-site/ block
+# untouched, 4,098 bytes to 5,781.
+
+name: Apply nginx blog routes (manual)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Merge the blog proxy locations into the live config
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$VPS_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/deploy_key"
+
+          scp $SSH_OPTS \
+            vps-deployment/nginx/blog-locations.conf \
+            vps-deployment/scripts/apply-blog-locations.sh \
+            "$VPS_USER@$VPS_HOST:/tmp/"
+
+          ssh $SSH_OPTS "$VPS_USER@$VPS_HOST" \
+            'bash /tmp/apply-blog-locations.sh /tmp/blog-locations.conf'
