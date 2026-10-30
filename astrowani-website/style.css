@@ -1102,7 +1102,13 @@ html[data-lang="hi"] .lang-en { display: none; }
 .blog-back-link { display: inline-flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 700; color: var(--maroon); margin-bottom: 28px; text-decoration: none; }
 .blog-back-link:hover { color: var(--gold-deep); }
 .blog-article-wrap { max-width: 760px; margin: 0 auto; padding: 0 24px; }
-.blog-hero-image { width: 100%; max-height: 440px; object-fit: cover; border-radius: 24px; margin-bottom: 32px; box-shadow: 0 20px 40px -24px var(--shadow-color); }
+/* HEIGHT, NOT max-height. An <img> with no intrinsic dimensions is zero pixels tall
+   until it loads, so the whole article used to jump down when the hero arrived —
+   the remaining CLS 0.188 on an article page after the related-articles block was
+   fixed. A fixed height reserves the box before the bytes arrive, and object-fit
+   below already crops to it, so what renders afterwards is unchanged for the 16:9
+   thumbnails the blog agent produces. */
+.blog-hero-image { width: 100%; height: 440px; object-fit: cover; border-radius: 24px; margin-bottom: 32px; box-shadow: 0 20px 40px -24px var(--shadow-color); }
 .blog-article-title { font-size: 36px; font-weight: 400; color: var(--maroon); line-height: 1.25; margin: 0 0 16px; }
 .blog-article-excerpt { font-size: 16px; line-height: 1.7; color: var(--ink-soft); margin: 0 0 32px; }
 .blog-related-title { font-size: 22px; font-weight: 400; color: var(--maroon); margin: 0 0 24px; text-align: center; }
@@ -1116,7 +1122,7 @@ html[data-lang="hi"] .lang-en { display: none; }
 @media (max-width: 560px) {
   .blog-grid { grid-template-columns: 1fr; }
   .blog-article-title { font-size: 27px; }
-  .blog-hero-image { max-height: 260px; }
+  .blog-hero-image { height: 260px; }
 }
 
 /* Readable service guides and linked blog archives. */
