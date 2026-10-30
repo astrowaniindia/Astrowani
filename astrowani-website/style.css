@@ -1150,3 +1150,16 @@ html[data-lang="hi"] .lang-en { display: none; }
 @media (max-width: 760px) {
   .reveal-slide-right:not(.is-visible), .reveal-slide-left:not(.is-visible) { transform: translateY(24px); }
 }
+
+/* THE RELATED-ARTICLES BLOCK IS FILLED AFTER A SECOND FETCH, so until it lands the
+   container is zero pixels tall and everything below it jumps when it arrives.
+   Measured on a GitHub runner with mobile throttling, 2026-10-30: CLS 0.206 on an
+   article page, against a target of 0.1. Same cause as the astrologer grids, and the
+   same fix -- hold the space.
+
+   Heights are measured from the live page with its three related cards: 613px across
+   at desktop, 1586px stacked on a phone. Reserved slightly over, because aw/blog.js
+   clears this the moment the block resolves, so an over-reservation lasts only as
+   long as the loading it is covering and can never leave a lasting gap. */
+#blog-related-root { min-height: 620px; }
+@media (max-width: 900px) { #blog-related-root { min-height: 1600px; } }

@@ -1,5 +1,5 @@
-import { api } from './api.js?v=56';
-import { track } from './analytics.js?v=56';
+import { api } from './api.js?v=57';
+import { track } from './analytics.js?v=57';
 
 /**
  * The blog section.
@@ -260,10 +260,17 @@ function initBlogPost() {
   if (!root) return;
   if (root.dataset.serverRendered === 'true') {
     const related = document.getElementById('blog-related-root');
+    // style.css reserves this block's height so the page does not jump when the
+    // recommendations land — see #blog-related-root there. Releasing the reserve
+    // once the attempt is over is what stops an over-reservation turning into a
+    // lasting gap: by then either the real cards are taller than it, or there are
+    // none and the space should collapse.
+    const release = () => { try { related.style.minHeight = '0px'; } catch (_) {} };
     if (related) fetchPage(1).then(({ posts }) => {
       const others = posts.filter(p => p.id !== related.dataset.postId).slice(0, 3);
       if (others.length) related.innerHTML = `<h2 class="blog-related-title">${document.documentElement.lang === 'hi' ? 'और लेख' : 'More from the Astrowani blog'}</h2><div class="blog-grid">${others.map(relatedTemplate).join('')}</div>`;
-    }).catch(() => {}); // Recommendations must never hide a successfully loaded article.
+      release();
+    }).catch(release); // Recommendations must never hide a successfully loaded article.
     return;
   }
 
