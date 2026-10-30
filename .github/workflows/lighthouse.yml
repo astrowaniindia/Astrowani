@@ -1,0 +1,89 @@
+# Measure Core Web Vitals on a clean machine.
+#
+# WHY A RUNNER AND NOT A LAPTOP. Two things made this unmeasurable locally. The
+# PageSpeed Insights API answers 429 from here — "Quota exceeded for quota
+# metric 'Queries' and limit 'Queries per day'", i.e. the shared anonymous quota,
+# not a transient blip. And a local Lighthouse run crashed Chrome twice
+# (ERR_INSUFFICIENT_RESOURCES, then a DevTools protocol timeout). On top of that,
+# this project already learned in the 2026-09-25 slowness investigation that the
+# developer connection drops SYN packets — any timing measured from it describes
+# the ISP, not the site.
+#
+# A runner has none of those problems and gives numbers that are comparable
+# between runs, which is the point: this is for "did that change help", not for
+# a score to frame.
+#
+# WHAT IT CANNOT TELL YOU. Lighthouse is a lab test with simulated throttling.
+# Google ranks on CrUX — field data from real visits — and INP cannot be
+# measured at all without real interactions. Both need Search Console. TBT below
+# is the lab stand-in for INP and is not the same metric.
+#
+# Manual only. It makes no changes to anything; it loads public pages.
+
+name: Lighthouse (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      urls:
+        description: Space-separated URLs. Defaults to the five page types the audit asked for.
+        required: false
+        default: >-
+          https://shop.astrowani.com/test-site/
+          https://shop.astrowani.com/test-site/consult.html
+          https://shop.astrowani.com/test-site/astrologers.html
+          https://shop.astrowani.com/test-site/blog.html
+          https://shop.astrowani.com/test-site/blog-post.html?slug=understanding-kaal-sarp-dosh-meaning-and-practical-guidance
+      form_factor:
+        description: mobile or desktop
+        required: false
+        default: mobile
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run Lighthouse
+        env:
+          URLS: ${{ inputs.urls }}
+          FORM_FACTOR: ${{ inputs.form_factor }}
+        run: |
+          mkdir -p lh
+          i=0
+          for url in $URLS; do
+            i=$((i+1))
+            echo "::group::$url"
+            # --no-sandbox is required for Chrome on a runner. Two runs would be
+            # better statistics, but one is enough to see a regression and keeps
+            # this quick; add --runs if that ever stops being true.
+            npx --yes lighthouse@12.2.1 "$url" \
+              --only-categories=performance \
+              --form-factor="$FORM_FACTOR" \
+              $( [ "$FORM_FACTOR" = "mobile" ] && echo --screenEmulation.mobile || echo --screenEmulation.disabled ) \
+              --output=json --output-path="lh/report-$i.json" \
+              --chrome-flags="--headless=new --no-sandbox --disable-dev-shm-usage" \
+              --quiet || echo "  (that URL failed; continuing)"
+            echo "::endgroup::"
+          done
+
+      - name: Summarise
+        run: |
+          node .github/scripts/lighthouse-summary.js lh/report-*.json | tee summary.txt
+          {
+            echo '```'
+            cat summary.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lighthouse-reports
+          path: lh/
+          retention-days: 14
