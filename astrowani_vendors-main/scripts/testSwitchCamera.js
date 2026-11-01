@@ -4,6 +4,10 @@
  *
  *   node scripts/testSwitchCamera.js      (no network, no database, no device)
  *
+ * Covers BOTH apps: the helper is duplicated per app, as every other cross-app util here
+ * is, and this run checks the two copies have not drifted and that all three screens that
+ * flip a camera go through it.
+ *
  * WHY (2026-11-01, Sentry ASTROWANI-VENDOR-G: "java.lang.Exception: Error switching
  * camera: switchCamera: camera is not running.", production, build 6.6+36).
  *
@@ -25,6 +29,14 @@ const path = require('path');
 const babel = require('@babel/core');
 
 const SRC = path.resolve(__dirname, '../src/utils/switchCamera.ts');
+const CUSTOMER_SRC = path.resolve(__dirname, '../../astrowani_customer-main/src/utils/switchCamera.ts');
+
+/* Every screen that flips a camera, in both apps. */
+const CALL_SITES = [
+  [path.resolve(__dirname, '../src/utils/EnxScreenVideo.tsx'), 'the astrologer video consultation screen'],
+  [path.resolve(__dirname, '../src/screens/GoLive/GoLiveScreen.tsx'), 'the astrologer live-stream screen'],
+  [path.resolve(__dirname, '../../astrowani_customer-main/src/screens/Video/VideoCallScreen.tsx'), 'the customer video consultation screen'],
+];
 
 /* Load the REAL module (TypeScript, no React Native deps of its own). */
 function loadSwitchCamera() {
@@ -146,15 +158,21 @@ process.on('unhandledRejection', (r) => { unhandled = r; });
   await new Promise((r) => setTimeout(r, 60));
   ok(unhandled === null, 'the rejected flip did NOT surface as an unhandled rejection');
 
-  console.log('\n5. Both call sites go through the helper, not the deprecated API');
-  for (const [rel, label] of [
-    ['src/utils/EnxScreenVideo.tsx', 'the video consultation screen'],
-    ['src/screens/GoLive/GoLiveScreen.tsx', 'the live-stream screen'],
-  ]) {
-    const src = fs.readFileSync(path.resolve(__dirname, '..', rel), 'utf8');
-    ok(/from '(\.\.\/)*(\.\.\/utils\/|\.\/)switchCamera'/.test(src), label + ' imports the helper');
+  console.log('\n5. Every call site goes through the helper, not the deprecated API');
+  // Asserting on the DELIVERY PATH, not just the helper: a screen that still calls
+  // `_switchCamera()` keeps the unhandled rejection no matter how good the helper is.
+  for (const [abs, label] of CALL_SITES) {
+    const src = fs.readFileSync(abs, 'utf8');
+    ok(/from '[./]*(?:utils\/)?switchCamera'/.test(src), label + ' imports the helper');
     ok(!src.includes('_switchCamera('), label + ' no longer calls _switchCamera() directly');
   }
+
+  console.log('\n6. The two apps\' copies of the helper have not drifted apart');
+  // Both apps carry their own copy, as every other cross-app util here does. Drift is
+  // silent -- one app would keep flipping a camera that is not running, with nothing
+  // erroring -- so it is checked rather than trusted (CLAUDE.md subsystem DY).
+  ok(fs.readFileSync(SRC, 'utf8') === fs.readFileSync(CUSTOMER_SRC, 'utf8'),
+    'astrologer and customer copies are byte-identical');
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);
