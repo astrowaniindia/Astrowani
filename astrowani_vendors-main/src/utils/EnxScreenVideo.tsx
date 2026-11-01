@@ -42,6 +42,7 @@ import SessionIntroBanner from '../components/SessionIntroBanner';
 import {createPreConnectWatchdog} from './preConnectWatchdog';
 import useSessionAppState, {reportSessionAppState} from './sessionAppState';
 import {getIceServers} from './iceServers';
+import {switchCamera} from './switchCamera';
 
 interface Props {
   route: any;
@@ -259,7 +260,7 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
     if (localStreamRef.current) {
       const videoTracks = localStreamRef.current.getVideoTracks();
       if (videoTracks.length > 0) {
-        try { (videoTracks[0] as any)._switchCamera(); } catch (e) { console.log('[Vendor/Video] switchCamera error:', e); }
+        switchCamera(videoTracks[0], '[Vendor/Video]');
       }
     }
   }, []);
@@ -685,9 +686,11 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
           <MaterialIcons name="call-end" size={34} color="#fff" />
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.ctrlBtn} onPress={flipCamera} activeOpacity={0.75}>
-          <MaterialIcons name="flip-camera-android" size={26} color="#fff" />
-          <Text style={styles.ctrlLabel}>{t('call.flip')}</Text>
+        {/* Disabled while the camera is off: disabling a video track stops the capturer,
+            so there is no running camera to flip. */}
+        <TouchableOpacity style={[styles.ctrlBtn, videoMuted && styles.ctrlBtnDim]} onPress={flipCamera} activeOpacity={0.75} disabled={videoMuted}>
+          <MaterialIcons name="flip-camera-android" size={26} color={videoMuted ? 'rgba(255,255,255,0.35)' : '#fff'} />
+          <Text style={[styles.ctrlLabel, videoMuted && styles.ctrlLabelDim]}>{t('call.flip')}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={[styles.ctrlBtn, speakerOn && styles.ctrlBtnGold]} onPress={handleSpeakerToggle} activeOpacity={0.75}>
@@ -840,9 +843,11 @@ const styles = StyleSheet.create({
   },
   ctrlBtnRed: {backgroundColor: 'rgba(255,59,48,0.2)'},
   ctrlBtnGold: {backgroundColor: 'rgba(255,215,0,0.12)'},
+  ctrlBtnDim: {backgroundColor: 'rgba(255,255,255,0.05)'},
   ctrlLabel: {fontSize: 10, color: 'rgba(255,255,255,0.8)', fontWeight: '500'},
   ctrlLabelRed: {color: '#FF3B30'},
   ctrlLabelGold: {color: COLORS.AstroGold},
+  ctrlLabelDim: {color: 'rgba(255,255,255,0.35)'},
   endBtn: {
     width: 72,
     height: 72,
