@@ -31,6 +31,7 @@ import ReportCustomerSheet from '../../components/ReportCustomerSheet';
 import { showStatusPopup } from '../../components/StatusPopup';
 import {showOngoingSession, hideOngoingSession} from '../../utils/ongoingSession';
 import {getIceServers} from '../../utils/iceServers';
+import {switchCamera} from '../../utils/switchCamera';
 
 // The relay list comes from the backend (utils/iceServers.js) so a TURN server
 // can be repaired, rotated or added without a store release; it falls back to a
@@ -302,7 +303,7 @@ const GoLiveScreen = ({route, navigation}: any) => {
   };
   const flipCamera = () => {
     const vt = localStreamRef.current?.getVideoTracks?.();
-    if (vt && vt.length) { try { (vt[0] as any)._switchCamera(); } catch (_) {} }
+    if (vt && vt.length) { switchCamera(vt[0], '[Vendor/Live]'); }
   };
 
   return (
