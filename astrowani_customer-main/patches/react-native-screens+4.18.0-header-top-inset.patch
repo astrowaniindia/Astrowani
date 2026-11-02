@@ -1,0 +1,76 @@
+--- a/node_modules/react-native-screens/android/src/main/java/com/swmansion/rnscreens/CustomToolbar.kt	2026-11-03 00:00:00.000000000 +0530
++++ b/node_modules/react-native-screens/android/src/main/java/com/swmansion/rnscreens/CustomToolbar.kt	2026-11-03 00:00:01.000000000 +0530
+@@ -2,6 +2,7 @@ package com.swmansion.rnscreens
+ 
+ import android.annotation.SuppressLint
+ import android.content.Context
++import android.graphics.Rect
+ import android.os.Build
+ import android.view.Choreographer
+ import android.view.WindowInsets
+@@ -30,9 +31,39 @@ open class CustomToolbar(
+     // value of isTopInsetEnabled. Now, the values of shouldAvoidDisplayCutout, shouldApplyTopInse
+     // are hard-coded to true (which was the value used previously for isTopInsetEnabled when
+     // edge-to-edge was enabled: https://github.com/software-mansion/react-native-screens/pull/2464/files#diff-bd1164595b04f44490738b8183f84a625c0e7552a4ae70bfefcdf3bca4d37fc7R34).
+-    private val shouldAvoidDisplayCutout = true
++    private val shouldAvoidDisplayCutout: Boolean
++        get() = isWindowEdgeToEdge
++
++    // PATCHED (Astrowani). Upstream hard-codes both of these to true because it assumes
++    // the app draws edge-to-edge, which Android only enforces from SDK 35. Below that the
++    // window already starts BELOW the status bar and the cutout, so padding the toolbar by
++    // them again counts them TWICE and leaves an empty band above the title.
++    //
++    // Measured on the same APK, Android 12 vs Android 14:
++    //   status bar inset 145, display cutout 136, toolbar padding max(136, 145) = 145
++    //   -> header 299px instead of the correct 56dp (154px). Android 14 reports both as 0,
++    //   which is why it looked fine there and only Android 12 showed the band.
++    //
++    // It cannot be fixed by prop: 4.x removed isTopInsetEnabled and the Android view
++    // manager logs "not available" for it.
++    //
++    // So ask the window instead of assuming. The visible display frame starts at y=0 only
++    // when we really are drawing behind the system bars, which is exactly when these
++    // insets need adding. Edge-to-edge (Android 15+, or any future opt-in) behaves exactly
++    // as upstream; a legacy inset window no longer double-counts.
++    //
++    // An unattached view reports an empty frame (top == 0), so it keeps upstream's
++    // behaviour while layout is still settling -- the safe direction, since the cost is a
++    // transient extra inset rather than content hidden under the status bar.
++    private val isWindowEdgeToEdge: Boolean
++        get() {
++            val frame = Rect()
++            getWindowVisibleDisplayFrame(frame)
++            return frame.top == 0
++        }
+ 
+-    private val shouldApplyTopInset = true
++    private val shouldApplyTopInset: Boolean
++        get() = isWindowEdgeToEdge
+ 
+     private var lastInsets = InsetsCompat.NONE
+ 
+@@ -122,12 +153,21 @@ open class CustomToolbar(
+         // We want to handle display cutout always, no matter the HeaderConfig prop values.
+         // If there are no cutout displays, we want to apply the additional padding to
+         // respect the status bar.
++        //
++        // PATCHED (Astrowani): the cutout is gated the same way as the status bar. A
++        // window that is not edge-to-edge already starts below BOTH, so adding either
++        // here counts it twice. This is the half that actually produced the visible band
++        // on Android 12, where the emulator/device reports a 136px cutout as well as a
++        // 145px status bar.
+         val verticalInsets =
+             InsetsCompat.of(
+                 0,
+-                max(cutoutInsets.top, if (shouldApplyTopInset) statusBarInsetsStable.top else 0),
++                max(
++                    if (shouldAvoidDisplayCutout) cutoutInsets.top else 0,
++                    if (shouldApplyTopInset) statusBarInsetsStable.top else 0,
++                ),
+                 0,
+-                max(cutoutInsets.bottom, 0),
++                max(if (shouldAvoidDisplayCutout) cutoutInsets.bottom else 0, 0),
+             )
+ 
+         val newInsets = InsetsCompat.add(horizontalInsets, verticalInsets)
