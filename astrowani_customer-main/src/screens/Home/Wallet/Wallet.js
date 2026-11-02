@@ -13,6 +13,7 @@ import {
   TouchableWithoutFeedback,
   InputAccessoryView,
   Image,
+  ScrollView,
 } from 'react-native';
 import RazorpayCheckout from 'react-native-razorpay';
 import SwipeToConfirm from '../../../components/SwipeToConfirm';
@@ -149,6 +150,7 @@ const Wallet = ({navigation, route}) => {
   // and the server would ignore it if it were. bonusFor() below mirrors the server's
   // resolveBonus() so the screen cannot promise a figure the backend would not credit.
   const [offer, setOffer] = useState(null);
+  const [nowTs, setNowTs] = useState(() => Date.now());
   React.useEffect(() => {
     let dead = false;
     axios
@@ -158,10 +160,30 @@ const Wallet = ({navigation, route}) => {
     return () => { dead = true; };
   }, []);
 
+  // A seasonal offer can expire while this screen is sitting open. The SERVER is the
+  // authority — it serves an expired offer as no offer at all, so nothing fetched here is
+  // ever already dead — and this tick only stops a card that went stale after it arrived.
+  // It is deliberately not the primary check: the device clock can be wrong, and trusting
+  // it either way would mean advertising a bonus the credit path would refuse to pay.
+  React.useEffect(() => {
+    if (!offer?.endsAt) return undefined;
+    const id = setInterval(() => setNowTs(Date.now()), 30000);
+    return () => clearInterval(id);
+  }, [offer?.endsAt]);
+
+  const activeOffer = React.useMemo(() => {
+    if (!offer?.enabled || !(offer.slabs || []).length) return null;
+    if (offer.endsAt) {
+      const ends = Date.parse(offer.endsAt);
+      if (Number.isFinite(ends) && ends <= nowTs) return null;
+    }
+    return offer;
+  }, [offer, nowTs]);
+
   const bonusFor = useCallback((value) => {
     const amt = Number(value);
-    if (!offer?.enabled || !Number.isFinite(amt) || amt <= 0) return 0;
-    const slab = (offer.slabs || [])
+    if (!activeOffer?.enabled || !Number.isFinite(amt) || amt <= 0) return 0;
+    const slab = (activeOffer.slabs || [])
       .slice()
       .sort((a, b) => b.minAmount - a.minAmount)
       .find((s) => amt >= s.minAmount);
@@ -170,9 +192,36 @@ const Wallet = ({navigation, route}) => {
     if (slab.maxBonus > 0) b = Math.min(b, slab.maxBonus);
     b = Math.min(b, amt);
     return Math.round(b * 100) / 100;
-  }, [offer]);
+  }, [activeOffer]);
 
   const currentBonus = bonusFor(amount);
+
+  // Flat slabs read as packs ("₹100 for ₹75"); a percentage slab has no single pair to
+  // show, so it keeps the descriptive "add ₹X or more" line it always had.
+  const offerPacks = React.useMemo(
+    () => (activeOffer?.slabs || []).filter((s) => s.type === 'flat' && s.example > 0),
+    [activeOffer],
+  );
+  const offerLines = React.useMemo(
+    () => (activeOffer?.slabs || []).filter((s) => s.type !== 'flat'),
+    [activeOffer],
+  );
+
+  // "Ends in 6 days" / "Ends today". Coarse on purpose: a to-the-second countdown on a
+  // payment screen is pressure, and this is a festival offer, not a flash sale.
+  const endsInLabel = React.useMemo(() => {
+    if (!activeOffer?.endsAt) return null;
+    const ends = Date.parse(activeOffer.endsAt);
+    if (!Number.isFinite(ends)) return null;
+    const hours = Math.floor((ends - nowTs) / 3600000);
+    if (hours <= 0) return t('wallet.offerEndsToday');
+    if (hours < 24) return t('wallet.offerEndsHours', { count: hours });
+    const days = Math.floor(hours / 24);
+    // t() has no pluralisation, so "1 day" gets its own key rather than reading "1 days".
+    return days === 1
+      ? t('wallet.offerEndsTomorrow')
+      : t('wallet.offerEndsDays', { count: days });
+  }, [activeOffer, nowTs, t]);
 
   const amountReportedRef = useRef(false);
   const reportAmountSelected = useCallback((value, via) => {
@@ -367,6 +416,18 @@ const Wallet = ({navigation, route}) => {
           for the buttons inside it. */}
       <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
       <View style={styles.dismissArea}>
+      {/* Everything above the pay bar scrolls; the pay bar itself does not. The screen
+          used to be a fixed column with a flex spacer, so once the offer card appeared
+          the bill rows and Proceed to Pay were simply pushed off the bottom of the
+          phone with no way to reach them. keyboardShouldPersistTaps lets a preset or a
+          pack be tapped while the number pad is still open, instead of the first tap
+          only dismissing the keyboard. */}
+      <ScrollView
+        style={styles.scrollArea}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
       <View style={styles.headerCard}>
         <View style={styles.walletIconContainer}>
           <MaterialIcons name="account-balance-wallet" size={40} color={COLORS.AstroGold} />
@@ -441,6 +502,73 @@ const Wallet = ({navigation, route}) => {
         <EdgeFade />
       </View>
 
+      {/* Above the preset chips, not below them: during a festival offer the packs ARE
+          the recommended amounts, and a card underneath the chips was being scrolled
+          past. The chips stay for anyone topping up an amount the offer does not cover. */}
+      {activeOffer && (
+        <View style={styles.offerCard}>
+          <View style={styles.offerHeader}>
+            <MaterialIcons name="redeem" size={moderateScale(16)} color={COLORS.AstroMaroon} />
+            <Text style={styles.offerTitle} numberOfLines={1}>
+              {activeOffer.title || t('wallet.offerTitle')}
+            </Text>
+            {!!endsInLabel && (
+              <View style={styles.offerEndsPill}>
+                <Text style={styles.offerEndsText}>{endsInLabel}</Text>
+              </View>
+            )}
+          </View>
+
+          {offerPacks.length > 0 && (
+            <>
+              {/* One pack per line. Each row says Pay -> Get in words: two bare numbers
+                  in a box do not tell you which one leaves your pocket and which one
+                  lands in the wallet, and that is the entire offer. */}
+              <View style={styles.packList}>
+                {offerPacks.map((s) => {
+                  const selected = Number(amount) === s.minAmount;
+                  return (
+                    <TouchableOpacity
+                      key={s.minAmount}
+                      style={[styles.packRow, selected && styles.packRowSelected]}
+                      activeOpacity={0.85}
+                      onPress={() => {
+                        setAmount(String(s.minAmount));
+                        reportAmountSelected(s.minAmount, 'offer_pack');
+                      }}
+                    >
+                      <Text style={styles.packPay}>
+                        {t('wallet.offerPay', { amount: s.minAmount })}
+                      </Text>
+                      <MaterialIcons
+                        name="arrow-forward"
+                        size={moderateScale(14)}
+                        color="#C9A227"
+                      />
+                      <Text style={styles.packGet}>
+                        {t('wallet.offerGet', { amount: s.total })}
+                      </Text>
+                      <View style={styles.packBonusPill}>
+                        <Text style={styles.packBonusText}>+₹{s.example}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              {/* Says out loud that the tiers are thresholds. Without it, someone topping
+                  up ₹90 and seeing ₹115 land has to guess whether they were short-changed. */}
+              <Text style={styles.offerFootnote}>{t('wallet.offerFootnote')}</Text>
+            </>
+          )}
+
+          {offerLines.map((s) => (
+            <Text key={s.minAmount} style={styles.offerLine}>
+              {t('wallet.offerSlab', { min: s.minAmount, bonus: s.example })}
+            </Text>
+          ))}
+        </View>
+      )}
+
       <View style={styles.presetSection}>
         <Text style={styles.presetLabel}>{t('wallet.recommendedAmounts')}</Text>
         <View>
@@ -456,21 +584,7 @@ const Wallet = ({navigation, route}) => {
         </View>
       </View>
 
-      {offer?.enabled && (offer.slabs || []).length > 0 && (
-        <View style={styles.offerCard}>
-          <View style={styles.offerHeader}>
-            <MaterialIcons name="redeem" size={moderateScale(16)} color={COLORS.AstroMaroon} />
-            <Text style={styles.offerTitle}>{t('wallet.offerTitle')}</Text>
-          </View>
-          {offer.slabs.map((s) => (
-            <Text key={s.minAmount} style={styles.offerLine}>
-              {t('wallet.offerSlab', { min: s.minAmount, bonus: s.example })}
-            </Text>
-          ))}
-        </View>
-      )}
-
-      <View style={{ flex: 1 }} />
+      </ScrollView>
 
       <View style={styles.bottomSection}>
         {currentBonus > 0 && (
@@ -530,6 +644,15 @@ const styles = StyleSheet.create({
   // Fills the screen so a tap on empty space still reaches the dismiss handler.
   dismissArea: {
     flex: 1,
+  },
+  scrollArea: {
+    flex: 1,
+  },
+  scrollContent: {
+    // flexGrow, not flex: on a tall phone this lets the content keep its natural spacing
+    // and fill the screen; on a short one it is free to grow past it and scroll.
+    flexGrow: 1,
+    paddingBottom: verticalScale(12),
   },
   accessoryBar: {
     backgroundColor: '#F1F1F4',
@@ -757,23 +880,90 @@ const styles = StyleSheet.create({
   },
   offerCard: {
     marginHorizontal: scale(16),
-    marginTop: verticalScale(4),
-    padding: moderateScale(12),
-    borderRadius: moderateScale(10),
+    marginTop: verticalScale(14),
+    padding: moderateScale(10),
+    borderRadius: moderateScale(12),
     backgroundColor: '#FFF6E5',
     borderWidth: 1,
-    borderColor: '#F0D9A8',
+    borderColor: '#EFC97E',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 3,
   },
   offerHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: scale(6),
-    marginBottom: verticalScale(4),
+    marginBottom: verticalScale(8),
   },
   offerTitle: {
-    fontSize: moderateScale(13),
+    fontSize: moderateScale(13.5),
     color: COLORS.AstroMaroon,
     fontFamily: 'Lato-Bold',
+    flexShrink: 1,
+  },
+  // Pushed to the right edge of the header row by its own auto margin, so the title can
+  // take whatever width it needs without the pill moving.
+  offerEndsPill: {
+    marginLeft: 'auto',
+    backgroundColor: COLORS.AstroMaroon,
+    paddingHorizontal: scale(8),
+    paddingVertical: verticalScale(2),
+    borderRadius: moderateScale(10),
+  },
+  offerEndsText: {
+    fontSize: moderateScale(10),
+    color: COLORS.white,
+    fontFamily: 'Lato-Bold',
+  },
+  packList: {
+    gap: verticalScale(6),
+  },
+  packRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: scale(8),
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: '#EFC97E',
+    borderRadius: moderateScale(10),
+    paddingVertical: verticalScale(9),
+    paddingHorizontal: scale(12),
+  },
+  packRowSelected: {
+    borderColor: COLORS.AstroMaroon,
+    borderWidth: 2,
+    backgroundColor: '#FFF0DC',
+  },
+  packBonusPill: {
+    marginLeft: 'auto',
+    backgroundColor: '#E7F6EC',
+    paddingHorizontal: scale(7),
+    paddingVertical: verticalScale(2),
+    borderRadius: moderateScale(8),
+  },
+  packBonusText: {
+    fontSize: moderateScale(10),
+    color: '#1E7A3C',
+    fontFamily: 'Lato-Bold',
+  },
+  packGet: {
+    fontSize: moderateScale(14.5),
+    color: COLORS.AstroMaroon,
+    fontFamily: 'Lato-Bold',
+  },
+  packPay: {
+    fontSize: moderateScale(12.5),
+    color: '#7a6450',
+    fontFamily: 'Lato-Regular',
+  },
+  offerFootnote: {
+    fontSize: moderateScale(10),
+    color: '#8a6a3a',
+    fontFamily: 'Lato-Regular',
+    marginTop: verticalScale(6),
   },
   offerLine: {
     fontSize: moderateScale(12),

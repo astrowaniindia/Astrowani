@@ -17,9 +17,29 @@ const num = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
+// <input type="datetime-local"> speaks "YYYY-MM-DDTHH:mm" in the BROWSER's timezone,
+// while the config stores UTC. Both conversions go through the browser's own clock, so
+// an admin sitting in IST types IST and gets the right instant — which is why the field
+// is labelled with the timezone rather than left to be guessed at.
+const toLocalInput = (iso) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+    + `T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
+const localZone = () => {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'your local time'; }
+  catch { return 'your local time'; }
+};
+
 export default function RechargeOffers() {
   const [enabled, setEnabled] = useState(false);
   const [slabs, setSlabs] = useState([]);
+  const [title, setTitle] = useState('');
+  const [endsAt, setEndsAt] = useState('');
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -30,6 +50,8 @@ export default function RechargeOffers() {
       const raw = data.settings?.[SETTINGS_KEY];
       const parsed = raw ? JSON.parse(raw) : {};
       setEnabled(parsed.enabled === true || parsed.enabled === 'true');
+      setTitle(typeof parsed.title === 'string' ? parsed.title : '');
+      setEndsAt(toLocalInput(parsed.endsAt));
       setSlabs(
         (Array.isArray(parsed.slabs) ? parsed.slabs : [])
           .slice()
@@ -64,6 +86,12 @@ export default function RechargeOffers() {
     [slabs],
   );
 
+  const expired = useMemo(() => {
+    if (!endsAt) return false;
+    const d = new Date(endsAt);
+    return !Number.isNaN(d.getTime()) && d.getTime() <= Date.now();
+  }, [endsAt]);
+
   // Mirrors resolveBonus() on the server so the preview cannot promise something the
   // backend would not actually credit.
   const previewBonus = (amount) => {
@@ -88,12 +116,36 @@ export default function RechargeOffers() {
       alert('Two slabs start at the same amount. Give each one a different "recharge at least".');
       return;
     }
+    let endsAtIso;
+    if (endsAt) {
+      const d = new Date(endsAt);
+      if (Number.isNaN(d.getTime())) {
+        alert('The end date is not a valid date and time.');
+        return;
+      }
+      endsAtIso = d.toISOString();
+      // The server treats a past end date as expired, so saving one switches the offer
+      // off in practice. Say so rather than letting it look saved-and-live.
+      if (enabled && d.getTime() <= Date.now()
+        && !window.confirm('That end date is already in the past, so no bonus will be paid. Save anyway?')) {
+        return;
+      }
+    } else if (enabled && !window.confirm(
+      'No end date set — this offer will keep paying out until somebody switches it off. Save anyway?')) {
+      return;
+    }
+
     setSaving(true);
     setSaved(false);
     try {
       await client.patch('/api/admin/settings', {
         key: SETTINGS_KEY,
-        value: JSON.stringify({ enabled, slabs: cleanSlabs }),
+        value: JSON.stringify({
+          enabled,
+          slabs: cleanSlabs,
+          ...(title.trim() ? { title: title.trim() } : {}),
+          ...(endsAtIso ? { endsAt: endsAtIso } : {}),
+        }),
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 4000);
@@ -126,10 +178,51 @@ export default function RechargeOffers() {
           <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
           Offer is live
         </label>
-        <p className="muted" style={{ margin: '0 0 8px 26px', fontSize: 12 }}>
+        <p className="muted" style={{ margin: '0 0 16px 26px', fontSize: 12 }}>
           Switch this off to stop all recharge bonuses at once. Recharges already paid are
           unaffected — what a payment was worth is decided when it is made.
         </p>
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20 }}>
+          <div>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
+              Headline on the wallet card (optional)
+            </label>
+            <input
+              type="text" value={title} maxLength={40} style={{ width: 260 }}
+              placeholder="e.g. Diwali Dhamaka"
+              onChange={(e) => setTitle(e.target.value)}
+            />
+            <p className="muted" style={{ margin: '4px 0 0', fontSize: 12 }}>
+              Shown above the offer in the app. Leave blank for the default “Recharge bonus”.
+            </p>
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
+              Offer ends ({localZone()})
+            </label>
+            <input
+              type="datetime-local" value={endsAt} style={{ width: 240 }}
+              onChange={(e) => setEndsAt(e.target.value)}
+            />
+            <p className="muted" style={{ margin: '4px 0 0', fontSize: 12 }}>
+              Bonuses stop at this moment and the card disappears from the wallet on its own.
+              Leave blank only if you intend to switch the offer off by hand.
+            </p>
+          </div>
+        </div>
+
+        {expired && (
+          <p style={{ margin: '14px 0 0', fontSize: 13, fontWeight: 700, color: '#B00020' }}>
+            This end date has passed — no bonus is being paid, whatever the switch above says.
+          </p>
+        )}
+        {enabled && !expired && !endsAt && (
+          <p style={{ margin: '14px 0 0', fontSize: 13, fontWeight: 700, color: '#8a6d00' }}>
+            No end date: this offer runs until somebody switches it off.
+          </p>
+        )}
       </div>
 
       <div className="card" style={{ marginBottom: 24 }}>

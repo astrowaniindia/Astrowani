@@ -17,6 +17,11 @@
 // The resolved figure is then written to wallet_recharges.bonus_amount and never
 // recomputed. An offer changed or switched off between two attempts at the same payment
 // cannot change what that payment was worth.
+//
+// SEASONAL OFFERS: `endsAt` stops the payout at a moment in time without anybody having
+// to remember to switch it off, which is what a festival offer actually needs. Expiry is
+// evaluated per decision rather than at load — see isExpired() — and an expired offer is
+// indistinguishable from a switched-off one to the app.
 const { createClient } = require('@supabase/supabase-js');
 
 const db = createClient(
@@ -36,10 +41,34 @@ const MAX_SLABS = 10;
 // A bonus may never exceed the recharge itself. Even a 100%-correct config is capped at
 // "double your money", which is as far as any sane promotion goes.
 const MAX_BONUS_RATIO = 1;
+// Display-only heading for the wallet card ("Diwali Dhamaka"). Capped so a paste accident
+// cannot push the layout apart. It takes no part in any arithmetic and never reaches the
+// ledger — the credit note is still generated from the figure actually credited, so this
+// text can never disagree with the money.
+const MAX_TITLE_LEN = 40;
 
 let cache = { value: null, at: 0 };
 
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+
+/**
+ * When the offer stops paying out.
+ *
+ * ABSENT means "runs until somebody switches it off"; PRESENT BUT UNPARSEABLE means
+ * EXPIRED, not "no expiry". That asymmetry is deliberate and is the whole point of the
+ * field: a seasonal offer is set up once and then forgotten, so the dangerous direction
+ * is an end date that silently evaporates into "forever". A typo costs an offer that
+ * pays nothing — visible within minutes, and fixable — while the other way round pays
+ * real money for as long as nobody notices.
+ *
+ * @returns {{endsAt:string|null, endsAtInvalid:boolean}}
+ */
+function parseEndsAt(raw) {
+  if (raw === undefined || raw === null || raw === '') return { endsAt: null, endsAtInvalid: false };
+  const t = Date.parse(raw);
+  if (!Number.isFinite(t)) return { endsAt: null, endsAtInvalid: true };
+  return { endsAt: new Date(t).toISOString(), endsAtInvalid: false };
+}
 
 /**
  * Coerce whatever is in app_settings into something safe to do arithmetic with.
@@ -75,13 +104,21 @@ function normalise(raw) {
     .sort((a, b) => b.minAmount - a.minAmount)
     .slice(0, MAX_SLABS);
 
+  const title = typeof parsed.title === 'string'
+    // Control characters stripped: this string is rendered in the app, and a stray
+    // newline from a paste would break the card's single-line heading.
+    ? parsed.title.replace(/[\u0000-\u001F\u007F]/g, ' ').trim().slice(0, MAX_TITLE_LEN) || null
+    : null;
+
   return {
     enabled: (parsed.enabled === true || parsed.enabled === 'true') && slabs.length > 0,
     slabs,
+    title,
+    ...parseEndsAt(parsed.endsAt),
   };
 }
 
-const OFF = { enabled: false, slabs: [] };
+const OFF = { enabled: false, slabs: [], title: null, endsAt: null, endsAtInvalid: false };
 
 /**
  * Current offer config.
@@ -117,15 +154,34 @@ function labelFor(slab, bonus) {
 }
 
 /**
+ * Has the offer's end date passed?
+ *
+ * Checked HERE rather than in loadOffer because loadOffer is cached for 30s: an offer
+ * that expires inside that window would otherwise keep paying out until the cache turned
+ * over. Expiry is evaluated against the clock at the moment of each decision instead.
+ *
+ * @param {{endsAt:string|null, endsAtInvalid:boolean}} offer
+ * @param {number} [now] epoch ms
+ */
+function isExpired(offer, now = Date.now()) {
+  if (!offer) return true;
+  if (offer.endsAtInvalid) return true;          // see parseEndsAt
+  if (!offer.endsAt) return false;               // no end date set — runs until switched off
+  return Date.parse(offer.endsAt) <= now;
+}
+
+/**
  * How much extra this recharge earns. Pure — give it the config and it will not touch IO.
  *
  * @param {number} amountRupees what the customer actually paid
- * @param {{enabled:boolean, slabs:Array}} offer
+ * @param {{enabled:boolean, slabs:Array, endsAt:string|null}} offer
+ * @param {number} [now] epoch ms, so expiry is testable without touching the clock
  * @returns {{bonus:number, label:string|null, slab:object|null}}
  */
-function resolveBonus(amountRupees, offer) {
+function resolveBonus(amountRupees, offer, now = Date.now()) {
   const none = { bonus: 0, label: null, slab: null };
   if (!offer || !offer.enabled) return none;
+  if (isExpired(offer, now)) return none;
 
   const amount = Number(amountRupees);
   if (!Number.isFinite(amount) || amount <= 0) return none;
@@ -156,34 +212,52 @@ async function bonusFor(amountRupees) {
  * What to show the customer before they pay. Shape is deliberately display-only: the app
  * never sends any of this back, and the server does not trust it if it does.
  */
-async function publicOffer() {
-  const offer = await loadOffer();
-  if (!offer.enabled) return { enabled: false, slabs: [] };
+function buildPublicOffer(offer, now = Date.now()) {
+  // An expired offer is served exactly like a switched-off one. The app therefore never
+  // has to decide whether to believe its own clock: the only offers it is ever handed are
+  // live ones, and the countdown it draws is decoration over a decision already made here.
+  if (!offer || !offer.enabled || isExpired(offer, now)) return { enabled: false, slabs: [] };
   return {
     enabled: true,
+    title: offer.title,
+    endsAt: offer.endsAt,
     slabs: offer.slabs
       .slice()
       .sort((a, b) => a.minAmount - b.minAmount)
-      .map((s) => ({
-        minAmount: s.minAmount,
-        type: s.type,
-        value: s.value,
-        maxBonus: s.maxBonus || null,
+      .map((s) => {
         // Pre-rendered so the app cannot arrive at a different number than we would.
-        example: resolveBonus(s.minAmount, offer).bonus,
-      })),
+        const example = resolveBonus(s.minAmount, offer, now).bonus;
+        return {
+          minAmount: s.minAmount,
+          type: s.type,
+          value: s.value,
+          maxBonus: s.maxBonus || null,
+          example,
+          // What the customer ends up with for exactly this amount — the "pay ₹75, get
+          // ₹100" line. Computed here for the same reason as `example`.
+          total: round2(s.minAmount + example),
+        };
+      }),
   };
+}
+
+/** The IO shell around buildPublicOffer. */
+async function publicOffer(now = Date.now()) {
+  return buildPublicOffer(await loadOffer(), now);
 }
 
 module.exports = {
   SETTINGS_KEY,
   loadOffer,
   invalidateCache,
+  isExpired,
   resolveBonus,
   bonusFor,
   publicOffer,
+  buildPublicOffer,
   normalise,
   MAX_PERCENT,
   MAX_FLAT_BONUS,
   MAX_SLABS,
+  MAX_TITLE_LEN,
 };
