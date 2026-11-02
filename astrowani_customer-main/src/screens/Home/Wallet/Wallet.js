@@ -711,21 +711,30 @@ const Wallet = ({navigation, route}) => {
       </ScrollView>
 
       <View style={styles.bottomSection}>
-        {currentBonus > 0 && (
-          <View style={styles.billDetails}>
-            <Text style={styles.bonusText}>{t('wallet.bonusLine')}</Text>
-            <Text style={styles.bonusAmount}>+₹{currentBonus}</Text>
-          </View>
-        )}
-        <View style={styles.billDetails}>
+        {/* A RECEIPT, read top to bottom, with the button full width underneath.
+            This block used to be a flex ROW, which only ever fitted ONE label/amount
+            pair beside the button. The two bonus lines were written for a column that
+            did not exist, so the moment a real offer appeared all three pairs and the
+            button fought over a single row: the labels overlapped each other and the
+            button collapsed to "Pa...". It had never been seen because no recharge
+            offer had ever been switched on. */}
+        <View style={styles.billRow}>
           <Text style={styles.billText}>{t('wallet.totalPayable')}</Text>
           <Text style={styles.billAmount}>₹{amount || '0'}</Text>
         </View>
         {currentBonus > 0 && (
-          <View style={styles.billDetails}>
-            <Text style={styles.billText}>{t('wallet.walletCredit')}</Text>
-            <Text style={styles.billAmount}>₹{Number(amount || 0) + currentBonus}</Text>
-          </View>
+          <>
+            <View style={styles.billRow}>
+              <Text style={styles.bonusText}>{t('wallet.bonusLine')}</Text>
+              <Text style={styles.bonusAmount}>+₹{currentBonus}</Text>
+            </View>
+            <View style={[styles.billRow, styles.billRowTotal]}>
+              <Text style={styles.creditLabel}>{t('wallet.walletCredit')}</Text>
+              <Text style={styles.creditAmount}>
+                ₹{Number(amount || 0) + currentBonus}
+              </Text>
+            </View>
+          </>
         )}
         {/* A button, not a slide (owner, 2026-10-24). SwipeToConfirm keeps its name
             and its props but now renders a plain button -- see the file header for why
@@ -999,8 +1008,9 @@ const styles = StyleSheet.create({
   },
   bottomSection: {
     backgroundColor: COLORS.white,
-    padding: scale(20),
-    paddingBottom: Platform.OS === 'ios' ? verticalScale(30) : verticalScale(20),
+    paddingHorizontal: scale(20),
+    paddingTop: verticalScale(14),
+    paddingBottom: Platform.OS === 'ios' ? verticalScale(28) : verticalScale(16),
     borderTopLeftRadius: moderateScale(20),
     borderTopRightRadius: moderateScale(20),
     elevation: 10,
@@ -1008,9 +1018,30 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.1,
     shadowRadius: 5,
+  },
+  billRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    marginBottom: verticalScale(4),
+  },
+  // What actually lands in the wallet is ruled off from what is being paid, the way a
+  // total is on a bill.
+  billRowTotal: {
+    borderTopWidth: 1,
+    borderTopColor: '#ECECEC',
+    paddingTop: verticalScale(7),
+    marginTop: verticalScale(3),
+  },
+  creditLabel: {
+    fontSize: moderateScale(12.5),
+    color: '#1E7A3C',
+    fontFamily: 'Lato-Bold',
+  },
+  creditAmount: {
+    fontSize: moderateScale(19),
+    color: '#1E7A3C',
+    fontFamily: 'Lato-Bold',
   },
   offerCard: {
     marginHorizontal: scale(16),
@@ -1148,28 +1179,18 @@ const styles = StyleSheet.create({
     color: '#1E7A3C',
     fontFamily: 'Lato-Bold',
   },
-  // No flex -- this should hug its own short text content, not compete with the
-  // pill for width. It HAD flex:1 before, which is what let the pill's lack of
-  // its own flex go unnoticed: the pill fell back to hugging the Label's own
-  // padded content width inside SwipeToConfirm (track has no explicit width),
-  // and that happened to look full-width only because the label's original
-  // generous symmetric padding made that hugged width large. Centering the
-  // label's text (asymmetric, smaller total padding) shrank that hugged width
-  // directly -- the real fix is swipeWrap owning flex:1 below, not this.
-  billDetails: {},
   billText: {
     fontSize: moderateScale(12),
     color: '#666',
     fontFamily: 'Lato-Regular',
   },
   billAmount: {
-    fontSize: moderateScale(20),
+    fontSize: moderateScale(19),
     fontFamily: 'Lato-Bold',
     color: COLORS.black,
-    marginTop: verticalScale(2),
   },
-  // flex:1 so the pill reliably fills whatever space is left after the compact
-  // "Total Payable" label, regardless of the label's own text/padding -- see
-  // the comment on billDetails above for why this was the missing piece.
-  swipeWrap: {marginTop: verticalScale(4), flex: 1, marginLeft: scale(16)},
+  // Full width, under the receipt. It used to sit BESIDE the bill and carry flex:1
+  // to claim whatever the label left over -- which is exactly what collapsed it to
+  // "Pa..." once there were three bill lines to share the row with.
+  swipeWrap: { marginTop: verticalScale(12) },
 });
