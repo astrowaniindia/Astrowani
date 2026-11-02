@@ -14,6 +14,8 @@ import {
   InputAccessoryView,
   Image,
   ScrollView,
+  Animated,
+  Easing,
 } from 'react-native';
 import RazorpayCheckout from 'react-native-razorpay';
 import SwipeToConfirm from '../../../components/SwipeToConfirm';
@@ -122,6 +124,117 @@ function EdgeFade() {
   );
 }
 
+// Tapping a Diwali pack should feel like something just landed. Built on RN's own
+// Animated with useNativeDriver, so it is pure JS -- no Lottie, no confetti library, no
+// native dependency, and therefore shippable over OTA like the rest of this screen.
+//
+// WHAT IT SAYS MATTERS AS MUCH AS HOW IT LOOKS: nothing has been paid yet, so it
+// celebrates UNLOCKING the pack and states the exchange ("Pay 75 -> get 100"). Wording
+// like "added to your wallet" would be a lie until Razorpay confirms, and the wallet
+// balance above it would visibly disagree.
+const SPARK_COLORS = ['#F5C542', '#E8743B', '#1E7A3C', '#C9A227', '#B5452A', '#FFFFFF'];
+// Fixed, not random: a stable burst renders identically every tap, and random() here
+// would also re-roll on every parent re-render.
+const SPARKS = Array.from({ length: 16 }, (_, i) => {
+  const angle = (Math.PI * 2 * i) / 16 + (i % 2 ? 0.2 : 0);
+  return {
+    angle,
+    distance: 70 + (i % 4) * 26,
+    size: 6 + (i % 3) * 3,
+    color: SPARK_COLORS[i % SPARK_COLORS.length],
+    spin: i % 2 ? 1 : -1,
+  };
+});
+
+function PackCelebration({ bonus, pay, total, t, onDone }) {
+  const progress = useRef(new Animated.Value(0)).current;
+
+  React.useEffect(() => {
+    const anim = Animated.timing(progress, {
+      toValue: 1,
+      duration: 1500,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    });
+    anim.start(({ finished }) => { if (finished) onDone(); });
+    // Unmounting mid-flight (leaving the screen) must not fire onDone into a dead tree.
+    return () => anim.stop();
+  }, [progress, onDone]);
+
+  const badgeScale = progress.interpolate({
+    inputRange: [0, 0.18, 0.3, 0.85, 1],
+    outputRange: [0.4, 1.12, 1, 1, 0.92],
+  });
+  const badgeOpacity = progress.interpolate({
+    inputRange: [0, 0.1, 0.78, 1],
+    outputRange: [0, 1, 1, 0],
+  });
+
+  return (
+    <View style={styles.celebrationLayer} pointerEvents="none">
+      {SPARKS.map((sp, i) => (
+        <Animated.View
+          // eslint-disable-next-line react/no-array-index-key
+          key={i}
+          style={[
+            styles.spark,
+            {
+              width: sp.size,
+              height: sp.size,
+              borderRadius: sp.size / 2,
+              backgroundColor: sp.color,
+              opacity: progress.interpolate({
+                inputRange: [0, 0.12, 0.6, 1],
+                outputRange: [0, 1, 0.9, 0],
+              }),
+              transform: [
+                {
+                  translateX: progress.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, Math.cos(sp.angle) * sp.distance],
+                  }),
+                },
+                {
+                  translateY: progress.interpolate({
+                    // Rises, then falls back a little -- a burst reads as celebratory,
+                    // a straight radial spray reads as a loading spinner.
+                    inputRange: [0, 0.65, 1],
+                    outputRange: [
+                      0,
+                      Math.sin(sp.angle) * sp.distance,
+                      Math.sin(sp.angle) * sp.distance + 26,
+                    ],
+                  }),
+                },
+                {
+                  rotate: progress.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: ['0deg', `${sp.spin * 220}deg`],
+                  }),
+                },
+              ],
+            },
+          ]}
+        />
+      ))}
+
+      <Animated.View
+        style={[
+          styles.celebrationBadge,
+          { opacity: badgeOpacity, transform: [{ scale: badgeScale }] },
+        ]}
+      >
+        <Text style={styles.celebrationTitle}>
+          {t('wallet.offerUnlocked', { bonus })}
+        </Text>
+        <Text style={styles.celebrationSub}>
+          {t('wallet.offerUnlockedSub', { pay, total })}
+        </Text>
+      </Animated.View>
+    </View>
+  );
+}
+
 // iOS's number-pad has NO return key, so a numeric field there has no way to
 // dismiss its own keyboard — the amount field would trap the user with Proceed
 // hidden behind it. Android has the back button, which is why this only ever
@@ -151,6 +264,9 @@ const Wallet = ({navigation, route}) => {
   // resolveBonus() so the screen cannot promise a figure the backend would not credit.
   const [offer, setOffer] = useState(null);
   const [nowTs, setNowTs] = useState(() => Date.now());
+  // Keyed by tap time so tapping a second pack restarts the burst rather than
+  // being swallowed by the still-running one.
+  const [celebration, setCelebration] = useState(null);
   React.useEffect(() => {
     let dead = false;
     axios
@@ -195,6 +311,8 @@ const Wallet = ({navigation, route}) => {
   }, [activeOffer]);
 
   const currentBonus = bonusFor(amount);
+
+  const clearCelebration = useCallback(() => setCelebration(null), []);
 
   // Flat slabs read as packs ("₹100 for ₹75"); a percentage slab has no single pair to
   // show, so it keeps the descriptive "add ₹X or more" line it always had.
@@ -535,6 +653,12 @@ const Wallet = ({navigation, route}) => {
                       onPress={() => {
                         setAmount(String(s.minAmount));
                         reportAmountSelected(s.minAmount, 'offer_pack');
+                        setCelebration({
+                          key: Date.now(),
+                          bonus: s.example,
+                          pay: s.minAmount,
+                          total: s.total,
+                        });
                       }}
                     >
                       <Text style={styles.packPay}>
@@ -616,6 +740,16 @@ const Wallet = ({navigation, route}) => {
           />
         </View>
       </View>
+      {celebration && (
+        <PackCelebration
+          key={celebration.key}
+          bonus={celebration.bonus}
+          pay={celebration.pay}
+          total={celebration.total}
+          t={t}
+          onDone={clearCelebration}
+        />
+      )}
       </View>
       </TouchableWithoutFeedback>
 
@@ -958,6 +1092,39 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(12.5),
     color: '#7a6450',
     fontFamily: 'Lato-Regular',
+  },
+  celebrationLayer: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  spark: {
+    position: 'absolute',
+  },
+  celebrationBadge: {
+    backgroundColor: COLORS.AstroMaroon,
+    paddingHorizontal: scale(22),
+    paddingVertical: verticalScale(14),
+    borderRadius: moderateScale(16),
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#F5C542',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+  },
+  celebrationTitle: {
+    fontSize: moderateScale(19),
+    color: '#F5C542',
+    fontFamily: 'Lato-Bold',
+  },
+  celebrationSub: {
+    fontSize: moderateScale(12.5),
+    color: COLORS.white,
+    fontFamily: 'Lato-Regular',
+    marginTop: verticalScale(3),
   },
   offerFootnote: {
     fontSize: moderateScale(10),
