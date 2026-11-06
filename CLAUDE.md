@@ -4698,14 +4698,93 @@ FCM, and none of it is exercised on a device. The test worth doing: deny notific
 on an astrologer phone and confirm the red bar appears and the admin's Reach tab lists
 that astrologer by name.
 
+### ER3. The iOS Notification Service Extension (2026-11-07, same day)
+
+iOS will not put a picture on a notification unless an extension inside the app
+fetches it first. The backend has sent `apns.fcm_options.image` + `mutable-content`
+since ER, and iPhones showed text only because `AstrologyApp.xcodeproj` had no
+extension target. It has one now: `ios/NotificationService/` (`.h`, `.m`,
+`Info.plist`), target `NotificationService`, bundle id
+`com.astrowanicustomer.NotificationService`, embedded into the app.
+
+**NOTHING WAS SHIPPED. No OTA, no iOS build, no submit** — the owner's explicit
+instruction, and nothing here is OTA-able anyway: it is native.
+
+**IT HAS NEVER BEEN COMPILED, and that is the headline.** There is no Mac and no
+pbxproj parser on this machine (no `xcode` npm package anywhere in the monorepo),
+so the target was added to the 591-line project file **by hand**. EK records five
+consecutive failed iOS builds, all toolchain rather than app code. Treat the first
+iOS build after this as the thing that actually tests it.
+
+**Things that are load-bearing:**
+
+- **ZERO PODS, and no Podfile or Podfile.lock change.** Firebase's docs say to add
+  `Firebase/Messaging` to the extension and call `populateNotificationContent`.
+  Deliberately not done: this Podfile's linkage setup was "settled empirically over
+  several EAS builds. Read before changing it", with the whole Firebase/Google
+  subtree forced to static frameworks by a `pre_install` hook after both of
+  CocoaPods' blanket fixes broke the build elsewhere. A second pod target pulling
+  Firebase through that machinery is exactly what it warns against. The extension
+  reads the image URL from the payload and downloads it with Foundation instead.
+  The only thing given up is FCM's own delivery analytics from the extension, which
+  this project does not use — `notification_sends` already records
+  delivered/opened/clicked per person, which is strictly more.
+- **Objective-C, not Swift**, so there is no Swift runtime embedding question for
+  the extension and no bridging header. The project already sets
+  `CLANG_ENABLE_MODULES`, `CLANG_ENABLE_OBJC_ARC`, `IPHONEOS_DEPLOYMENT_TARGET 15.1`
+  and `SDKROOT` at project level, so the extension inherits all of it and
+  `UserNotifications` autolinks. Per-target settings are the minimum.
+- **THE CONTENT HANDLER IS ALWAYS CALLED.** Seven call sites, every failure path
+  included. An extension that fails to call it does not lose the notification — iOS
+  waits out the ~30s timeout and then shows the original, so a bug here costs a
+  visible delay rather than a message. `serviceExtensionTimeWillExpire` is
+  implemented for the same reason.
+- **`dstSubfolderSpec = 13`** on the Embed phase. Any other destination copies the
+  `.appex` somewhere the system never looks and the extension simply never runs,
+  with no error anywhere.
+- **The extension's `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` are the same
+  literals as the app's, and must be bumped TOGETHER.** Apple rejects an upload
+  whose extension version does not match the app's — twenty minutes into a build.
+  `scripts/checkNotificationExtension.js` asserts they match.
+- **`SKIP_INSTALL = YES`**, or the archive is malformed and the upload is refused.
+  No `CODE_SIGN_ENTITLEMENTS`: the extension has no `aps-environment` and needs none.
+- **The URL is read from four places** (`fcm_options.image` as dict AND as a JSON
+  string, our own `data.image`, `imageUrl`), https only, 5 MB cap, 12 s timeout.
+
+### Verified — 50/50 structural, and compilation is NOT among them
+`node scripts/checkNotificationExtension.js`. It checks what a hand-edited pbxproj
+actually gets wrong: dangling UUID references (how one corrupts in practice — Xcode
+then refuses to open the project), brace/paren balance, the target being in the
+project's `targets` list, having a product and a configuration list, the `.appex`
+being embedded into PlugIns, the app depending on the extension, the version match,
+and that the Podfile was not touched.
+
+> **Verified to FAIL on five deliberate regressions:** app build number bumped
+> without the extension, embed destination changed from 13 to 10, the embed phase
+> removed from the app target, the target dropped from the project's `targets` list,
+> and a dangling UUID. Each produced exactly one failure.
+>
+> It also failed TWICE on its own first run while the project was correct — a
+> Firebase substring check matching the header comment that explains why Firebase is
+> absent, and a config-block regex that started at `INFOPLIST_FILE` and so missed
+> every setting alphabetically before it, `CURRENT_PROJECT_VERSION` included. Both
+> fixed; both are the "the check was wrong, not the thing" direction, which is the
+> cheaper one but still wastes a cycle.
+
+**What the first real iOS build will need, and nobody has done yet:** EAS will
+detect the new target and ask to create an App ID and provisioning profile for
+`com.astrowanicustomer.NotificationService` (no capabilities — it needs none). That
+is interactive, on the owner's Apple account. Per EK, pick identifiers by
+IDENTIFIER and never by name.
+
 ### Not done, deliberately
 
 1. **Nothing is deployed and no OTA has been sent.** The backend half is inert without
    the apps (no device reports, no opens), and the app half degrades safely without the
    backend (the device and track posts 404 and are ignored).
-2. **iOS images need a Notification Service Extension**, and `AstrologyApp.xcodeproj` has
-   no extension target — that is a store build. The backend already sends
-   `mutable-content` and `fcm_options.image`, so no backend change is needed later.
+2. ~~iOS images need a Notification Service Extension~~ — **BUILT the same day, see
+   ER3. Not compiled and not shipped**; it needs a store build and EAS credentials
+   for the new target.
 3. ~~The vendor app reports no permission state.~~ **DONE the same day — see ER2.**
 4. **`astrologer_profile_abandoned` is seeded but unwired** — it needs a client-side
    signal. `recharge_abandoned` IS wired, server-side, from `wallet_recharges`.

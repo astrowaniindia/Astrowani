@@ -19,6 +19,8 @@
 		F042215836E84E478621FC09 /* Poppins-Light.ttf in Resources */ = {isa = PBXBuildFile; fileRef = E2741B9553984AA5B8AC2822 /* Poppins-Light.ttf */; };
 		1A2B3C4D5E6F708192A3B4C6 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F708192A3B4C5 /* GoogleService-Info.plist */; };
 		1A2B3C4D5E6F708192A3B4C8 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
+		A1B2C3D4E5F607182900A007 /* NotificationService.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F607182900A004 /* NotificationService.m */; };
+		A1B2C3D4E5F607182900A00F /* NotificationService.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F607182900A002 /* NotificationService.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -29,7 +31,28 @@
 			remoteGlobalIDString = 13B07F861A680F5B00A75B9A;
 			remoteInfo = AstrologyApp;
 		};
+		A1B2C3D4E5F607182900A011 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 83CBB9F71A601CBA00E9B192 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A1B2C3D4E5F607182900A001;
+			remoteInfo = NotificationService;
+		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		A1B2C3D4E5F607182900A00E /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				A1B2C3D4E5F607182900A00F /* NotificationService.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		00E356EE1AD99517003FC87E /* AstrologyAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AstrologyAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -51,6 +74,10 @@
 		F1BCC68C30F348E29809C96F /* Lato-Regular.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = "Lato-Regular.ttf"; path = "../src/assets/Fonts/Lato-Regular.ttf"; sourceTree = "<group>"; };
 		1A2B3C4D5E6F708192A3B4C5 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = "GoogleService-Info.plist"; path = "AstrologyApp/GoogleService-Info.plist"; sourceTree = "<group>"; };
 		1A2B3C4D5E6F708192A3B4C7 /* AstrologyApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; name = AstrologyApp.entitlements; path = AstrologyApp/AstrologyApp.entitlements; sourceTree = "<group>"; };
+		A1B2C3D4E5F607182900A002 /* NotificationService.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = NotificationService.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1B2C3D4E5F607182900A003 /* NotificationService.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = NotificationService.h; sourceTree = "<group>"; };
+		A1B2C3D4E5F607182900A004 /* NotificationService.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = NotificationService.m; sourceTree = "<group>"; };
+		A1B2C3D4E5F607182900A005 /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -62,6 +89,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		13B07F8C1A680F5B00A75B9A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A1B2C3D4E5F607182900A009 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -136,6 +170,7 @@
 			isa = PBXGroup;
 			children = (
 				13B07FAE1A68108700A75B9A /* AstrologyApp */,
+				A1B2C3D4E5F607182900A006 /* NotificationService */,
 				832341AE1AAA6A7D00B99B32 /* Libraries */,
 				00E356EF1AD99517003FC87E /* AstrologyAppTests */,
 				83CBBA001A601CBA00E9B192 /* Products */,
@@ -153,6 +188,7 @@
 			children = (
 				13B07F961A680F5B00A75B9A /* AstrologyApp.app */,
 				00E356EE1AD99517003FC87E /* AstrologyAppTests.xctest */,
+				A1B2C3D4E5F607182900A002 /* NotificationService.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -162,6 +198,16 @@
 			children = (
 			);
 			path = Pods;
+			sourceTree = "<group>";
+		};
+		A1B2C3D4E5F607182900A006 /* NotificationService */ = {
+			isa = PBXGroup;
+			children = (
+				A1B2C3D4E5F607182900A003 /* NotificationService.h */,
+				A1B2C3D4E5F607182900A004 /* NotificationService.m */,
+				A1B2C3D4E5F607182900A005 /* Info.plist */,
+			);
+			path = NotificationService;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -192,16 +238,38 @@
 				13B07F871A680F5B00A75B9A /* Sources */,
 				13B07F8C1A680F5B00A75B9A /* Frameworks */,
 				13B07F8E1A680F5B00A75B9A /* Resources */,
+				A1B2C3D4E5F607182900A00E /* Embed Foundation Extensions */,
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
 			);
 			buildRules = (
 			);
+			dependencies = (
+				A1B2C3D4E5F607182900A010 /* PBXTargetDependency */,
+			);
+			name = AstrologyApp;
 			dependencies = (
 			);
 			name = AstrologyApp;
 			productName = AstrologyApp;
 			productReference = 13B07F961A680F5B00A75B9A /* AstrologyApp.app */;
 			productType = "com.apple.product-type.application";
+		};
+		A1B2C3D4E5F607182900A001 /* NotificationService */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A1B2C3D4E5F607182900A00D /* Build configuration list for PBXNativeTarget "NotificationService" */;
+			buildPhases = (
+				A1B2C3D4E5F607182900A008 /* Sources */,
+				A1B2C3D4E5F607182900A009 /* Frameworks */,
+				A1B2C3D4E5F607182900A00A /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = NotificationService;
+			productName = NotificationService;
+			productReference = A1B2C3D4E5F607182900A002 /* NotificationService.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -214,6 +282,12 @@
 					00E356ED1AD99517003FC87E = {
 						CreatedOnToolsVersion = 6.2;
 						TestTargetID = 13B07F861A680F5B00A75B9A;
+					};
+					13B07F861A680F5B00A75B9A = {
+						LastSwiftMigration = 1120;
+					};
+					A1B2C3D4E5F607182900A001 = {
+						CreatedOnToolsVersion = 26.0;
 					};
 					13B07F861A680F5B00A75B9A = {
 						LastSwiftMigration = 1120;
@@ -235,6 +309,7 @@
 			targets = (
 				13B07F861A680F5B00A75B9A /* AstrologyApp */,
 				00E356ED1AD99517003FC87E /* AstrologyAppTests */,
+				A1B2C3D4E5F607182900A001 /* NotificationService */,
 			);
 		};
 /* End PBXProject section */
@@ -260,6 +335,13 @@
 				949B682902BB467792ECF1CC /* Poppins-Bold.ttf in Resources */,
 				F042215836E84E478621FC09 /* Poppins-Light.ttf in Resources */,
 				D84682AAFD4D427997CC1F49 /* Poppins-Regular.ttf in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A1B2C3D4E5F607182900A00A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -302,6 +384,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A1B2C3D4E5F607182900A008 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1B2C3D4E5F607182900A007 /* NotificationService.m in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -309,6 +399,11 @@
 			isa = PBXTargetDependency;
 			target = 13B07F861A680F5B00A75B9A /* AstrologyApp */;
 			targetProxy = 00E356F41AD99517003FC87E /* PBXContainerItemProxy */;
+		};
+		A1B2C3D4E5F607182900A010 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A1B2C3D4E5F607182900A001 /* NotificationService */;
+			targetProxy = A1B2C3D4E5F607182900A011 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -555,6 +650,55 @@
 			};
 			name = Release;
 		};
+		A1B2C3D4E5F607182900A00B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ANALYZER_NONNULL = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 4;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = NotificationService/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 24.1;
+				MTL_FAST_MATH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.astrowanicustomer.NotificationService";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1";
+				DEBUG_INFORMATION_FORMAT = dwarf;
+			};
+			name = Debug;
+		};
+		A1B2C3D4E5F607182900A00C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ANALYZER_NONNULL = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 4;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = NotificationService/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 24.1;
+				MTL_FAST_MATH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.astrowanicustomer.NotificationService";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1";
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -581,6 +725,15 @@
 			buildConfigurations = (
 				83CBBA201A601CBA00E9B192 /* Debug */,
 				83CBBA211A601CBA00E9B192 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A1B2C3D4E5F607182900A00D /* Build configuration list for PBXNativeTarget "NotificationService" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1B2C3D4E5F607182900A00B /* Debug */,
+				A1B2C3D4E5F607182900A00C /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
