@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, SectionList, TouchableOpacity, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, SectionList, TouchableOpacity, RefreshControl, Image } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../api/SupabaseClient';
@@ -10,6 +10,8 @@ import { LanguageContext } from '../../context/LanguageContext';
 import useNotificationBadgeSync from '../../hooks/useNotificationBadgeSync';
 import { captureEvent } from '../../utils/Analytics';
 import { openFreeCallFromInvite } from '../../utils/freeCallInvite';
+import { navigate } from '../../utils/NavigationService';
+import { trackNotification, resolveDeepLink } from '../../utils/notificationDevice';
 
 function timeAgo(dateStr) {
   const diffMs = Date.now() - new Date(dateStr).getTime();
@@ -64,7 +66,12 @@ const NotificationScreen = () => {
         .eq('customer_id', userData.id)
         .order('created_at', { ascending: false });
       if (error) console.log('Notification fetch error:', error.message);
-      setNotifications(data || []);
+      // An expired offer should stop appearing. `expires_at` is NULL on every row
+      // written before 2026-11-07, so this hides nothing that already exists.
+      const now = Date.now();
+      setNotifications((data || []).filter(
+        (n) => !n.expires_at || new Date(n.expires_at).getTime() > now,
+      ));
     } catch (e) {
       console.log('Error loading notifications:', e.message);
     } finally {
@@ -111,7 +118,16 @@ const NotificationScreen = () => {
       onPress={() => {
         captureEvent('notification_opened', { was_unread: !item.is_read });
         markAsRead(item);
-        if (item.type === 'free_call_invite') openFreeCallFromInvite();
+        // Attributed to the campaign, which is what turns "somebody opened
+        // something" into "this notification worked". `campaign_id` is NULL on
+        // every row written before the platform existed, so this is a no-op for
+        // them rather than a wrong number.
+        if (item.campaign_id) trackNotification(item.campaign_id, 'opened').catch(() => {});
+        if (item.type === 'free_call_invite') { openFreeCallFromInvite(); return; }
+        // The destination the campaign chose. Until now, tapping an item in this
+        // list went nowhere at all for every type but the free-call invite.
+        const screen = resolveDeepLink(item.deep_link || item.data?.deepLink);
+        if (screen) navigate(screen);
       }}>
       <View style={[styles.iconBadgeRing, item.is_read ? styles.iconBadgeRingRead : styles.iconBadgeRingUnread]}>
         <View style={[styles.iconBadge, item.is_read ? styles.iconBadgeRead : styles.iconBadgeUnread]}>
@@ -128,6 +144,13 @@ const NotificationScreen = () => {
           )}
         </View>
         <Text style={styles.message} numberOfLines={2}>{item.body}</Text>
+        {!!item.image_url && (
+          <Image
+            source={{ uri: item.image_url }}
+            style={styles.notificationImage}
+            resizeMode="cover"
+          />
+        )}
         <View style={styles.timeRow}>
           <Icon name="schedule" size={12} color="#B3A296" />
           <Text style={styles.time}>{timeAgo(item.created_at)}</Text>
@@ -294,6 +317,13 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
     shadowRadius: 8,
+  },
+  notificationImage: {
+    width: '100%',
+    height: verticalScale(120),
+    borderRadius: moderateScale(10),
+    marginTop: verticalScale(8),
+    backgroundColor: '#F3EDE7',
   },
   readCard: {
     backgroundColor: '#FBF6EF',

@@ -119,6 +119,25 @@ export default function Settings({navigation}) {
       <ScrollView style={styles.scrollContainer}>
         {/* First, because it is the only entry here that undoes something the
             customer did. Everything below it is a document to read. */}
+        {/* Above the block list, because this is the entry a customer comes
+            looking for when the app is sending them too much — and the
+            alternative they reach for otherwise is switching every notification
+            off at the OS, which also loses them their consultation alerts. */}
+        <TouchableOpacity
+          onPress={() => { captureEvent('settings_item_tapped', {item: 'notifications'}); navigation.navigate('NotificationSettings'); }}
+          style={styles.item}>
+          <View style={styles.itemContent}>
+            <Icon
+              name="notifications-active"
+              size={25}
+              color={COLORS.AstroMaroon}
+              style={styles.icon}
+            />
+            <Text style={styles.text}>{t('notifPrefs.screenTitle')}</Text>
+          </View>
+          <Icon name="keyboard-arrow-right" size={25} color="#000" />
+        </TouchableOpacity>
+
         <TouchableOpacity
           onPress={() => { captureEvent('settings_item_tapped', {item: 'blocked_astrologers'}); navigation.navigate('BlockedAstrologers'); }}
           style={styles.item}>

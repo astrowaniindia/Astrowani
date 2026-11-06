@@ -1026,6 +1026,13 @@ require('./src/acquisitionRoutes')(app);
 // Notification management (admin broadcast/personal send + history)
 require('./src/notificationRoutes')(app);
 
+// The notification platform: campaigns, scheduling, automations, per-recipient
+// tracking, device/permission registration and the preference centre.
+// ADDITIVE — the three routes in notificationRoutes.js above are what the live
+// admin page calls and they are deliberately left working. See
+// sql/notification_platform.sql and src/notifications/.
+require('./src/notifications/routes')(app);
+
 // Admin-triggerable referral popup (broadcast/personal send + history)
 require('./src/referralPopupRoutes')(app);
 
@@ -3666,6 +3673,24 @@ app.post('/api/users/fcm-token', async (req, res) => {
     await supabaseService.from('customers').update({ fcm_token: fcmToken }).eq('id', customer.id);
     // Reachable again — see the matching call in mobile-otp-verify.
     clearAppRemovedMark(customer.id).catch(() => {});
+
+    // Also keep a per-device row, so reachability reporting improves for every
+    // build ALREADY IN THE FIELD rather than only after the apps adopt
+    // /api/notifications/device. `device_id: 'legacy'` marks it as inferred from a
+    // token rather than reported by the app, and the real device_id overwrites it
+    // on first launch of a build that sends one.
+    //
+    // permission_status 'granted' is a fact, not a guess: an FCM token cannot be
+    // issued without the notification permission having been granted at the time.
+    require('./src/notifications/devices').registerDevice({
+      customerId: customer.id,
+      deviceId: req.body?.deviceId || 'legacy',
+      fcmToken,
+      platform: req.body?.platform,
+      appVersion: req.body?.appVersion,
+      locale: req.body?.locale,
+      permissionStatus: 'granted',
+    }).catch(() => {});
     return res.status(200).json({ success: true });
   } catch (e) {
     console.error('[push] fcm-token save error:', e.message);
@@ -4115,7 +4140,10 @@ app.post('/api/notifications/read', async (req, res) => {
     }
     const { data, error } = await supabaseService
       .from('notifications')
-      .update({ is_read: true })
+      // `read_at` added with the notification platform: `is_read` is a boolean, so
+      // "when did they read it" has never been answerable. Both are written —
+      // every installed build reads is_read.
+      .update({ is_read: true, read_at: new Date().toISOString() })
       .in('id', ids)
       .eq(ownerColumn, ownerId)
       .select('id');
@@ -8505,5 +8533,14 @@ server.listen(PORT, () => {
   // It is a no-op until RESEND_API_KEY / ALERT_EMAIL_FROM / ALERT_EMAIL_TO are set,
   // and the date it last sent lives in app_settings, so restarting does not resend.
   paymentFailureAlerts.startDigestTicker();
+
+  // Scheduled campaigns and notification automations.
+  //
+  // This one is gated on ENABLE_SESSION_MANAGER *inside* start(), unlike the two
+  // pollers above, and that is the point: it is the only loop here that sends
+  // something to thousands of customers unprompted, so it must be impossible for
+  // a developer machine that boots index.js by accident to fire a campaign. The
+  // flag already means "this process is the real production one".
+  require('./src/notifications/worker').start(io);
 });
 

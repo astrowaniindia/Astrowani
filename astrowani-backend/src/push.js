@@ -189,6 +189,23 @@ async function recordDeadTokens(deadTokens) {
       } else if (error) {
         console.error('[push] could not clear dead token:', error.message);
       }
+
+      // Per-DEVICE record, added with the notification platform (2026-11-07). The
+      // `customers` update above answers "have we lost this customer"; this one
+      // answers "which of their phones". A customer with two devices who wipes one
+      // should not read as having left — and until this table existed, it did.
+      //
+      // The token is kept on the device row rather than nulled: it is the evidence
+      // of which install died, and a dead token on a row stamped app_removed_at is
+      // never selected for sending. Its own try/catch, because a missing table must
+      // not cost the `customers` update above.
+      try {
+        await db
+          .from('customer_devices')
+          .update({ app_removed_at: new Date().toISOString(), app_removed_reason: 'registration-token-not-registered' })
+          .eq('fcm_token', token)
+          .is('app_removed_at', null);
+      } catch (_) { /* best-effort */ }
     }
   } catch (err) {
     console.error('[push] dead-token bookkeeping failed:', err.message);
@@ -253,8 +270,17 @@ async function clearAppRemovedMark(customerId) {
  * @param {object} [opts.iosAlert] `{title, body, category}` — shown on iOS ONLY, leaving
  *   the message data-only for Android. See the block comment below for why that
  *   distinction is load-bearing rather than a convenience.
+ * @param {string} [opts.imageUrl] A picture to show under the text. See RICH PUSH below.
+ * @param {string} [opts.collapseKey] Android: a later message with the same key replaces
+ *   an undelivered earlier one instead of stacking. Use for "your astrologer is online"
+ *   style updates, never for a chat message.
+ * @param {number} [opts.ttlSeconds] Drop the message rather than deliver it late. A
+ *   "₹75 = ₹101 today" push arriving tomorrow is worse than no push.
  */
-async function sendPush(tokens, { title, body, data = {}, iosAlert = null } = {}) {
+async function sendPush(tokens, {
+  title, body, data = {}, iosAlert = null,
+  imageUrl = null, collapseKey = null, ttlSeconds = null,
+} = {}) {
   const tokenList = (Array.isArray(tokens) ? tokens : [tokens]).filter(Boolean);
   if (!isReady || !tokenList.length) {
     return { successCount: 0, failureCount: tokenList.length };
@@ -262,8 +288,37 @@ async function sendPush(tokens, { title, body, data = {}, iosAlert = null } = {}
 
   const stringData = {};
   Object.entries(data).forEach(([key, value]) => {
+    if (value === null || value === undefined) return;
     stringData[key] = String(value);
   });
+
+  // ── RICH PUSH (2026-11-07) ────────────────────────────────────────────────
+  // Every notification this app has ever sent has been two lines of grey text.
+  // The image goes in THREE places, and all three are needed because each covers
+  // a state the others cannot:
+  //
+  //   data.image                     our own JS builds the notification while the
+  //                                  app is FOREGROUNDED (showLocalNotification ->
+  //                                  bigPictureUrl), and the in-app notification
+  //                                  list renders it too.
+  //   android.notification.imageUrl  Android renders the big picture itself while
+  //                                  the app is backgrounded or killed, where our
+  //                                  JS never runs.
+  //   apns.fcm_options.image         iOS, via the Notification Service Extension.
+  //
+  // The two platform blocks are only attached when a top-level `notification` is
+  // being built, because attaching `android.notification` to a data-only message
+  // CONVERTS it into a notification message — which stops Android calling
+  // setBackgroundMessageHandler, the handler that draws Accept/Reject on a chat
+  // request and starts the ringtone service. That trade is exactly the one the
+  // 2026-10-26 iOS fix had to avoid, and it must not be re-made for a picture.
+  //
+  // NOTE FOR iOS: `mutable-content` alone is not enough. Apple requires a
+  // Notification Service Extension in the binary to fetch and attach the image,
+  // and `AstrologyApp.xcodeproj` has no extension target — so iOS images need a
+  // store build. Sending the fields now is harmless (an iPhone without the
+  // extension simply shows the text) and means no backend change later.
+  if (imageUrl) stringData.image = String(imageUrl);
 
   // ── THE iOS PUSH FIX (2026-10-26) ──────────────────────────────────────────
   // Several callers pass the words to show INSIDE `data` -- `{data: {type, title,
@@ -318,7 +373,15 @@ async function sendPush(tokens, { title, body, data = {}, iosAlert = null } = {}
       tokens: tokenList,
       notification: (alertTitle || alertBody) ? { title: alertTitle, body: alertBody } : undefined,
       data: stringData,
-      android: { priority: 'high' },
+      android: {
+        priority: 'high',
+        ...(collapseKey ? { collapseKey: String(collapseKey) } : {}),
+        ...(ttlSeconds ? { ttl: Math.max(0, Math.round(ttlSeconds)) * 1000 } : {}),
+        // Only when a notification block already exists — see RICH PUSH above.
+        ...((alertTitle || alertBody) && imageUrl
+          ? { notification: { imageUrl: String(imageUrl) } }
+          : {}),
+      },
       // ── TELL APNs WHAT THIS IS ────────────────────────────────────────────
       // We used to send no APNs headers at all, leaving Apple to infer the push
       // type and priority. Apple is explicit that it may DELAY OR DROP a push it
@@ -337,8 +400,26 @@ async function sendPush(tokens, { title, body, data = {}, iosAlert = null } = {}
       //              all, which is why this is not one shared header block.
       apns: (alertTitle || alertBody)
         ? {
-          headers: { 'apns-push-type': 'alert', 'apns-priority': '10' },
-          payload: { aps: { sound: 'default' } },
+          headers: {
+            'apns-push-type': 'alert',
+            'apns-priority': '10',
+            // Seconds since the epoch, not a duration. 0 would mean "try once and
+            // discard", which is NOT what a TTL means here, so it is only set when
+            // a real expiry was asked for.
+            ...(ttlSeconds ? { 'apns-expiration': String(Math.floor(Date.now() / 1000) + Math.round(ttlSeconds)) } : {}),
+          },
+          payload: {
+            aps: {
+              sound: 'default',
+              // Lets the Notification Service Extension rewrite the notification
+              // before it is shown, which is how the image gets attached. Unlike
+              // `content-available` this does NOT make it a background push, so the
+              // sound above still plays — that distinction is what the 2026-10-26
+              // silent-notification bug turned on.
+              ...(imageUrl ? { 'mutable-content': 1 } : {}),
+            },
+          },
+          ...(imageUrl ? { fcmOptions: { imageUrl: String(imageUrl) } } : {}),
         }
         : hasIosOnlyAlert
         ? {

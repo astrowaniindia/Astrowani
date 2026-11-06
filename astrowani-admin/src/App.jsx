@@ -30,6 +30,7 @@ import NewSignupFlow from './pages/NewSignupFlow';
 import Reviews from './pages/Reviews';
 import NewEntries from './pages/NewEntries';
 import Notifications from './pages/Notifications';
+import NotificationCenter from './pages/NotificationCenter';
 import ReferralPopup from './pages/ReferralPopup';
 import AppPrompts from './pages/AppPrompts';
 import Leaderboard from './pages/Leaderboard';
@@ -72,6 +73,7 @@ export default function App() {
         <Route path="recharge-offers" element={<RechargeOffers />} />
         <Route path="missed" element={<Missed />} />
         <Route path="notifications" element={<Notifications />} />
+        <Route path="notification-center" element={<NotificationCenter />} />
         <Route path="referral-popup" element={<ReferralPopup />} />
         <Route path="app-prompts" element={<AppPrompts />} />
         <Route path="withdrawals" element={<Withdrawals />} />

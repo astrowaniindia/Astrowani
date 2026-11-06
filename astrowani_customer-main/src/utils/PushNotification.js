@@ -8,6 +8,9 @@ import { navigate, navigationRef } from './NavigationService';
 import { showAppUpdatePrompt } from '../components/AppUpdatePrompt';
 import { showRateAstrowani } from '../components/RateAstrowaniPrompt';
 import { openFreeCallFromInvite } from './freeCallInvite';
+import {
+  syncNotificationDevice, trackNotification, campaignIdOf, resolveDeepLink,
+} from './notificationDevice';
 
 const CHANNEL_ID = 'astrowani-default';
 
@@ -46,6 +49,18 @@ function showLocalNotification(remoteMessage) {
   const title = remoteMessage?.notification?.title || remoteMessage?.data?.title;
   const message = remoteMessage?.notification?.body || remoteMessage?.data?.body;
   if (!message) return;
+  // A picture, when the campaign carries one. Every notification this app has ever
+  // sent has been two lines of grey text.
+  //
+  // `data.image` rather than a notification field: the backend puts the url in all
+  // three places it can (data, android.notification.imageUrl, apns.fcm_options),
+  // because each covers a state the others cannot — and THIS branch is the one that
+  // runs while the app is foregrounded, where the OS renders nothing itself.
+  //
+  // `bigLargeIcon: ''` collapses the logo thumbnail while the big picture is
+  // expanded, which is the Android convention; without it the logo sits on top of
+  // the image.
+  const image = remoteMessage?.data?.image || null;
   PushNotification.localNotification({
     channelId: CHANNEL_ID,
     smallIcon: 'ic_notification',
@@ -54,6 +69,7 @@ function showLocalNotification(remoteMessage) {
     largeIcon: 'ic_launcher',
     title,
     message,
+    ...(image ? { bigPictureUrl: image, bigLargeIcon: '' } : {}),
     userInfo: remoteMessage?.data || {},
   });
 }
@@ -70,6 +86,10 @@ async function syncTokenWithBackend(token) {
       { fcmToken: token },
       { headers: { Authorization: `Bearer ${authToken}` } },
     );
+    // The per-device record, which is what carries the permission state, the
+    // platform and the app's language. The legacy call above stays because
+    // twenty-five backend push sites still read `customers.fcm_token`.
+    syncNotificationDevice({ token, force: true }).catch(() => {});
   } catch (_) {
     // best-effort — a missed sync just means push arrives once the token next refreshes
   }
@@ -107,8 +127,18 @@ function retryPermissionWhenActive() {
 }
 
 async function askNotificationPermission() {
+  // ── REPORT THE ANSWER, WHATEVER IT IS ──────────────────────────────────────
+  // This is the only moment a REFUSAL can ever be recorded. Until 2026-11-07 the
+  // denial branches below did nothing but console.log, so a customer who tapped
+  // "Don't allow" was indistinguishable in the database from one who had never
+  // been asked and one who had uninstalled — 4,568 of 4,857 customers sat in that
+  // single undifferentiated bucket.
+  //
+  // `force: true` bypasses the sync throttle: an answer is exactly the event the
+  // throttle must not swallow.
   if (Platform.OS == 'android' && Platform.Version >= 33) {
     const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
+    syncNotificationDevice({ force: true, asked: true }).catch(() => {});
     if (granted == PermissionsAndroid.RESULTS.GRANTED) {
       getFCMToken()
     } else {
@@ -117,6 +147,7 @@ async function askNotificationPermission() {
   } else {
     const authStatus = await messaging().requestPermission();
     const enabled = authStatus === messaging.AuthorizationStatus.AUTHORIZED || authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+    syncNotificationDevice({ force: true, asked: true }).catch(() => {});
     if (enabled) {
       console.log('Authorization status:', authStatus);
       getFCMToken()
@@ -255,10 +286,21 @@ AppState.addEventListener('change', (state) => {
   if (Date.now() - lastTokenSyncAt < 60000) return;
   lastTokenSyncAt = Date.now();
   getFCMToken().catch(() => {});
+  // Also re-report the permission state. Somebody can switch notifications off in
+  // system settings without this app being told anything at all, and a foreground
+  // is the only chance we get to notice.
+  syncNotificationDevice().catch(() => {});
 });
 
 messaging().onMessage(async remoteMessage => {
   console.log('Foreground remoteMessage:', remoteMessage);
+
+  // It arrived. Reported before the suppression check below, because a chat
+  // notification we deliberately do not DRAW was still delivered — recording it
+  // only when something is shown would understate delivery for the one case we
+  // suppress on purpose.
+  const campaignId = campaignIdOf(remoteMessage);
+  if (campaignId) trackNotification(campaignId, 'delivered').catch(() => {});
 
   // Customer is already looking at this exact conversation live via Realtime — a system
   // notification for the same message on top of that is just noise. Any other chat, or once
@@ -286,6 +328,12 @@ messaging().onMessage(async remoteMessage => {
 
 messaging().setBackgroundMessageHandler(async remoteMessage => {
   console.log('Background remoteMessage:', remoteMessage);
+
+  // Delivery, reported from the background. This handler runs for data-carrying
+  // messages even when the app is killed, which is the only reason delivery can be
+  // measured at all for somebody who never opens the notification.
+  const bgCampaignId = campaignIdOf(remoteMessage);
+  if (bgCampaignId) await trackNotification(bgCampaignId, 'delivered').catch(() => {});
 
   // EVERY message reaching a backgrounded app was being shown TWICE: once by the
   // OS and once by us. A push carrying a `notification` block is auto-displayed by
@@ -325,7 +373,26 @@ async function handleActiveSessionTap(data) {
 
 function handleNotificationTap(remoteMessage) {
   const type = remoteMessage?.data?.type;
-  if (type === 'admin_broadcast' || type === 'admin_personal') {
+
+  // They tapped it. Recorded before anything can go wrong with the navigation, so
+  // a destination that fails still counts as a tap — otherwise a routing bug would
+  // read as nobody being interested.
+  const campaignId = campaignIdOf(remoteMessage);
+  if (campaignId) trackNotification(campaignId, 'clicked').catch(() => {});
+
+  // ── A CAMPAIGN'S OWN DESTINATION WINS ─────────────────────────────────────
+  // The table below maps a fixed `type` to a fixed screen, which is why an admin
+  // broadcast has always landed on the notification list and nowhere else. A
+  // `deepLink` set on the campaign overrides that, and `resolveDeepLink` is an
+  // ALLOWLIST — a name no navigator knows falls through to the table rather than
+  // navigating nowhere, which is what a typo would otherwise do.
+  const deepLink = resolveDeepLink(remoteMessage?.data?.deepLink);
+  if (deepLink) {
+    navigate(deepLink);
+    return;
+  }
+
+  if (type === 'admin_broadcast' || type === 'admin_personal' || type === 'automation' || type === 'campaign') {
     navigate('NotificationScreen');
   } else if (type === 'free_call_invite') {
     // Admin invite to the free 7-minute call: open the booking on Home.

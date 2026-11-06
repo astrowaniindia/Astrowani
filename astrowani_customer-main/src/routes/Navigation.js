@@ -103,6 +103,7 @@ import VoiceNotesScreen from '../screens/drawerScreens/VoiceNotesScreen';
 import ChatHistoryScreen from '../screens/drawerScreens/ChatHistoryScreen';
 import ChatHistoryThreadScreen from '../screens/drawerScreens/ChatHistoryThreadScreen';
 import Settings from '../screens/drawerScreens/Settings';
+import NotificationSettings from '../screens/drawerScreens/NotificationSettings';
 import AboutUsScreen from '../screens/drawerScreens/AboutUsScreen';
 import FaqScreen from '../screens/drawerScreens/FaqScreen';
 import SupportScreen from '../screens/drawerScreens/SupportScreen';
@@ -263,6 +264,7 @@ export default function Navigation({ initialRoute, initialParams, onReady }) {
         <Stack.Screen options={{ headerShown: false }} name="DrawerNavigator" component={DrawerNavigator} />
 
         <Stack.Screen name="UserProfileScreen" component={UserProfileScreen} options={{ title: 'Profile', headerBackTitleVisible: false, headerStyle: { backgroundColor: COLORS.AstroMaroon, }, headerTintColor: '#fff', headerTitleStyle: { fontSize: moderateScale(18), }, }} />
+        <Stack.Screen name="NotificationSettings" component={NotificationSettings} options={({ navigation }) => ({ title: 'Notifications', headerStyle: { backgroundColor: COLORS.AstroMaroon }, headerTintColor: '#fff', headerTitleStyle: { fontSize: moderateScale(18) }, headerBackVisible: false, headerLeft: () => <HeaderBackButton navigation={navigation} /> })} />
         <Stack.Screen name="BlockedAstrologers" component={BlockedAstrologersScreen} options={({ navigation }) => ({ title: 'Blocked astrologers', headerStyle: { backgroundColor: COLORS.AstroMaroon }, headerTintColor: '#fff', headerTitleStyle: { fontSize: moderateScale(18) }, headerBackVisible: false, headerLeft: () => <HeaderBackButton navigation={navigation} /> })} />
 
         <Stack.Screen name="AstrologerInfo" component={AstrologerInfo} options={({ route, navigation }) => ({ title: route.params?.person.name, headerStyle: { backgroundColor: COLORS.AstroMaroon, }, headerTintColor: '#fff', headerTitleStyle: { fontSize: moderateScale(18), }, headerBackVisible: false, headerLeft: () => <HeaderBackButton navigation={navigation} />, tabBarStyle: { display: 'none' }, })} />

@@ -4428,3 +4428,181 @@ numbers would describe this ISP, per the 2026-09-25 finding.
    640–1630ms. That is load time and the Cloudflare-to-origin leg, not layout — it overlaps
    with the purge and with the Argo/Tunnel question in the 2026-09-25 notes.
 7. **The domain move**, unchanged and still last.
+
+---
+
+## Subsystem added 2026-11-07: the notification platform (ER)
+
+Full audit, the research it was built against and the measured numbers:
+[`MD files/Notification-System-Audit-and-Design-2026-11-07.md`](MD%20files/Notification-System-Audit-and-Design-2026-11-07.md).
+
+### ER. The number that started it
+
+**A broadcast to "All Customers" reaches 289 phones out of 4,857. Six per cent.**
+Measured on production 2026-11-07. The admin page had always shown it honestly
+("289 can receive a push") while the history table said "4,849 recipients" beside it.
+
+```
+live customers                   4,857
+ ├─ holding a usable FCM token     289   ← everyone a push can reach
+ ├─ marked "app removed"         2,156
+ └─ no token, no recorded reason ~2,412
+```
+
+The 2,156 are real and were dated precisely: a broadcast on 5 Nov 16:53 failed 2,126
+tokens, the 6 Nov 11:46 one failed 2,153, and `push.js`'s deliberate
+**two-sightings-five-minutes-apart** guard then cleared 2,119 of them between the two.
+The 6 Nov 15:59 send failed only 42. **That guard worked exactly as designed; what
+happened on those two days is the first time anybody measured the truth.** Before
+5 Nov the reported reach was ~2,400 and roughly 88% of it was fiction.
+
+> **THE ~2,412 WITH NO TOKEN AT ALL ARE THE POINT.** Four completely different
+> realities — never asked, tapped "Don't allow", granted but the token never arrived,
+> granted then switched off in Settings — were a single undifferentiated bucket,
+> because nothing anywhere recorded any of them. Only "uninstalled" was answerable.
+> `customer_devices.permission_status` is what changes that, and **it is only ever
+> populated by the apps**, so the number stays mostly "never registered" until the
+> customer OTA lands and people open the app.
+
+### What was missing, and is now built
+
+| | Before | Now |
+|---|---|---|
+| devices per customer | ONE `customers.fcm_token` column | `customer_devices`, like `vendor_devices` |
+| permission state | nothing | granted / denied / blocked / undetermined, with dates |
+| language | nothing (1,198 translated strings, one-language sends) | `customer_devices.locale`, and Hindi copy per campaign |
+| images | none, ever | Android + in-app now; iOS needs an NSE (none exists) |
+| deep links | `data` NULL on all 15,468 rows | `deep_link`, against an app-side ALLOWLIST |
+| tracking | FCM's accept count | `notification_sends`: one row per person, sent/delivered/opened/clicked |
+| scheduling | none | `scheduled_at` + a worker |
+| automations | none | 10 seeded, **all off** |
+| frequency cap / quiet hours / preference centre | none | all three |
+| A/B | none | weighted variants, arm chosen from the recipient's own id |
+| the in-app list | admin broadcasts only (3 types in 15,468 rows, 0.17% read) | every campaign lands there with a destination |
+
+| Piece | Where |
+|---|---|
+| `sql/notification_platform.sql` | 6 tables + columns on `notifications`. **APPLIED 2026-11-07.** |
+| `sql/notification_audience.sql` | `notification_audience(jsonb)` + `notification_reach_summary()`. **APPLIED.** |
+| `src/notifications/{db,devices,targeting,sender,automations,worker,routes}.js` | the service |
+| `src/push.js` | `imageUrl` / `collapseKey` / `ttlSeconds`, and per-device dead-token marking |
+| `astrowani-admin/src/pages/NotificationCenter.jsx` | Compose / Campaigns / Automations / Templates / Reach |
+| customer `src/utils/notificationDevice.js` | device id, permission probe, tracking, deep-link allowlist |
+| customer `src/screens/drawerScreens/NotificationSettings.js` | the preference centre, EN + HI (23 keys each) |
+| `scripts/notificationPlatformCheck.js` | **113 checks** |
+
+### Things that are load-bearing — do not "simplify" them
+
+- **`transactional` IS NEVER GOVERNED.** No quiet hours, no frequency cap, no
+  category opt-out. A chat request, a call, an order update and a support reply have
+  to arrive; holding one back means a customer missing a consultation they paid for.
+  `GOVERNED` in `targeting.js` is the whole rule, and the suite asserts an opt-out
+  does **not** stop a transactional send (and fails when `transactional` is added to
+  that set).
+- **THE OLD PATH IS UNTOUCHED AND STILL LIVE.** `src/notificationRoutes.js`'s
+  `preview` / `send` / `history` are what the Quick Push page calls and what all 46
+  prior sends went through. This is additive. **The new preview is
+  `/api/admin/notifications/audience-preview`, NOT `preview`** — both modules share
+  the `/api/admin/notifications/*` prefix, Express serves whichever registered first,
+  and the old one does, so the new page would have read `wouldReach` as undefined and
+  shown a reach of zero for every audience with nothing erroring. The harness now
+  mounts **both** modules in index.js's order for exactly this reason.
+- **`notification_audience` MUST BE PAGED, and the comment that said otherwise was
+  wrong.** PostgREST's `db-max-rows` is 1000 on this project **and a set-returning
+  function is no exception**: an audience of 4,858 came back as 1,000 with no error.
+  The same defect `recipients.js` exists to kill. The function carries `order by c.id`
+  because paging without a deterministic order can miss or repeat rows.
+- **`array_agg(col order by (col is null), last_seen_at desc)`**, not `nulls last`.
+  `NULLS LAST` applies to the ORDER BY key, not to the aggregated column, so a
+  customer's newest device winning with a NULL locale erased a locale an older device
+  had reported — a Hindi reader got the English copy.
+- **The legacy `customers.fcm_token` fallback is for ASTROLOGERS ONLY.** It is written
+  at login and knows nothing about the OS permission, so for a customer it bypassed
+  the entire device table: a personal send to someone whose every device had
+  permission *denied* went out anyway.
+- **Suppressions are RECORDED with a reason, never dropped** (`no_device`,
+  `opted_out`, `quiet_hours`, `frequency_cap`, `cooldown`, ...), and the
+  nobody-to-send-to return carries the same breakdown as a normal send — it used to
+  omit it, which is the one case where the reason is the entire answer.
+- **Claims are conditional DATABASE updates, set before any other await.**
+  `deliverCampaign` claims on `status in ('draft','scheduled')`; `runDueAutomations`
+  claims on `next_run_at <= now()`. A JS check-then-write would let two ticks through,
+  and for an automation that means everybody gets it twice. Plus
+  `uq_notification_sends_campaign_{customer,astrologer}`.
+- **Enabling an automation does NOT fire it.** The first tick only computes
+  `next_run_at`, so switching on the weekly horoscope at 3pm on a Thursday schedules
+  Monday rather than blasting 5,000 people. Every automation also has
+  `cooldown_days` (a condition that stays true cannot re-send) and `max_per_run`.
+- **The worker runs only where `ENABLE_SESSION_MANAGER === 'true'`**, reusing the flag
+  that already means "this process is the real production one", so a laptop that boots
+  `index.js` by accident cannot fire a campaign at 4,857 people. `NOTIFICATIONS_WORKER=off`
+  is the kill switch. pm2 is fork mode, so there is exactly one worker.
+- **`recharge_abandoned` has `delay_minutes` 0 on purpose** — the 30-minute wait is the
+  worker's sweep window (`ABANDONED_MIN_AGE_MIN`), because "did they pay" can only be
+  answered once that time has passed. Stacking both would make it an hour late.
+- **No send id travels in the push payload.** Tracking resolves the row from
+  `campaign_id` + the JWT's customer, which is what lets one identical message go to
+  500 phones in a multicast instead of one per person — and means a phone cannot claim
+  somebody else's open. The first timestamp per stage wins; `open_count` carries repeats.
+- **`android.notification.imageUrl` is attached ONLY when a top-level `notification`
+  already exists.** Adding it to a data-only message converts it into a notification
+  message, which stops Android calling `setBackgroundMessageHandler` — the handler that
+  draws Accept/Reject on a chat request and starts the ringtone service. That is the
+  trade the 2026-10-26 iOS fix had to avoid and it must not be re-made for a picture.
+- **The deep link is an ALLOWLIST** (`DEEP_LINK_SCREENS` in the customer app).
+  `navigate()` with an unknown name does nothing visible, so an admin's typo would
+  produce a notification that opens the app and then sits there. Keep it in step with
+  `DEEP_LINKS` in `NotificationCenter.jsx`.
+- **Every automation's copy and filters live in the database, which is the authority** —
+  the same trap as the free-call duration (DR) and the Dakshina ladder (DU). Editing
+  `sql/notification_platform.sql` changes nothing that is already applied.
+
+### Verified 2026-11-07 — 113/113 against the live database
+`scripts/notificationPlatformCheck.js` (`node --env-file=.env scripts/notificationPlatformCheck.js`).
+`index.js` is **never booted**; only the two notification route modules are mounted on a
+bare Express app on an **ephemeral** port. `sendPush` is stubbed before `sender.js` ever
+reads it, returning FCM-shaped per-token responses so the delivery accounting is still
+exercised, and every campaign names one synthetic customer (`9123450002`) explicitly.
+
+Every refusal is preceded by a **positive control** — the same campaign is asserted to go
+out before quiet hours, the cap and the opt-out are tested, and again afterwards — because
+a governor that held everybody back would otherwise pass every "was suppressed" assertion.
+
+> **A SUITE WHOSE RESULT DEPENDS ON THE WALL CLOCK PROVES NOTHING.** The first run
+> failed sixteen assertions at once while the code was right: the platform's default
+> quiet window is 22:00-08:00 IST and the run was at 03:00. Campaigns in this suite now
+> set `respect_quiet_hours: false` except in the one case that tests it, and that case's
+> control uses a ZERO-WIDTH window (`start === end`) rather than null, because null falls
+> back to the platform default and is therefore still quiet at 3am.
+
+> **The suite was verified to FAIL on four deliberately introduced regressions**, which
+> is the only reason to trust the 113: restoring the customer `fcm_token` fallback (1
+> failure), un-paging the RPC (3), governing `transactional` (1), and renaming the new
+> preview back onto the old path (4). It also caught **four real bugs** on its first run
+> — the paging cap, the NULL-locale ordering, the permission bypass and the missing
+> suppression breakdown — plus the route collision, which it could only see once it
+> mounted both modules.
+
+Also: `node --check` clean on every changed backend file, admin `npm run build` clean,
+customer app bundles for Android (8,288,139 B) with the new code confirmed present in the
+shipped JS, and eslint on the changed app files reports **0 errors**. Production re-read
+afterwards: 0 synthetic rows, 10 automations all off, 289 device rows, 4,857 customers.
+
+### Not done, deliberately
+
+1. **Nothing is deployed and no OTA has been sent.** The backend half is inert without
+   the apps (no device reports, no opens), and the app half degrades safely without the
+   backend (the device and track posts 404 and are ignored).
+2. **iOS images need a Notification Service Extension**, and `AstrologyApp.xcodeproj` has
+   no extension target — that is a store build. The backend already sends
+   `mutable-content` and `fcm_options.image`, so no backend change is needed later.
+3. **The vendor app reports no permission state.** `vendor_devices` records platform and
+   version but not permission, and the astrologer app was not touched here.
+4. **`astrologer_profile_abandoned` is seeded but unwired** — it needs a client-side
+   signal. `recharge_abandoned` IS wired, server-side, from `wallet_recharges`.
+5. **The weekly horoscope is a single fixed line**, not a per-sign reading. Per-sign needs
+   `customers.dob` to a sign plus copy per sign.
+6. **Not exercised on a device.** The test worth doing: install, answer the permission
+   prompt BOTH ways and check the Reach tab separates them; then send an image campaign
+   with a deep link to one phone and confirm the picture renders, the tap lands on the
+   right screen, and the campaign's open and tap counts both move.
