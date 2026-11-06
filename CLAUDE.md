@@ -4588,6 +4588,116 @@ customer app bundles for Android (8,288,139 B) with the new code confirmed prese
 shipped JS, and eslint on the changed app files reports **0 errors**. Production re-read
 afterwards: 0 synthetic rows, 10 automations all off, 289 device rows, 4,857 customers.
 
+### ER2. The astrologer half (2026-11-07, same day)
+
+`vendor_devices` has recorded WHICH devices an astrologer is signed in on since
+2026-09, with platform and app version — and never whether any of them was allowed
+to show a notification. On the customer side that gap was a marketing problem. Here
+it is an **earnings** problem.
+
+**Measured on production: 97 of 117 astrologers reachable (83% — far healthier than
+the customer side's 6%, because the vendor app has always refreshed its token
+properly). And SIX astrologers had chat, call or video switched on with no device
+that could receive a push at all.** They were being shown to customers as available
+and missing every request that arrived while the app was backgrounded. Nobody could
+see it, because nothing recorded it.
+
+| Piece | Where |
+|---|---|
+| `sql/vendor_device_permissions.sql` | 6 columns on `vendor_devices` + `notification_astrologer_reach_summary()` + `notification_astrologers_unreachable()`. **APPLIED 2026-11-07.** |
+| `src/vendorDevices.js` | `registerDevice` takes `permissionStatus` / `permissionAsked` / `locale` |
+| `src/notifications/devices.js` | `liveAstrologerDevicesFor`, `astrologerReachSummary`, `unreachableAstrologers` |
+| `POST /api/vendor/notification-device` | the reporting path |
+| admin Reach tab | "Astrologers — can they be rung?" plus the names behind the count |
+| vendor `src/utils/notificationDevice.js` | permission probe, device sync, tracking, deep-link allowlist |
+| vendor `src/components/PushDisabledBar.js` | "You will miss consultation requests", pinned |
+
+**Things that are load-bearing here specifically:**
+
+- **A SEPARATE ENDPOINT FROM `/api/vendor/fcm-token`, and that is the whole point.**
+  That endpoint requires a token — and when the permission is DENIED there is no
+  token, so `getFCMToken` fails, the existing sync never runs, and the refusal goes
+  unrecorded. Exactly the hole the customer side had.
+- **`ADMIN_NOTIFICATION_TYPES` in vendor `Firebase.js` needed `'automation'` and
+  `'campaign'` adding.** Without them a scheduled or automated notification to
+  astrologers reaches the handler, matches no branch, and is **silently dropped** —
+  nothing displayed, nothing logged. The customer app has no such list, so only this
+  app needed it.
+- **Only ONE `notifee.onBackgroundEvent` handler may exist**; registering a second
+  silently replaces the first. So the campaign tap (`EventType.PRESS`) is handled
+  inside the existing `handleNotificationAction` in `index.js` rather than in a new
+  listener — the handler it would have replaced is the Accept/Reject one, which must
+  never break. An incoming-request notification's PRESS is deliberately left alone.
+- **`registerDevice` reads the existing row ONLY on the reporting path.** "When did
+  we first ask" is answerable once, so it needs the row — but the vendor app calls
+  this on every foreground, and an ordinary login or token refresh supplies neither
+  permission field and stays a single write.
+- **It has a missing-COLUMN fallback, distinct from the missing-TABLE one.** A column
+  PostgREST does not know about 400s the whole statement, so a backend deployed
+  before the migration would stop registering devices entirely — which would bring
+  back the cross-device sign-out bug `vendor_devices` exists to fix. Missing table →
+  use the legacy account columns; missing column → same row, fewer fields.
+- **The backfill is NOT the customer one.** A `vendor_devices` row can exist with no
+  token, because `registerDevice` writes the row on a login that could not obtain
+  one. Those rows prove nothing about the permission and stay `undetermined`;
+  guessing `granted` would tell an admin somebody can take consultations when they
+  cannot.
+- **`notification_astrologers_unreachable` needs `having count(*) > 0`.** Without it
+  the aggregate subquery returns one row of NULLs over the empty set, the CASE falls
+  through to its `else`, and an astrologer who has NEVER reported a device reads as
+  `undetermined`. Those need opposite actions: one is a conversation about their
+  phone settings, the other is "open the app".
+- **`liveAstrologerDevicesFor` returns an EMPTY MAP on a read failure, on purpose.**
+  With no device entry, `govern` falls back to `astrologers.fcm_token`, which is the
+  behaviour that existed before — so an unapplied migration costs reach DATA, never
+  reach. (Note this is only for CAMPAIGNS. An incoming consultation still goes
+  through `vendorDevices.pushTargetFor`, which rings the NEWEST device only,
+  deliberately.)
+- **Astrologers are deliberately NOT governed by the preference centre.** No quiet
+  hours, no frequency cap, no category opt-out, and no astrologer preference rows at
+  all. Their notifications are overwhelmingly "a customer is waiting"; an opt-out
+  would cost them earnings, which is not a preference anybody should be offered.
+- **`PushDisabledBar` asks the SERVER, not this phone.** `reachable` covers all of
+  the astrologer's devices, so somebody with notifications off on a spare tablet is
+  not nagged. It is pinned rather than a dismissible popup because the cost is
+  ongoing and invisible, and it renders nothing in the normal case. A failed request
+  counts as reachable — claiming "you will miss requests" on a dropped connection
+  would be alarming and wrong.
+
+### Verified — 147/147, up from 113
+Same harness, extended with a synthetic astrologer on QA number `9123450003`,
+created `approval_status: 'pending'` AND `hidden_from_customers: true` — both, because
+a synthetic astrologer a real customer could ring is not an acceptable fixture.
+
+The new checks caught **two real defects**: the `undetermined`-instead-of-`none`
+bug above, and a stale assertion that an astrologer token is refused by
+`/api/notifications/track` (it is accepted now, by design; the property that still
+has to hold is that it cannot claim the CUSTOMER's row, which is now asserted
+against the campaign counter rather than the HTTP status).
+
+> **AND ONE DEFECT IN THE SUITE ITSELF, found only by trying the regression.**
+> "A CUSTOMER token cannot register an astrologer device" PASSED against a
+> deliberately loosened `vendorFromReq` — because the fixture's customer token
+> carried only a `phone` claim, while a real one carries `userId` too. The check
+> looked like it guarded the trap and could not have caught it. The fixture now
+> mints both claims, and the same regression then produces 7 failures including that
+> one. This is the "a harness that only tests your own helper reports green" lesson
+> in its sharpest form: the assertion was right, the fixture was not, and only the
+> regression run could tell the difference.
+
+Also: `node --check` clean on every changed backend file, admin `npm run build`
+clean, the vendor app bundles for Android (6,350,895 B) with the new code confirmed
+in the shipped JS, 3 new i18n keys in EN + HI with zero one-sided, and eslint on the
+changed vendor files back to the single pre-existing `exhaustive-deps` error
+(compared against HEAD side by side). Production re-read afterwards: no synthetic
+rows, automations still all off.
+
+**Still not done on this side:** the astrologer app has no preference screen (by the
+decision above), `vendor_devices` carries no `voip` permission state separate from
+FCM, and none of it is exercised on a device. The test worth doing: deny notifications
+on an astrologer phone and confirm the red bar appears and the admin's Reach tab lists
+that astrologer by name.
+
 ### Not done, deliberately
 
 1. **Nothing is deployed and no OTA has been sent.** The backend half is inert without
@@ -4596,8 +4706,7 @@ afterwards: 0 synthetic rows, 10 automations all off, 289 device rows, 4,857 cus
 2. **iOS images need a Notification Service Extension**, and `AstrologyApp.xcodeproj` has
    no extension target — that is a store build. The backend already sends
    `mutable-content` and `fcm_options.image`, so no backend change is needed later.
-3. **The vendor app reports no permission state.** `vendor_devices` records platform and
-   version but not permission, and the astrologer app was not touched here.
+3. ~~The vendor app reports no permission state.~~ **DONE the same day — see ER2.**
 4. **`astrologer_profile_abandoned` is seeded but unwired** — it needs a client-side
    signal. `recharge_abandoned` IS wired, server-side, from `wallet_recharges`.
 5. **The weekly horoscope is a single fixed line**, not a per-sign reading. Per-sign needs

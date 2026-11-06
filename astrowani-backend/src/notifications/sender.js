@@ -132,9 +132,13 @@ async function deliverCampaign(campaignId, io = null) {
     });
 
     const isCustomer = resolved.recipientType === 'customer';
+    const ids = resolved.recipients.map((r) => r.id);
+    // Both sides are multi-device for a CAMPAIGN. Note this is not what an incoming
+    // consultation does — `vendorDevices.pushTargetFor` rings the newest device
+    // only, deliberately.
     const deviceMap = isCustomer
-      ? await devices.liveDevicesFor(resolved.recipients.map((r) => r.id))
-      : new Map();
+      ? await devices.liveDevicesFor(ids)
+      : await devices.liveAstrologerDevicesFor(ids);
 
     const { send, suppressed } = await targeting.govern({
       recipients: resolved.recipients,

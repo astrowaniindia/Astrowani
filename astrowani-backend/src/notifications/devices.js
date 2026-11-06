@@ -173,6 +173,82 @@ async function reachSummary() {
   return Array.isArray(data) ? (data[0] || null) : data;
 }
 
+// ──────────────────────────────────────────────────── the astrologer side ──
+//
+// Deliberately a second set of functions rather than a `table` parameter on the
+// ones above. The two sides look alike and are not: `vendor_devices` is keyed on
+// `astrologer_id`, carries a `voip_token` nothing on the customer side has, and —
+// the part that actually matters — a row there can exist with NO fcm_token at all,
+// because `vendorDevices.registerDevice` writes the row on a login that could not
+// obtain one. A shared function would have to branch on all three anyway, and the
+// branch would sit in the middle of the query that decides who can be rung.
+
+/**
+ * Live push tokens per astrologer, from `vendor_devices`.
+ *
+ * NOTE this is NOT what an incoming consultation uses. `vendorDevices.pushTargetFor`
+ * rings the NEWEST device only, on purpose — ringing every phone an astrologer has
+ * ever signed in on would be worse than useless. This is for CAMPAIGNS, where
+ * reaching all of their devices is right.
+ */
+async function liveAstrologerDevicesFor(astrologerIds) {
+  const client = db();
+  const out = new Map();
+  if (!client || !astrologerIds?.length) return out;
+
+  const ids = [...new Set(astrologerIds.map(String))];
+  const CHUNK = 300;
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    try {
+      const { rows } = await pageAll(() => client
+        .from('vendor_devices')
+        .select('astrologer_id, fcm_token, locale, platform, last_seen_at')
+        .in('astrologer_id', ids.slice(i, i + CHUNK))
+        .not('fcm_token', 'is', null)
+        .is('app_removed_at', null)
+        .eq('permission_status', 'granted')
+        .order('last_seen_at', { ascending: false }));
+
+      for (const r of rows) {
+        const key = String(r.astrologer_id);
+        if (!out.has(key)) out.set(key, { tokens: [], locale: r.locale || null, platform: r.platform || null });
+        const entry = out.get(key);
+        if (r.fcm_token && !entry.tokens.includes(r.fcm_token)) entry.tokens.push(r.fcm_token);
+        if (!entry.locale && r.locale) entry.locale = r.locale;
+        if (!entry.platform && r.platform) entry.platform = r.platform;
+      }
+    } catch (err) {
+      // Returning an EMPTY map here is safe and the caller depends on it: with no
+      // device entry, `govern` falls back to `astrologers.fcm_token`, which is the
+      // behaviour that existed before this table had permission columns. So an
+      // unapplied migration costs reach data, never reach.
+      console.warn('[notifications] vendor_devices read failed, falling back to the legacy token:', err.message);
+      return new Map();
+    }
+  }
+  return out;
+}
+
+/** The astrologer reachability panel, including who is open for business and
+ *  cannot be reached — which is an earnings problem, not a reporting one. */
+async function astrologerReachSummary() {
+  const client = db();
+  if (!client) return null;
+  const { data, error } = await client.rpc('notification_astrologer_reach_summary');
+  if (error) throw error;
+  return Array.isArray(data) ? (data[0] || null) : data;
+}
+
+/** The names behind `unreachable_online`. A count nobody can act on is not worth
+ *  showing. */
+async function unreachableAstrologers(limit = 50) {
+  const client = db();
+  if (!client) return [];
+  const { data, error } = await client.rpc('notification_astrologers_unreachable', { p_limit: limit });
+  if (error) throw error;
+  return data || [];
+}
+
 /** Per-device rows for one customer, for the admin's customer detail view. */
 async function devicesFor(customerId) {
   const client = db();
@@ -197,6 +273,9 @@ module.exports = {
   liveDevicesFor,
   reachSummary,
   devicesFor,
+  liveAstrologerDevicesFor,
+  astrologerReachSummary,
+  unreachableAstrologers,
   normalisePermission,
   normaliseLocale,
   PERMISSION_STATES,

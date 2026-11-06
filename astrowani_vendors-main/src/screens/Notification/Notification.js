@@ -1,5 +1,5 @@
 import React, { useCallback, useContext, useEffect, useState } from 'react';
-import { StyleSheet, Text, View, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
+import { StyleSheet, Text, View, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, Image } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../api/SupabaseClient';
@@ -7,6 +7,8 @@ import Instance from '../../api/ApiCall';
 import { COLORS } from '../../Theme/Colors';
 import useNotificationBadgeSync from '../../utils/useNotificationBadgeSync';
 import { LanguageContext } from '../../context/LanguageContext';
+import { navigationRef } from '../../utils/navigationRef';
+import { trackNotification, resolveDeepLink } from '../../utils/notificationDevice';
 
 function timeAgo(dateStr) {
   const diffMs = Date.now() - new Date(dateStr).getTime();
@@ -85,9 +87,22 @@ export default function Notification() {
   const renderNotificationItem = ({ item }) => (
     <TouchableOpacity
       style={[styles.notificationCard, item.is_read ? styles.readCard : styles.unreadCard]}
-      onPress={() => markAsRead(item)}>
+      onPress={() => {
+        markAsRead(item);
+        // Attributed to the campaign, which is what turns "somebody opened
+        // something" into "this notification worked". NULL on every row written
+        // before the notification platform, so it is a no-op for them.
+        if (item.campaign_id) trackNotification(item.campaign_id, 'opened').catch(() => {});
+        // The destination the campaign chose. Until now, tapping an item in this
+        // list did nothing but mark it read.
+        const screen = resolveDeepLink(item.deep_link || item.data?.deepLink);
+        if (screen && navigationRef.current?.isReady()) navigationRef.current.navigate(screen);
+      }}>
       <Text style={styles.notificationTitle}>{item.title}</Text>
       <Text style={styles.notificationDescription}>{item.body}</Text>
+      {!!item.image_url && (
+        <Image source={{ uri: item.image_url }} style={styles.notificationImage} resizeMode="cover" />
+      )}
       <Text style={styles.notificationTime}>{timeAgo(item.created_at)}</Text>
     </TouchableOpacity>
   );
@@ -116,6 +131,13 @@ export default function Notification() {
 }
 
 const styles = StyleSheet.create({
+  notificationImage: {
+    width: '100%',
+    height: 150,
+    borderRadius: 10,
+    marginTop: 8,
+    backgroundColor: '#F3EDE7',
+  },
   container: {
     flex: 1,
     backgroundColor: '#F5F5F5',

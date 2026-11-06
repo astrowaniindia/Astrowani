@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform, Alert, PermissionsAndroid, AppState } from 'react-native';
 import Instance from '../api/ApiCall';
 import { getDeviceId } from './deviceId';
+import { syncNotificationDevice, trackNotification } from './notificationDevice';
 import { hideOngoingSession } from './ongoingSession';
 import { displayIncomingRequestNotification, cancelIncomingRequestForKey, displayGenericNotification, titleFor } from './incomingRequestNotifications';
 import { startRingingService, stopRingingService } from './ringingForegroundService';
@@ -39,6 +40,10 @@ async function syncTokenWithBackend(token) {
       { fcmToken: token, deviceId, platform: Platform.OS },
       { headers: { Authorization: `Bearer ${authToken}` } },
     );
+    // Also report the permission state and the app's language, which this endpoint
+    // has never carried. Separate call because that one REQUIRES a token and the
+    // state worth recording most — a refusal — comes with no token at all.
+    syncNotificationDevice({ token, force: true }).catch(() => {});
   } catch (e) {
     console.log('Error syncing FCM token:', e?.message);
   }
@@ -119,11 +124,22 @@ AppState.addEventListener('change', (state) => {
   if (Date.now() - lastTokenSyncAt < 60000) return;
   lastTokenSyncAt = Date.now();
   getFCMToken().catch(() => {});
+  // Permission can be switched off in system settings without this app being told
+  // anything. A foreground is the only chance we get to notice — and noticing is
+  // what lets HomeScreen warn before a request is missed.
+  syncNotificationDevice().catch(() => {});
 });
 
 export async function requestUserPermission() {
+  // ── REPORT THE ANSWER, WHATEVER IT IS ──────────────────────────────────────
+  // The denial branches below used to do nothing but console.log, so an astrologer
+  // who tapped "Don't allow" was indistinguishable from one who had never been
+  // asked — and on this side of the app that difference is the difference between
+  // taking consultations and silently missing every request. `force: true` because
+  // an answer is exactly the event a throttle must not swallow.
   if (Platform.OS == 'android' && Platform.Version >= 33) {
     const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
+    syncNotificationDevice({ force: true, asked: true }).catch(() => {});
     if (granted == PermissionsAndroid.RESULTS.GRANTED) {
       getFCMToken()
     } else {
@@ -132,10 +148,9 @@ export async function requestUserPermission() {
   } else {
     const authStatus = await messaging().requestPermission();
     const enabled = authStatus === messaging.AuthorizationStatus.AUTHORIZED || authStatus === messaging.AuthorizationStatus.PROVISIONAL;
-    // await messaging().registerDeviceForRemoteMessages();
+    syncNotificationDevice({ force: true, asked: true }).catch(() => {});
     if (enabled) {
       console.log('Authorization status:', authStatus);
-      // await messaging().registerDeviceForRemoteMessages();
       getFCMToken()
     }
   }
@@ -145,11 +160,22 @@ export async function requestUserPermission() {
 // notifications and render through the same generic path as an admin broadcast —
 // data-only, so they reach this handler and get our large icon instead of being
 // auto-displayed by the OS.
-const ADMIN_NOTIFICATION_TYPES = ['admin_broadcast', 'admin_personal', 'app_update', 'app_review'];
+// 'automation' and 'campaign' are what the notification platform sends
+// (src/notifications/sender.js). WITHOUT THEM a scheduled or automated
+// notification to astrologers reaches this handler and is silently dropped — the
+// type simply does not match any branch, so nothing is displayed and nothing
+// errors. The customer app has no equivalent list, which is why only this app
+// needed the addition.
+const ADMIN_NOTIFICATION_TYPES = [
+  'admin_broadcast', 'admin_personal', 'app_update', 'app_review', 'automation', 'campaign',
+];
 
 messaging().onMessage(async remoteMessage => {
   console.log('Foreground remoteMessage:', remoteMessage);
   const data = remoteMessage?.data || {};
+  // It arrived. Reported before the branches below, so a notification we
+  // deliberately do not draw still counts as delivered.
+  if (data.campaignId) trackNotification(data.campaignId, 'delivered').catch(() => {});
   if (INCOMING_REQUEST_TYPES.includes(data.type)) {
     // HomeScreen's own socket/Realtime listener already shows the in-app request card while
     // it's mounted and foregrounded — this heads-up notification covers every other screen
@@ -175,6 +201,9 @@ messaging().onMessage(async remoteMessage => {
 messaging().setBackgroundMessageHandler(async remoteMessage => {
   console.log('Background remoteMessage:', remoteMessage);
   const data = remoteMessage?.data || {};
+  // Delivery, from the background. This handler runs even in a KILLED app, which
+  // is the only reason delivery can be measured for somebody who never opens it.
+  if (data.campaignId) await trackNotification(data.campaignId, 'delivered').catch(() => {});
   if (INCOMING_REQUEST_TYPES.includes(data.type)) {
     // No `foreground` flag: this handler runs backgrounded or in a KILLED app.
     await displayIncomingRequestNotification(data);

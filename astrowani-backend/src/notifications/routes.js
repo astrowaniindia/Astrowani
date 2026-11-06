@@ -17,6 +17,7 @@ const devices = require('./devices');
 const targeting = require('./targeting');
 const sender = require('./sender');
 const automations = require('./automations');
+const vendorDevices = require('../vendorDevices');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -47,6 +48,27 @@ async function customerFromReq(req) {
   }
   const id = decoded.userId || decoded.id;
   return id && String(id).includes('-') ? String(id) : null;
+}
+
+/**
+ * The astrologer behind a request, or null.
+ *
+ * Requires the astrologer-shaped claim rather than accepting any id: a CUSTOMER
+ * token carries an id too, and treating one as an astrologer would let a customer
+ * register a device against — or claim an open belonging to — whichever astrologer
+ * shares their uuid-shaped claim. Mirrors moderationRoutes.vendorFromReq.
+ */
+function vendorFromReq(req) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return null;
+  try {
+    const decoded = jwt.verify(authHeader.replace('Bearer ', ''), JWT_SECRET);
+    const id = decoded.astroId || decoded.vendorId || (decoded.role === 'astrologer' ? decoded.id : null);
+    if (!id || !String(id).includes('-')) return null;
+    return String(id);
+  } catch (_) {
+    return null;
+  }
 }
 
 /** Only the fields a client may set on a campaign, so a stray key cannot reach the
@@ -81,6 +103,20 @@ module.exports = function registerNotificationPlatformRoutes(app) {
     return res.json({ success: true, reach: summary });
   }));
 
+  // ── Astrologer reachability ───────────────────────────────────────────────
+  // A separate endpoint from the customer one because the question is different.
+  // For customers, reach is a marketing ceiling. For astrologers it is an EARNINGS
+  // problem: somebody with chat and call switched on whose app cannot receive a
+  // push misses every request that arrives while they are backgrounded, and until
+  // now neither they nor anybody here could see it.
+  app.get('/api/admin/notifications/astrologer-reach', requireAdmin, h(async (req, res) => {
+    const [reach, unreachable] = await Promise.all([
+      devices.astrologerReachSummary(),
+      devices.unreachableAstrologers(Math.min(200, Number(req.query.limit) || 50)),
+    ]);
+    return res.json({ success: true, reach, unreachable });
+  }));
+
   // ── Preview ───────────────────────────────────────────────────────────────
   // `audience-preview`, NOT `preview`: src/notificationRoutes.js already owns
   // POST /api/admin/notifications/preview and is registered first, so Express
@@ -101,8 +137,10 @@ module.exports = function registerNotificationPlatformRoutes(app) {
       filters: b.filters || {},
       segments: b.segments,
     });
-    const isCustomer = resolved.recipientType === 'customer';
-    const deviceMap = isCustomer ? await devices.liveDevicesFor(resolved.recipients.map((r) => r.id)) : new Map();
+    const ids = resolved.recipients.map((r) => r.id);
+    const deviceMap = resolved.recipientType === 'customer'
+      ? await devices.liveDevicesFor(ids)
+      : await devices.liveAstrologerDevicesFor(ids);
     const { send, suppressed } = await targeting.govern({
       recipients: resolved.recipients,
       recipientType: resolved.recipientType,
@@ -410,6 +448,40 @@ module.exports = function registerNotificationPlatformRoutes(app) {
     return res.json({ success: true, ...result });
   }));
 
+  // ── Astrologer device + permission registration ───────────────────────────
+  // A SEPARATE endpoint from /api/vendor/fcm-token, which the app already calls on
+  // login, on token refresh and on every foreground — and which REQUIRES a token.
+  // That is the whole problem: when the permission is denied there IS no token, so
+  // `getFCMToken` fails, the existing sync never runs, and the refusal goes
+  // unrecorded. Exactly the hole the customer side had.
+  app.post('/api/vendor/notification-device', h(async (req, res) => {
+    const astrologerId = vendorFromReq(req);
+    if (!astrologerId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+    const b = req.body || {};
+    if (!b.deviceId) return res.status(400).json({ success: false, message: 'deviceId is required' });
+
+    const wrote = await vendorDevices.registerDevice(astrologerId, {
+      deviceId: b.deviceId,
+      fcmToken: b.fcmToken || null,
+      platform: b.platform,
+      appVersion: b.appVersion,
+      locale: b.locale,
+      permissionStatus: b.permissionStatus,
+      permissionAsked: b.permissionAsked === true,
+    });
+
+    // Whether a push could actually arrive right now, answered from the device rows
+    // rather than from what was just posted — so the app is told the truth about
+    // ALL of its devices and can warn the astrologer that they will miss requests.
+    let reachable = false;
+    try {
+      const live = await devices.liveAstrologerDevicesFor([astrologerId]);
+      reachable = (live.get(astrologerId)?.tokens?.length || 0) > 0;
+    } catch (_) { /* the write is what matters */ }
+
+    return res.json({ success: true, recorded: wrote, reachable });
+  }));
+
   // ── Tracking ──────────────────────────────────────────────────────────────
   // 'delivered' | 'opened' | 'clicked'.
   //
@@ -420,8 +492,14 @@ module.exports = function registerNotificationPlatformRoutes(app) {
   // one message per person. It also means a client cannot claim somebody else's
   // open, because the customer comes from the JWT and never from the body.
   app.post('/api/notifications/track', h(async (req, res) => {
-    const customerId = await customerFromReq(req);
-    if (!customerId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+    // Either side may report. The astrologer check comes FIRST because
+    // customerFromReq refuses an astrologer token outright, and one phone number
+    // can be both — the store-reviewer account is.
+    const astrologerId = vendorFromReq(req);
+    const customerId = astrologerId ? null : await customerFromReq(req);
+    if (!astrologerId && !customerId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+    const ownerColumn = astrologerId ? 'astrologer_id' : 'customer_id';
+    const ownerId = astrologerId || customerId;
     const { campaignId, event } = req.body || {};
     if (!campaignId || !['delivered', 'opened', 'clicked'].includes(event)) {
       return res.status(400).json({ success: false, message: 'campaignId and a valid event are required' });
@@ -431,7 +509,7 @@ module.exports = function registerNotificationPlatformRoutes(app) {
     const { data: rows, error } = await client().from('notification_sends')
       .select('id, delivered_at, opened_at, clicked_at, open_count')
       .eq('campaign_id', campaignId)
-      .eq('customer_id', customerId)
+      .eq(ownerColumn, ownerId)
       .limit(1);
     if (error) {
       if (error.code === '22P02') return res.status(400).json({ success: false, message: 'Invalid campaign id' });

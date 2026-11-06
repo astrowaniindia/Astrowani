@@ -3,7 +3,7 @@
 // HomeScreen.js, which only works while that screen is mounted). Data-only FCM payloads
 // from the backend land here via Firebase.js's onMessage/setBackgroundMessageHandler.
 import { Platform } from 'react-native';
-import notifee, { AndroidImportance, AndroidVisibility, AndroidCategory } from '@notifee/react-native';
+import notifee, { AndroidImportance, AndroidVisibility, AndroidCategory, AndroidStyle } from '@notifee/react-native';
 import { startRinging, stopRinging } from './incomingRingtone';
 
 const IS_IOS = Platform.OS === 'ios';
@@ -277,18 +277,31 @@ export async function displayIncomingRequestNotification(payload, { foreground =
 // Admin broadcast/personal notifications — sent from the admin dashboard with a freeform
 // title (e.g. an astrologer persona name like "Manju Ji") and body text. Distinct from the
 // incoming-request notifications above: no actions, no ongoing/ CALL category, plain tap-to-open.
-export async function displayGenericNotification({ title, body }) {
+export async function displayGenericNotification({ title, body, image, deepLink, campaignId, type }) {
   // Silent channel: an admin broadcast must not ring like an incoming consultation.
   await ensureChannel(false);
   await notifee.displayNotification({
     title: title || 'Astrowani',
     body,
+    // Carried so the PRESS handler in index.js can route the tap and attribute the
+    // open. Before this, the data was dropped at display time, so a tap on an admin
+    // notification opened the app and went nowhere.
+    data: {
+      type: type || 'admin_broadcast',
+      ...(deepLink ? { deepLink: String(deepLink) } : {}),
+      ...(campaignId ? { campaignId: String(campaignId) } : {}),
+    },
     android: {
       channelId: CHANNEL_ID_SILENT,
       importance: AndroidImportance.HIGH,
       largeIcon: 'ic_launcher',
       pressAction: { id: 'default', launchActivity: 'default' },
+      // `largeIcon: null` collapses the logo thumbnail while the picture is
+      // expanded, which is the Android convention — without it the logo sits on top
+      // of the image.
+      ...(image ? { style: { type: AndroidStyle.BIGPICTURE, picture: String(image) }, largeIcon: null } : {}),
     },
+    ...(image ? { ios: { attachments: [{ url: String(image) }] } } : {}),
   });
 }
 

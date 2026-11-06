@@ -36,6 +36,12 @@ if (typeof globalThis.WebSocket === 'undefined') {
 }
 
 const QA_PHONE = '9123450002';
+// A second no-SMS QA number for the astrologer half. Kept distinct from QA_PHONE on
+// purpose: one number can be BOTH a customer and an astrologer in this database (the
+// store-reviewer account is), and several of the refusals below turn on which of the
+// two a token resolves to — so sharing a number would make those assertions
+// meaningless.
+const QA_ASTRO_PHONE = '9123450003';
 const JWT_SECRET = process.env.JWT_SECRET;
 
 let pass = 0;
@@ -101,8 +107,22 @@ function request(method, path, { token, body } = {}) {
 }
 
 const adminToken = () => jwt.sign({ role: 'admin', email: 'check@local' }, JWT_SECRET, { expiresIn: '10m' });
-const customerToken = () => jwt.sign({ phone: QA_PHONE }, JWT_SECRET, { expiresIn: '10m' });
+// Carries `userId` as well as the phone claim, because a REAL customer token does
+// — index.js mints both — and a fixture without it cannot exercise the guard in
+// vendorFromReq at all. Verified: with the uuid claim present, loosening that guard
+// to accept any uuid-shaped id makes the "a CUSTOMER token cannot register an
+// astrologer device" check fail, which is the only reason that check is worth
+// having. Without it the check passed against a deliberately broken guard.
+const customerToken = () => jwt.sign(
+  customerId ? { phone: QA_PHONE, userId: customerId } : { phone: QA_PHONE },
+  JWT_SECRET, { expiresIn: '10m' },
+);
 const astrologerToken = () => jwt.sign({ role: 'astrologer', astroId: '00000000-0000-0000-0000-000000000001' }, JWT_SECRET, { expiresIn: '10m' });
+// The REAL synthetic astrologer, once it exists. A separate helper because the one
+// above is deliberately a stranger's token, used to prove a refusal.
+let qaAstroId = null;
+let customerId = null;
+const qaAstrologerToken = () => jwt.sign({ role: 'astrologer', astroId: qaAstroId }, JWT_SECRET, { expiresIn: '10m' });
 
 async function main() {
   section('preconditions');
@@ -115,6 +135,10 @@ async function main() {
   const { data: existing } = await client.from('customers').select('id').eq('mobile', QA_PHONE).maybeSingle();
   ok(`QA number ${QA_PHONE} is free`, !existing, existing?.id);
   if (existing) throw new Error(`${QA_PHONE} already exists — refusing to touch a row this script did not create`);
+
+  const { data: existingAstro } = await client.from('astrologers').select('id').eq('phone_number', QA_ASTRO_PHONE).maybeSingle();
+  ok(`QA astrologer number ${QA_ASTRO_PHONE} is free`, !existingAstro, existingAstro?.id);
+  if (existingAstro) throw new Error(`${QA_ASTRO_PHONE} already exists — refusing to touch a row this script did not create`);
 
   // ── the app under test ────────────────────────────────────────────────────
   const app = express();
@@ -133,7 +157,6 @@ async function main() {
   base = `http://127.0.0.1:${server.address().port}`;
   console.log(`  (bare Express on ${base} — index.js never booted)`);
 
-  let customerId = null;
   const createdCampaigns = [];
 
   try {
@@ -371,8 +394,18 @@ async function main() {
     const { data: reopened } = await client.from('notification_sends').select('open_count').eq('campaign_id', c1);
     ok('but open_count carries the repeats', reopened[0].open_count >= 2, reopened[0].open_count);
 
+    // An astrologer token is now ACCEPTED by this endpoint — the astrologer app
+    // reports its own opens since the vendor half was built — so the property under
+    // test is no longer "it is refused" but "it cannot claim somebody else's row".
+    // Asserted against the customer's counter rather than the HTTP status, because
+    // that is the thing a bug here would actually corrupt.
+    const beforeSteal = (await client.from('notification_campaigns')
+      .select('opened_count').eq('id', c1).maybeSingle()).data?.opened_count;
     r = await request('POST', '/api/notifications/track', { token: astrologerToken(), body: { campaignId: c1, event: 'opened' } });
-    ok('an astrologer token cannot claim an open', r.status === 401, r.status);
+    ok('an astrologer token cannot claim a CUSTOMER open', r.body?.matched === false, r.body);
+    const afterSteal = (await client.from('notification_campaigns')
+      .select('opened_count').eq('id', c1).maybeSingle()).data?.opened_count;
+    ok('and the campaign counter did not move', afterSteal === beforeSteal, { beforeSteal, afterSteal });
 
     // ════════════════════════════════════════════════ 6. the governor
     section('the governor — and a positive control for every refusal');
@@ -569,6 +602,180 @@ async function main() {
     ok('9→17 does NOT contain 02:00', !targeting.hourInWindow(2, 9, 17));
     ok('a zero-width window means no quiet hours', !targeting.hourInWindow(5, 5, 5));
     ok('a null window means no quiet hours', !targeting.hourInWindow(5, null, null));
+
+    // ════════════════════════════════════════════════ 13. the astrologer side
+    section('astrologers — reachability is an earnings problem here');
+
+    // Created NOT suspended and WITH a service toggle on, because that is the only
+    // shape `unreachable_online` is about. Kept out of every customer-facing list
+    // by approval_status 'pending' AND hidden_from_customers — either alone would
+    // do it, and both are set because a synthetic astrologer a real customer could
+    // ring is not an acceptable test fixture.
+    const { data: madeAstro, error: astroErr } = await client.from('astrologers')
+      .insert([{
+        first_name: 'Notification', last_name: 'Check',
+        phone_number: QA_ASTRO_PHONE,
+        approval_status: 'pending',
+        hidden_from_customers: true,
+        is_suspended: false,
+        is_chat_enabled: true,
+      }]).select('id');
+    if (astroErr) throw astroErr;
+    qaAstroId = madeAstro[0].id;
+    ok('synthetic astrologer created', !!qaAstroId);
+
+    const { data: hiddenCheck } = await client.from('astrologers')
+      .select('hidden_from_customers, approval_status').eq('id', qaAstroId).maybeSingle();
+    ok('and it really is hidden from customers and unapproved',
+      hiddenCheck?.hidden_from_customers === true && hiddenCheck?.approval_status === 'pending', hiddenCheck);
+
+    const astroReach0 = await devices.astrologerReachSummary();
+    ok('astrologer reach summary answers', !!astroReach0 && astroReach0.live_astrologers > 0, astroReach0);
+
+    // With a service on and no device at all it must show up as open-but-unreachable.
+    // This is the POSITIVE CONTROL for the listing: a function that always returned
+    // nothing would otherwise read as good news.
+    let unreachable = await devices.unreachableAstrologers(500);
+    ok('an available astrologer with no device is listed as unreachable',
+      unreachable.some((a) => String(a.astrologer_id) === String(qaAstroId)), unreachable.length);
+    ok('and the listing says it has no device at all',
+      unreachable.find((a) => String(a.astrologer_id) === String(qaAstroId))?.permission === 'none');
+
+    // ── registration ──
+    r = await request('POST', '/api/vendor/notification-device', { body: { deviceId: 'vd1' } });
+    ok('unauthenticated astrologer device registration is refused', r.status === 401, r.status);
+
+    // The INVERSE of the trap guarded on the customer side: a customer token must
+    // not be able to register a device against an astrologer.
+    r = await request('POST', '/api/vendor/notification-device', {
+      token: customerToken(), body: { deviceId: 'vd1', permissionStatus: 'granted' },
+    });
+    ok('a CUSTOMER token cannot register an astrologer device', r.status === 401, r.status);
+
+    r = await request('POST', '/api/vendor/notification-device', { token: qaAstrologerToken(), body: {} });
+    ok('an astrologer device with no deviceId is refused', r.status === 400, r.status);
+
+    r = await request('POST', '/api/vendor/notification-device', {
+      token: qaAstrologerToken(),
+      body: {
+        deviceId: 'vd-phone-a', fcmToken: 'vtok-aaaaaaaa1111', platform: 'android',
+        appVersion: '6.6', locale: 'hi', permissionStatus: 'granted', permissionAsked: true,
+      },
+    });
+    ok('a granted astrologer device registers and is reachable',
+      r.status === 200 && r.body.recorded === true && r.body.reachable === true, r.body);
+
+    let vdRows = (await client.from('vendor_devices').select('*').eq('astrologer_id', qaAstroId)).data || [];
+    const vdA = vdRows.find((d) => d.device_id === 'vd-phone-a');
+    ok('the vendor device row records the permission', vdA?.permission_status === 'granted', vdA?.permission_status);
+    ok('and the language — vendor_devices never held one before', vdA?.locale === 'hi', vdA?.locale);
+    ok('and stamps when it was asked', !!vdA?.permission_asked_at);
+    ok('and when it was decided', !!vdA?.permission_decided_at);
+
+    // permission_asked_at must not move on a later call. Compared by getTime(),
+    // never by string equality.
+    const askedAtFirst = new Date(vdA.permission_asked_at).getTime();
+    await request('POST', '/api/vendor/notification-device', {
+      token: qaAstrologerToken(),
+      body: { deviceId: 'vd-phone-a', fcmToken: 'vtok-aaaaaaaa1111', permissionStatus: 'granted', permissionAsked: true },
+    });
+    vdRows = (await client.from('vendor_devices').select('*').eq('astrologer_id', qaAstroId)).data || [];
+    ok('permission_asked_at keeps the FIRST sighting',
+      new Date(vdRows.find((d) => d.device_id === 'vd-phone-a').permission_asked_at).getTime() === askedAtFirst);
+
+    // A DENIED device — the state that could not be recorded at all before.
+    r = await request('POST', '/api/vendor/notification-device', {
+      token: qaAstrologerToken(),
+      body: { deviceId: 'vd-phone-b', platform: 'android', permissionStatus: 'denied', permissionAsked: true },
+    });
+    ok('a denied astrologer device registers, and reachable stays TRUE because the other phone works',
+      r.status === 200 && r.body.reachable === true, r.body);
+
+    // A second working phone.
+    await request('POST', '/api/vendor/notification-device', {
+      token: qaAstrologerToken(),
+      body: { deviceId: 'vd-phone-c', fcmToken: 'vtok-cccccccc3333', platform: 'android', permissionStatus: 'granted' },
+    });
+    const liveAstro = await devices.liveAstrologerDevicesFor([qaAstroId]);
+    ok('BOTH live astrologer tokens come back for a campaign',
+      liveAstro.get(qaAstroId)?.tokens.length === 2, liveAstro.get(qaAstroId)?.tokens);
+
+    // Now reachable, so it must LEAVE the unreachable listing. The other half of the
+    // control: the listing has to be able to stop reporting somebody.
+    unreachable = await devices.unreachableAstrologers(500);
+    ok('once reachable it drops off the unreachable listing',
+      !unreachable.some((a) => String(a.astrologer_id) === String(qaAstroId)), unreachable.length);
+
+    const astroReach1 = await devices.astrologerReachSummary();
+    ok('astrologer reach counts it as reachable now',
+      astroReach1.reachable === astroReach0.reachable + 1,
+      { before: astroReach0.reachable, after: astroReach1.reachable });
+    ok('and the open-but-unreachable count went back down',
+      astroReach1.unreachable_online === astroReach0.unreachable_online - 1,
+      { before: astroReach0.unreachable_online, after: astroReach1.unreachable_online });
+
+    // ── a campaign to an astrologer ──
+    r = await request('POST', '/api/admin/notifications/campaigns', {
+      token: adminToken(),
+      body: {
+        mode: 'draft', audience: 'astrologer', target_ids: [qaAstroId],
+        category: 'transactional',
+        title: 'Payout approved', body: 'Your withdrawal has been approved',
+        title_hi: 'पेआउट मंज़ूर', body_hi: 'आपकी निकासी मंज़ूर हो गई',
+        deep_link: 'Wallet', respect_quiet_hours: false,
+      },
+    });
+    const ac1 = r.body.campaign.id;
+    createdCampaigns.push(ac1);
+    pushLog.length = 0;
+    r = await request('POST', '/api/admin/notifications/campaigns/' + ac1 + '/send', { token: adminToken() });
+    ok('a campaign to an astrologer sends', r.body?.stats?.sent === 1, r.body?.stats);
+    ok('and it used BOTH vendor_devices tokens, not the single legacy column',
+      pushLog[0]?.tokens.length === 2 && pushLog[0].tokens.includes('vtok-cccccccc3333'), pushLog[0]?.tokens);
+    ok('the astrologer got the HINDI copy from their device locale',
+      pushLog[0]?.opts?.title === 'पेआउट मंज़ूर', pushLog[0]?.opts?.title);
+
+    const aSends = (await client.from('notification_sends').select('*').eq('campaign_id', ac1)).data || [];
+    ok('the send row is keyed on astrologer_id, not customer_id',
+      aSends.length === 1 && String(aSends[0].astrologer_id) === String(qaAstroId) && aSends[0].customer_id === null,
+      aSends[0]);
+
+    const aNotif = (await client.from('notifications').select('*').eq('campaign_id', ac1)).data || [];
+    ok('an in-app row was written for the astrologer',
+      aNotif.length === 1 && String(aNotif[0].astrologer_id) === String(qaAstroId), aNotif.length);
+
+    // ── tracking from the astrologer app ──
+    r = await request('POST', '/api/notifications/track', {
+      token: qaAstrologerToken(), body: { campaignId: ac1, event: 'clicked' },
+    });
+    ok('an astrologer can report a tap', r.status === 200 && r.body.matched === true, r.body);
+    const aTracked = (await client.from('notification_sends').select('*').eq('campaign_id', ac1)).data || [];
+    ok('the tap landed on the astrologer row', !!aTracked[0].clicked_at && !!aTracked[0].opened_at);
+
+    // A customer must not be able to claim it. The customer HAS send rows of their
+    // own from earlier, so this proves the OWNER COLUMN is being used rather than
+    // just that the campaign id is unknown.
+    r = await request('POST', '/api/notifications/track', {
+      token: customerToken(), body: { campaignId: ac1, event: 'opened' },
+    });
+    ok('a customer cannot claim an astrologer campaign', r.body?.matched === false, r.body);
+
+    // Astrologers are deliberately NOT governed by the preference centre: their
+    // notifications are overwhelmingly "a customer is waiting", and an opt-out would
+    // cost them earnings. There are no astrologer preference rows at all.
+    r = await request('POST', '/api/admin/notifications/audience-preview', {
+      token: adminToken(), body: { audience: 'astrologer', targetIds: [qaAstroId], category: 'promotional' },
+    });
+    ok('an astrologer is reachable even for a promotional preview (not governed)',
+      r.body?.wouldReach === 1, r.body);
+
+    // The admin endpoint behind the new panel.
+    r = await request('GET', '/api/admin/notifications/astrologer-reach?limit=20', { token: adminToken() });
+    ok('the astrologer-reach endpoint answers',
+      r.status === 200 && typeof r.body.reach?.live_astrologers === 'number' && Array.isArray(r.body.unreachable),
+      r.status);
+    r = await request('GET', '/api/admin/notifications/astrologer-reach', {});
+    ok('astrologer-reach requires an admin', r.status === 401, r.status);
   } finally {
     // ════════════════════════════════════════════════ teardown, asserted
     section('teardown');
@@ -584,6 +791,11 @@ async function main() {
         await client.from('notifications').delete().eq('customer_id', customerId);
         await client.from('customers').delete().eq('id', customerId);
       }
+      if (qaAstroId) {
+        await client.from('vendor_devices').delete().eq('astrologer_id', qaAstroId);
+        await client.from('notifications').delete().eq('astrologer_id', qaAstroId);
+        await client.from('astrologers').delete().eq('id', qaAstroId);
+      }
 
       const { data: leftCust } = await client.from('customers').select('id').eq('mobile', QA_PHONE);
       ok('the synthetic customer is gone', (leftCust || []).length === 0, leftCust);
@@ -595,6 +807,11 @@ async function main() {
         leftCamp += (data || []).length;
       }
       ok('every campaign this script made is gone', leftCamp === 0, leftCamp);
+      const { data: leftAstro } = await client.from('astrologers').select('id').eq('phone_number', QA_ASTRO_PHONE);
+      ok('the synthetic astrologer is gone', (leftAstro || []).length === 0, leftAstro);
+      const { data: leftVd } = await client.from('vendor_devices').select('id')
+        .eq('astrologer_id', qaAstroId || '00000000-0000-0000-0000-000000000000');
+      ok('its vendor devices are gone', (leftVd || []).length === 0, leftVd);
       const { data: autos } = await client.from('notification_automations').select('key').eq('enabled', true);
       ok('no automation was left enabled', (autos || []).length === 0, autos);
     } catch (err) {

@@ -657,6 +657,10 @@ const translations = {
     // Shown while a customer is deciding whether to buy more minutes and the astrologer is
     // held for them. Counted down from a deadline, so the seconds are passed in.
     'home.holdTitle': "You're reserved for a moment",
+    // ── Notifications are off (src/components/PushDisabledBar.js) ──
+    'pushOff.title': 'You will miss consultation requests',
+    'pushOff.bodyBlocked': 'Notifications are switched off for this app. Tap to turn them on — without them your phone cannot ring when a customer wants to talk.',
+    'pushOff.bodyNoToken': 'This phone is not set up to receive consultation requests yet. Tap to try again.',
     'home.holdBody': 'A customer is deciding whether to continue with you. Please stay available — {{seconds}}s left.',
     'editProfile.updatedToast': "Profile updated successfully!",
     'editProfile.updatedTitle': "Profile Updated",
@@ -1269,6 +1273,10 @@ const translations = {
     'home.introCallLockedTitle': 'पहले कुछ और कॉल',
     'home.introCallLockedBody': 'इसे बंद करने से पहले आपको {{required}} निःशुल्क परिचय कॉल पूरी करनी होंगी। {{remaining}} और बाकी हैं।',
     'home.holdTitle': 'आपको कुछ देर के लिए आरक्षित रखा गया है',
+    // ── Notifications are off ──
+    'pushOff.title': 'आप कंसल्टेशन रिक्वेस्ट मिस करेंगे',
+    'pushOff.bodyBlocked': 'इस ऐप के लिए नोटिफिकेशन बंद हैं। चालू करने के लिए टैप कीजिए — इनके बिना ग्राहक के बात करने पर आपका फ़ोन बज नहीं सकता।',
+    'pushOff.bodyNoToken': 'यह फ़ोन अभी कंसल्टेशन रिक्वेस्ट लेने के लिए तैयार नहीं है। दोबारा कोशिश करने के लिए टैप कीजिए।',
     'home.holdBody': 'एक ग्राहक आपके साथ आगे जारी रखने का निर्णय ले रहा है। कृपया उपलब्ध रहें — {{seconds}} सेकंड बाकी।',
     'editProfile.updatedToast': "प्रोफ़ाइल सफलतापूर्वक अपडेट हो गई!",
     'editProfile.updatedTitle': "प्रोफ़ाइल अपडेट हो गई",
@@ -1300,6 +1308,12 @@ let currentLanguage = 'English';
  * Prefer `useContext(LanguageContext).t` inside components; this exists only for
  * module-level code that has no context available.
  */
+// The language translate() is currently using, for non-React callers. Mirrors the
+// customer app's export of the same name; src/utils/notificationDevice.js needs it
+// to tell the backend which language this astrologer reads the app in, which is
+// what lets a campaign send Hindi copy to the right people.
+export const getCurrentLanguage = () => currentLanguage;
+
 export const translate = (key, params) => {
   let str = translations[currentLanguage]?.[key] ?? translations.English[key] ?? key;
   if (params) {

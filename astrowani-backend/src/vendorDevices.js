@@ -34,6 +34,18 @@ const isMissingTable = (err) =>
   !!err && (err.code === 'PGRST205' || err.code === '42P01'
     || /Could not find the table|does not exist/i.test(err.message || ''));
 
+// A column PostgREST does not know about, as opposed to a missing table. PGRST204
+// is its own code for it; 42703 is Postgres's. Kept distinct from isMissingTable
+// because the two need different fallbacks: a missing table means "use the legacy
+// account columns", a missing column means "write the same row with fewer fields".
+const isMissingColumn = (err) => {
+  if (!err) return false;
+  const msg = `${err.message || ''} ${err.details || ''}`;
+  return err.code === 'PGRST204' || err.code === '42703'
+    || /permission_status|permission_asked_at|permission_decided_at|app_removed_at|\blocale\b/i.test(msg);
+};
+
+let permissionColumnsWarned = false;
 let warnedMissing = false;
 function noteMissing(where) {
   if (warnedMissing) return;
@@ -54,8 +66,13 @@ function noteMissing(where) {
  *   means the caller must keep maintaining the legacy columns — which it should
  *   do regardless while old builds exist.
  */
+const PERMISSION_STATES = new Set(['undetermined', 'granted', 'denied', 'blocked']);
+
 async function registerDevice(astrologerId, opts = {}) {
-  const { deviceId, fcmToken = null, voipToken = null, platform = null, appVersion = null } = opts;
+  const {
+    deviceId, fcmToken = null, voipToken = null, platform = null, appVersion = null,
+    permissionStatus = null, permissionAsked = false, locale = null,
+  } = opts;
   if (!astrologerId || !deviceId) return false;
 
   const row = {
@@ -77,12 +94,89 @@ async function registerDevice(astrologerId, opts = {}) {
   if (normalizedPlatform) row.platform = normalizedPlatform;
   if (appVersion) row.app_version = String(appVersion).slice(0, 40);
 
+  // ── PERMISSION AND LANGUAGE (2026-11-07) ──────────────────────────────────
+  // This table has always known which devices an astrologer is signed in on, and
+  // never whether any of them is allowed to show a notification. On the customer
+  // side that was a marketing gap; here it is an earnings one — an astrologer who
+  // is online and unreachable misses every request that arrives while the app is
+  // backgrounded, and nobody can see it.
+  //
+  // Only the fields actually supplied are written. PostgREST's upsert builds
+  // `ON CONFLICT DO UPDATE SET` from the payload's own columns, so anything left
+  // out keeps its existing value — which is the same reason the token lines above
+  // are conditional.
+  const wantsPermissionWrite = !!permissionStatus || permissionAsked;
+  if (locale) {
+    const loc = String(locale).trim().toLowerCase();
+    if (loc.startsWith('hi') || loc.startsWith('en')) row.locale = loc.startsWith('hi') ? 'hi' : 'en';
+  }
+  if (permissionStatus && PERMISSION_STATES.has(String(permissionStatus))) {
+    row.permission_status = String(permissionStatus);
+    // 'undetermined' is the ABSENCE of a decision, so stamping it would record a
+    // date for something that never happened.
+    if (row.permission_status !== 'undetermined') row.permission_decided_at = row.last_seen_at;
+  }
+  // A fresh token means this install is alive again, so an earlier "app removed"
+  // mark is wrong. Same rule as customer_devices.
+  if (fcmToken) {
+    row.app_removed_at = null;
+    row.app_removed_reason = null;
+  }
+
+  // "When did we FIRST ask" is only answerable once, so it needs the existing row.
+  // The read is paid for ONLY on the reporting path — an ordinary login or token
+  // refresh supplies neither field and stays a single write, which matters because
+  // the vendor app calls this on every foreground.
+  if (wantsPermissionWrite) {
+    try {
+      const { data: existing } = await db
+        .from('vendor_devices')
+        .select('permission_asked_at')
+        .eq('astrologer_id', astrologerId)
+        .eq('device_id', row.device_id)
+        .maybeSingle();
+      if (permissionAsked && !existing?.permission_asked_at) row.permission_asked_at = row.last_seen_at;
+    } catch (_) {
+      // Not worth failing a login over; the status itself still gets written.
+    }
+  }
+
   const { error } = await db
     .from('vendor_devices')
     .upsert(row, { onConflict: 'astrologer_id,device_id' });
 
   if (error) {
     if (isMissingTable(error)) { noteMissing('registerDevice'); return false; }
+
+    // A column PostgREST does not know about 400s the WHOLE statement rather than
+    // ignoring the field, so a backend deployed before
+    // sql/vendor_device_permissions.sql would stop registering devices entirely —
+    // which would sign astrologers out of each other's sessions again, the exact
+    // bug this module exists to fix. Retry without the new columns. Only a
+    // missing-column error falls through here; anything else is reported, so a real
+    // fault cannot hide behind a silently narrower write. Same three-tier posture
+    // as the admin customer list (subsystem EG).
+    if (isMissingColumn(error)) {
+      if (!permissionColumnsWarned) {
+        permissionColumnsWarned = true;
+        console.warn('[vendorDevices] permission columns missing — run sql/vendor_device_permissions.sql. '
+          + 'Registering devices without permission state until then.');
+      }
+      const narrowed = { ...row };
+      delete narrowed.permission_status;
+      delete narrowed.permission_asked_at;
+      delete narrowed.permission_decided_at;
+      delete narrowed.locale;
+      delete narrowed.app_removed_at;
+      delete narrowed.app_removed_reason;
+      const { error: retryErr } = await db
+        .from('vendor_devices')
+        .upsert(narrowed, { onConflict: 'astrologer_id,device_id' });
+      if (!retryErr) return true;
+      console.error('[vendorDevices] registerDevice failed after narrowing:', retryErr.message);
+      return false;
+    }
+
     console.error('[vendorDevices] registerDevice failed:', error.message);
     return false;
   }

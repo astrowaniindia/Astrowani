@@ -43,6 +43,7 @@ import { startRinging, stopRinging } from '../../utils/incomingRingtone';
 import { stopRingingService } from '../../utils/ringingForegroundService';
 import { cancelIncomingRequestNotification } from '../../utils/incomingRequestNotifications';
 import { LanguageContext } from '../../context/LanguageContext';
+import PushDisabledBar from '../../components/PushDisabledBar';
 import { captureEvent } from '../../utils/Analytics';
 import { getDeviceId } from '../../utils/deviceId';
 import { forceSignOutLocally, isStillSignedIn } from '../../utils/deviceSession';
@@ -745,6 +746,10 @@ const HomeScreen = () => {
           active call/chat/live is time-sensitive enough to stay visible regardless of
           scroll position. Renders nothing when there's nothing active. */}
       <OngoingSessionBar navigation={navigation} />
+      {/* Pinned for the same reason, and it renders nothing in the normal case: an
+          astrologer whose notifications are off never goes looking for a settings
+          page about it — they just see fewer requests and assume demand is low. */}
+      <PushDisabledBar />
       {/*
         style={{flex: 1}} is what PINS the bottom bar below. Without it the
         ScrollView sizes to its own content instead of claiming the space above

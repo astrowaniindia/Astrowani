@@ -995,12 +995,14 @@ function Templates({ templates, reload }) {
 
 function Reach() {
   const [reach, setReach] = useState(null);
+  const [astro, setAstro] = useState(null);
   const [limits, setLimits] = useState(null);
   const [analytics, setAnalytics] = useState(null);
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(() => {
     client.get('/api/admin/notifications/reach').then(({ data }) => setReach(data.reach)).catch(() => {});
+    client.get('/api/admin/notifications/astrologer-reach?limit=100').then(({ data }) => setAstro(data)).catch(() => {});
     client.get('/api/admin/notifications/limits').then(({ data }) => setLimits(data.limits)).catch(() => {});
     client.get('/api/admin/notifications/analytics?days=30').then(({ data }) => setAnalytics(data)).catch(() => {});
   }, []);
@@ -1048,6 +1050,82 @@ function Reach() {
                 them are not refusals — they are people on app builds that never reported one. That number
                 falls on its own as customers open an updated app, and it is the single biggest lever on
                 how far any campaign can go.
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* ── ASTROLOGERS ──────────────────────────────────────────────────────
+          A separate card because the question is a different one. For customers,
+          reach is a ceiling on marketing. For astrologers it is money: somebody
+          with chat and call switched on whose app cannot receive a push misses
+          every request that arrives while they are backgrounded. */}
+      <div className="card" style={{ padding: 18, marginBottom: 16 }}>
+        <div style={{ fontWeight: 600, marginBottom: 4 }}>Astrologers — can they be rung?</div>
+        <div className="muted" style={{ fontSize: 12.5, marginBottom: 14 }}>
+          An astrologer who is open for business and unreachable by push is losing consultations
+          every hour, silently. That is the number to watch on this card.
+        </div>
+        {!astro && <div className="muted">Loading…</div>}
+        {astro?.reach && (
+          <>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
+              <Stat label="Astrologers" value={fmt(astro.reach.live_astrologers)} hint="not suspended" />
+              <Stat label="Reachable" value={fmt(astro.reach.reachable)} tone="good" hint={pct(astro.reach.reachable, astro.reach.live_astrologers)} />
+              <Stat label="Open for business" value={fmt(astro.reach.available_now)} hint="a service toggle is on" />
+              <Stat
+                label="Open but UNREACHABLE"
+                value={fmt(astro.reach.unreachable_online)}
+                tone={astro.reach.unreachable_online ? 'bad' : 'good'}
+                hint="missing requests right now"
+              />
+            </div>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
+              <Stat label="Never registered a device" value={fmt(astro.reach.never_registered)} />
+              <Stat label="Said no to the prompt" value={fmt(astro.reach.denied)} />
+              <Stat label="Turned it off later" value={fmt(astro.reach.blocked)} />
+              <Stat label="Android / iPhone" value={`${fmt(astro.reach.android_reachable)} / ${fmt(astro.reach.ios_reachable)}`} />
+            </div>
+
+            {!!astro.unreachable?.length && (
+              <>
+                <div style={{ fontWeight: 600, marginBottom: 6 }}>
+                  These {astro.unreachable.length} are available and cannot be reached
+                </div>
+                <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+                  “No device” usually means they have not opened a build that reports one, or they
+                  signed out. “Denied” or “Blocked” means notifications are off on their phone and
+                  they need telling.
+                </div>
+                <div className="table-wrap">
+                  <table>
+                    <thead><tr>
+                      <th>Astrologer</th><th>Phone</th><th>Services on</th><th>Devices</th><th>Permission</th><th>Last seen</th>
+                    </tr></thead>
+                    <tbody>
+                      {astro.unreachable.map((a) => (
+                        <tr key={a.astrologer_id}>
+                          <td>{a.name || '—'}</td>
+                          <td className="muted">{a.phone_number || '—'}</td>
+                          <td className="muted" style={{ fontSize: 12.5 }}>{a.services || '—'}</td>
+                          <td className="muted">{a.device_count}</td>
+                          <td style={{ fontSize: 12.5 }}>
+                            {a.permission === 'none' ? 'no device' : a.permission}
+                          </td>
+                          <td className="muted" style={{ fontSize: 12.5 }}>
+                            {a.last_seen_at ? new Date(a.last_seen_at).toLocaleString() : 'never'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+            {astro.reach.unreachable_online === 0 && (
+              <div style={{ padding: 10, borderRadius: 8, background: '#eef9f1', border: '1px solid #cde9d6', fontSize: 13 }}>
+                Everybody currently open for business can be reached by push.
               </div>
             )}
           </>

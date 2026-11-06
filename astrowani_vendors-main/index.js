@@ -68,6 +68,9 @@ const {stopRingingService, getPendingOverlayAction} = (() => {
 const {navigationRef} = (() => {
   try { return require('./src/utils/navigationRef'); } catch (_) { return {}; }
 })();
+const {trackNotification, resolveDeepLink} = (() => {
+  try { return require('./src/utils/notificationDevice'); } catch (_) { return {}; }
+})();
 const {initCallKeep} = (() => {
   try { return require('./src/utils/callKeep'); } catch (e) {
     console.warn('[startup] callKeep unavailable:', e?.message || e);
@@ -145,6 +148,39 @@ const normaliseRequest = (raw = {}) => {
 };
 
 const handleNotificationAction = async ({type, detail}) => {
+  // ── A PLAIN TAP ON THE NOTIFICATION BODY ─────────────────────────────────
+  // This handler used to return immediately for anything that was not an
+  // Accept/Reject button, so tapping an admin notification opened the app and went
+  // nowhere, and nothing was ever recorded about the tap. Handled here rather than
+  // in a second listener because notifee allows only ONE onBackgroundEvent handler
+  // — registering another would silently replace the Accept/Reject one, which is
+  // the one that must never break.
+  //
+  // An incoming-request notification is deliberately left alone: its PRESS already
+  // brings the app forward via launchActivity, and the astrologer answers it with
+  // the buttons.
+  if (type === EventType.PRESS) {
+    const data = detail.notification?.data || {};
+    try {
+      if (data.campaignId && trackNotification) {
+        await trackNotification(String(data.campaignId), 'clicked');
+      }
+      const screen = resolveDeepLink ? resolveDeepLink(data.deepLink) : null;
+      if (screen) {
+        if (navigationRef?.current?.isReady()) {
+          navigationRef.current.navigate(screen);
+        } else if (AsyncStorage) {
+          // Cold start from a killed process: no navigator yet. Reuses the same
+          // hand-off NavigationScreen.js already consumes for Accept.
+          await AsyncStorage.setItem('pendingCallNavigation', JSON.stringify({screen, params: undefined}));
+        }
+      }
+    } catch (e) {
+      console.warn('[notifee press] handling error:', e?.message);
+    }
+    return;
+  }
+
   if (type !== EventType.ACTION_PRESS) return;
   const req = normaliseRequest(detail.notification?.data || {});
   const pressActionId = detail.pressAction?.id;
