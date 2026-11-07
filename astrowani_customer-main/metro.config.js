@@ -16,7 +16,31 @@ const config = {
   // alone did NOT fix it, because the ceiling was the total across workers, not any
   // single one. Four is enough to keep the bundle reasonably fast while leaving room
   // for Gradle's own JVM alongside it.
-  maxWorkers: 4,
+  // OVERRIDABLE PER BUILD (2026-11-07). Four is still right as the default, but it
+  // is not always enough on THIS machine: a release build died again with
+  // "Fatal process out of memory: Zone" inside a jest-worker while free RAM was
+  // 5.3GB of 15.7GB, and fell to 0.9GB mid-transform on the retry.
+  //
+  // THE NOTE ABOVE IS EXACTLY RIGHT AND WAS RE-LEARNED THE HARD WAY. The ceiling is
+  // the TOTAL across workers, so `NODE_OPTIONS=--max-old-space-size=...` does nothing
+  // for it. Worse, RAISING that value is actively counterproductive, and measuring it
+  // is what showed why: on this machine the default cap is ALREADY ~4096MB
+  // (`v8.getHeapStatistics().heap_size_limit` reports 4144 for the default AND for an
+  // explicit 4096, i.e. they are the same number). So "raise NODE_OPTIONS to 4096" is
+  // a no-op, and anything larger just lets each worker grow further into RAM that is
+  // not there.
+  //
+  // The only two real levers are FEWER WORKERS and a LOWER per-worker cap. This env
+  // override exists so a memory-starved build can pull the first without changing the
+  // default for CI (the GitHub runners that build OTA bundles have 4 cores and ample
+  // RAM; capping them at 2 would only make every OTA slower):
+  //
+  //   METRO_MAX_WORKERS=2 NODE_OPTIONS=--max-old-space-size=2048 ./gradlew bundleRelease
+  //
+  // Changing this value invalidates Metro's transform cache, so the run that uses it
+  // is a COLD one and therefore the hungriest — which is why the per-worker cap
+  // matters alongside it rather than instead of it.
+  maxWorkers: Number(process.env.METRO_MAX_WORKERS) || 4,
   resolver: {
     // posthog-react-native depends on @posthog/core subpaths (e.g. @posthog/core/surveys)
     // declared via package.json "exports" — Metro doesn't resolve those by default, which
