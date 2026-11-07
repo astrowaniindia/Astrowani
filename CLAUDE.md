@@ -4824,23 +4824,27 @@ and AsyncStorage in both apps, so the new utils introduce no circular import.
 | admin Notification Center | **live** — the served bundle contains the page, `astrologer-reach` and `audience-preview`; the old page is relabelled "Quick Push (classic)" |
 | customer app, **Android** | **OTA'd** — bundle `01a1b5ee-798c-7def-b52b-e019653bc5ce`, 24.1.x, from `c942ed1e` |
 | customer app, iOS | **held** — owner's instruction: nothing ships for iOS |
-| vendor app | **held** — see below |
+| vendor app, **Android** | **OTA'd** — bundle `01a1b5f7-5c55-7d4b-b972-df7fbf5192b9`, 6.6.x, from `774c9ad4` |
 | iOS Notification Service Extension | **held** — needs a store build (ER3) |
 
-> **WHY THE VENDOR OTA WAS HELD, and it is the one judgement call here.** The newest
-> enabled *Android* vendor bundle is `76d31a76`, but the newest *iOS* one is `0a7855da`
-> — so **seven commits of the EM session's CallKit/iOS work have shipped to iPhone
-> astrologers and never to Android ones**. An Android vendor OTA now would carry all of
-> it to Android for the first time, in the same bundle as the notification work, which
-> is exactly what the standing rule about OTA bundles shipping the whole commit warns
-> about. Some of it is genuinely Android-relevant (EM2's `popupQueue` fix is the
-> "popup goes invisible" and "keeps vibrating after I accept" pair), but that is the
-> owner's call, not a side effect of shipping notifications.
+> **THE VENDOR ANDROID OTA CARRIED SEVEN COMMITS OF SOMEONE ELSE'S iOS WORK, and
+> that was checked before it went.** The newest enabled *Android* vendor bundle was
+> `76d31a76` while the newest *iOS* one was `0a7855da`, so the EM session's
+> CallKit/iOS work had reached iPhone astrologers and never Android ones. Shipping
+> notifications to Android therefore meant carrying all of it across for the first
+> time — exactly what the standing rule about OTA bundles shipping the whole commit
+> warns about. The owner approved it after being told.
 >
-> **The consequence while it is held:** astrologer permission state is not reported, so
-> the astrologer Reach panel keeps showing what the backfill inferred (97 reachable of
-> 117, 6 open-but-unreachable) and will not refine until that OTA goes. Everything
-> server-side — the panel, campaigns to astrologers, multi-device sends — works now.
+> **Why it was low risk, verified rather than assumed:** `initCallKeep()` opens with
+> `if (!IS_IOS || didSetup) return;` and `endCallKitCallForRequest()` with
+> `if (!IS_IOS || !data) return;`, so the CallKit code does nothing on Android; and
+> `REQUEST_RESOLVED_EVENT` is emitted from exactly one place inside the iOS CallKit
+> path, so HomeScreen's listener for it is inert there. The two changes that DO run on
+> Android are improvements: `refreshPendingRequests` (a foreground catch-up that fixes
+> "I tap the notification and the request isn't on the dashboard" — a bug on Android
+> too, since the socket drops whenever the app is backgrounded) and the login/OTP
+> white-root fix. **Check those guards again before carrying any future iOS-only
+> backlog across; this was safe, not safe by default.**
 
 **The customer Android OTA carried nothing extra:** the previous enabled Android bundle
 was built from `2ca432d4`, which was HEAD when this work started, so the diff is exactly
@@ -4849,8 +4853,8 @@ this session's commits. That was checked before shipping, not assumed.
 ### Not done, deliberately
 
 1. ~~Nothing is deployed and no OTA has been sent.~~ **SHIPPED 2026-11-07 — see ER4.**
-   Backend and admin are live; the customer app is OTA'd on **Android only**. The
-   customer iOS OTA and the vendor OTA are deliberately held — ER4 says why.
+   Backend and admin are live; BOTH apps are OTA'd on **Android only**. Nothing has
+   been shipped for iOS, by instruction.
 2. ~~iOS images need a Notification Service Extension~~ — **BUILT the same day, see
    ER3. Not compiled and not shipped**; it needs a store build and EAS credentials
    for the new target.
