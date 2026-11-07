@@ -371,7 +371,16 @@ async function handleActiveSessionTap(data) {
   }
 }
 
-function handleNotificationTap(remoteMessage) {
+/**
+ * Route a notification tap.
+ *
+ * EXPORTED (2026-11-07) so the in-app list can use the SAME router as a tap on the
+ * banner. Those two used to be different code: the banner had this table, and the
+ * list had one branch for free-call invites and nothing else — so an order update
+ * or a support reply opened the app and sat there. Keeping one router means a type
+ * that works from the banner works from the list, for free.
+ */
+export function handleNotificationTap(remoteMessage) {
   const type = remoteMessage?.data?.type;
 
   // They tapped it. Recorded before anything can go wrong with the navigation, so

@@ -23,6 +23,8 @@ const { createClient } = require('@supabase/supabase-js');
 const { findCustomerByPhone, findAstrologerByPhone } = require('./customerLookup');
 const { generateReply } = require('./supportBot');
 const { sendPush } = require('./push');
+const { recordInAppAsync } = require('./notifications/inApp');
+
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -511,6 +513,23 @@ module.exports = function registerSupportRoutes(app) {
             data: { screen: 'SupportChat', conversationId: conv.id, type: 'support_reply' },
           });
         }
+  // Written OUTSIDE the `has a token` guard on purpose: the in-app list is the
+  // DURABLE record and the push is only the alert. Of 4,890 customers, 289 can
+  // receive a push — gating the record on the token would leave the other 94%
+  // with no trace of the thing at all, which is the population this exists for.
+        // A support reply is the clearest case of all: somebody asked a question and
+        // the answer used to live only in a banner. `deepLink` is given explicitly
+        // for the astrologer because the two apps have different screens.
+        recordInAppAsync({
+          type: 'support_reply',
+          audience: conv.customer_id ? 'customer' : 'astrologer',
+          customerId: conv.customer_id || null,
+          astrologerId: conv.astrologer_id || null,
+          title: 'Astrowani Support',
+          body: body.slice(0, 140),
+          data: { conversationId: conv.id },
+          ...(conv.customer_id ? {} : { deepLink: 'Support' }),
+        });
       }
     } catch (e) {
       console.warn('[support] reply push failed:', e?.message);

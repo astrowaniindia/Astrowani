@@ -77,6 +77,12 @@ const devices = require('../src/notifications/devices');
 const targeting = require('../src/notifications/targeting');
 const sender = require('../src/notifications/sender');
 const automations = require('../src/notifications/automations');
+// Deliberately NOT named `inApp`: section 4 declares a local
+// `const { data: inApp }` for the campaign's in-app rows, which shadows a module
+// of that name everywhere inside main(). The first run of these checks died on
+// `inApp.recordInApp is not a function` for exactly that reason, and the module
+// was fine — the collision was invisible because both names read correctly.
+const inAppRecord = require('../src/notifications/inApp');
 
 const client = db();
 
@@ -786,6 +792,83 @@ async function main() {
       r.status);
     r = await request('GET', '/api/admin/notifications/astrologer-reach', {});
     ok('astrologer-reach requires an admin', r.status === 401, r.status);
+
+    // ════════════════════════════════════════════ 14. the in-app record
+    section('the in-app list carries the OTHER notification types');
+
+    // The gap this closes: `notifications` held three types in 15,468 rows while
+    // the backend pushed fifteen others — order updates, delivered reports,
+    // support replies, "your astrologer is free now", referral rewards, missed
+    // sessions. Each existed only for the seconds it sat in the phone's tray.
+    let r14 = await inAppRecord.recordInApp({
+      type: 'order_update',
+      customerId,
+      title: 'Your order has shipped',
+      body: 'It is on its way.',
+      data: { orderId: 'abc-123', status: 'shipped' },
+    });
+    ok('an order update is recorded', r14.ok === true && !!r14.id, r14);
+
+    let { data: rec } = await client.from('notifications').select('*').eq('id', r14.id).maybeSingle();
+    ok('it carries the category', rec?.category === 'transactional', rec?.category);
+    ok('it carries a destination the app can route', rec?.deep_link === 'MyOrders', rec?.deep_link);
+    ok('it carries the ids the screen needs', rec?.data?.orderId === 'abc-123', rec?.data);
+    ok('and the type, so the list can group it', rec?.type === 'order_update', rec?.type);
+
+    // An UNKNOWN type must write NOTHING. Inserting it with no category and no
+    // destination would put a row in front of a customer that goes nowhere when
+    // tapped, which is the state this module exists to end.
+    const before14 = (await client.from('notifications').select('id').eq('customer_id', customerId)).data.length;
+    r14 = await inAppRecord.recordInApp({ type: 'not_a_real_type', customerId, title: 'x', body: 'y' });
+    ok('an unknown type is refused', r14.ok === false && r14.reason === 'unknown_type', r14);
+    r14 = await inAppRecord.recordInApp({ type: 'order_update', title: 'x', body: 'y' });
+    ok('no recipient is refused', r14.ok === false && r14.reason === 'no_recipient', r14);
+    r14 = await inAppRecord.recordInApp({ type: 'order_update', customerId });
+    ok('no copy is refused', r14.ok === false && r14.reason === 'no_copy', r14);
+    const after14 = (await client.from('notifications').select('id').eq('customer_id', customerId)).data.length;
+    ok('and none of those three wrote a row', after14 === before14, { before14, after14 });
+
+    // The astrologer direction, keyed on the right column.
+    r14 = await inAppRecord.recordInApp({
+      type: 'report_update', audience: 'astrologer', astrologerId: qaAstroId,
+      title: 'Update on your report', body: 'Resolved.', data: { reportId: 'r-1' },
+    });
+    ok('an astrologer record is keyed on astrologer_id', r14.ok === true, r14);
+    ({ data: rec } = await client.from('notifications').select('*').eq('id', r14.id).maybeSingle());
+    ok('and carries no customer_id', rec?.customer_id === null && String(rec?.astrologer_id) === String(qaAstroId));
+
+    // THE ASSERTION THAT PROVES THE FIX: the app's own list endpoint now returns a
+    // type that is not a campaign and not an admin broadcast.
+    r = await request('GET', '/api/notifications/list', { token: customerToken() });
+    const listed = (r.body.data || []).find((n) => n.type === 'order_update');
+    ok('the app list serves the order update', !!listed, (r.body.data || []).map((n) => n.type).join(','));
+    ok('with its destination intact', listed?.deep_link === 'MyOrders', listed?.deep_link);
+
+    // The two-hour expiry on "they're free now", which is the one type where a
+    // stale row is worse than none.
+    r14 = await inAppRecord.recordInApp({
+      type: 'astrologer_free', customerId,
+      title: "They're free now!", body: 'Tap to connect.',
+      data: { astrologerId: qaAstroId },
+      expiresAt: new Date(Date.now() - 60000).toISOString(),
+    });
+    ok('an astrologer_free record is written', r14.ok === true, r14);
+    r = await request('GET', '/api/notifications/list', { token: customerToken() });
+    ok('an already-expired one is hidden from the list',
+      !(r.body.data || []).some((n) => n.type === 'astrologer_free'),
+      (r.body.data || []).map((n) => n.type).join(','));
+
+    // And the live code really does route it from `type` rather than needing a
+    // deep link, because those destinations need an id.
+    ok('astrologer_free deliberately carries no deep_link',
+      inAppRecord.TYPES.astrologer_free.deepLink === null);
+    ok('support_reply deliberately carries no deep_link',
+      inAppRecord.TYPES.support_reply.deepLink === null);
+    ok('every other known type names a destination',
+      Object.entries(inAppRecord.TYPES)
+        .filter(([k]) => !['astrologer_free', 'support_reply', 'report_update'].includes(k))
+        .every(([, v]) => typeof v.deepLink === 'string' && v.deepLink.length > 0),
+      JSON.stringify(inAppRecord.TYPES));
   } finally {
     // ════════════════════════════════════════════════ teardown, asserted
     section('teardown');

@@ -4850,6 +4850,67 @@ and AsyncStorage in both apps, so the new utils introduce no circular import.
 was built from `2ca432d4`, which was HEAD when this work started, so the diff is exactly
 this session's commits. That was checked before shipping, not assumed.
 
+### ER5. The in-app list finally carries the other notification types
+
+**A commitment from ER's own design section that ER did not deliver.** The audit
+said, in bold, "**Every notification lands in the in-app list** with a working
+destination, so missing the banner stops meaning losing the message" — and only the
+campaign half was built. Checked on production afterwards: `notifications` still
+held exactly three types in 15,468 rows (`admin_broadcast`, `admin_personal`, one
+`wallet_debt_explanation`) while the backend pushed fifteen others. Order updates,
+delivered reports, support replies, "your astrologer is free now", referral rewards
+and missed sessions existed only for the seconds they sat in the phone's tray. That
+is most of why the list has a 0.17% read rate: there was nothing in it worth opening.
+
+`src/notifications/inApp.js` is the one place that writes the in-app copy, wired
+beside seven `sendPush` calls in four files (`supportRoutes`, `waitlist`,
+`sessionManager` ×2, `adminRoutes` ×3).
+
+**Things that are load-bearing:**
+
+- **THE RECORD IS WRITTEN OUTSIDE THE `has a token` GUARD.** The in-app list is the
+  durable record; the push is only the alert. Of 4,890 customers, 289 can receive a
+  push — gating the record on the token would leave the other 94% with no trace of
+  the thing at all, which is exactly the population this exists for. Every call site
+  had to be restructured for this; in `adminRoutes`' order handler the message is
+  now decided ONCE into a `msg` object, so the push text and the in-app text cannot
+  drift and the record can be written whether or not a push went out.
+- **IT IS NOT A CAMPAIGN AND IS NOT GOVERNED.** No quiet hours, no frequency cap, no
+  category opt-out. These are direct pushes the backend already decided to send;
+  this only records them. Suppressing the RECORD of a notification that was already
+  delivered would mean the banner arrives and the app shows nothing. Governing the
+  direct pushes themselves is a separate, larger change and must not be smuggled in
+  here.
+- **An UNKNOWN type writes nothing.** Inserting it with no category and no
+  destination would put a row in front of a customer that goes nowhere when tapped —
+  the state this module exists to end. A new type is one line in `TYPES`.
+- **`deepLink: null` does not mean "goes nowhere".** `support_reply` and
+  `astrologer_free` need a conversation id and an astrologer id, which a bare screen
+  name cannot carry, so the app routes those from `type` instead — through
+  `handleNotificationTap`, now **exported** from the customer app's
+  `PushNotification.js` and reused by `NotificationScreen`. Those two routers used
+  to be different code: the banner had the full table and the list had one branch
+  for free-call invites. One router means a type that works from the banner works
+  from the list for free.
+- **`astrologer_free` expires after two hours**, alone among these types. "They're
+  free now!" is true for minutes, and a day-old one sends somebody to a profile that
+  is busy again — worse than no row. That is what `expires_at` is for.
+
+### Verified — 165/165, up from 147
+The new section asserts the row carries its category, destination and ids; that an
+unknown type, a missing recipient and missing copy each write **nothing** (checked by
+counting rows either side, not by trusting the return value); that the astrologer
+direction is keyed on `astrologer_id` with a null `customer_id`; that the app's own
+`/api/notifications/list` now serves a type that is neither a campaign nor an admin
+broadcast — **the assertion that actually proves the gap is closed** — and that an
+already-expired `astrologer_free` is hidden from it.
+
+> **The first run died on `inApp.recordInApp is not a function` while the module was
+> perfectly fine.** Section 4 of the same suite declares a local
+> `const { data: inApp }` for a campaign's in-app rows, which shadows a module of
+> that name everywhere inside `main()`. Both names read correctly, which is what
+> made it invisible. The import is `inAppRecord` now.
+
 ### Not done, deliberately
 
 1. ~~Nothing is deployed and no OTA has been sent.~~ **SHIPPED 2026-11-07 — see ER4.**
@@ -4863,6 +4924,7 @@ this session's commits. That was checked before shipping, not assumed.
    signal. `recharge_abandoned` IS wired, server-side, from `wallet_recharges`.
 5. **The weekly horoscope is a single fixed line**, not a per-sign reading. Per-sign needs
    `customers.dob` to a sign plus copy per sign.
+5b. ~~Most notification types never reach the in-app list.~~ **CLOSED — see ER5.**
 6. **Not exercised on a device.** The test worth doing: install, answer the permission
    prompt BOTH ways and check the Reach tab separates them; then send an image campaign
    with a deep link to one phone and confirm the picture renders, the tap lands on the

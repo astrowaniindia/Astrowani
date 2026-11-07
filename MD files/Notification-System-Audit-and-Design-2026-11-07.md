@@ -219,7 +219,8 @@ side of tracking and rich push.
   Only `promotional` and `engagement` categories are governed. Getting this backwards
   would mean a customer missing a consultation they paid for.
 - **Every notification lands in the in-app list** with a working destination, so missing
-  the banner stops meaning losing the message.
+  the banner stops meaning losing the message. *(Campaigns on 2026-11-07; the other
+  fifteen types the same day, after this commitment was found unmet — subsystem ER5.)*
 - **The preview is computed by the same code as the send**, as `recipients.js` already
   does — a preview that disagrees with the send is worse than none.
 - **The scheduler runs in one process only**, gated on the same flag that marks the real

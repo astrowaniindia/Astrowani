@@ -9,6 +9,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { createClient } = require('@supabase/supabase-js');
 const { sendPush } = require('./push');
+const { recordInAppAsync } = require('./notifications/inApp');
 const {
   ANALYTICS_SINCE_KEY,
   clampSince: clampAnalyticsSince,
@@ -1663,6 +1664,21 @@ module.exports = function registerAdminRoutes(app) {
           data: { type: 'report_update', reportId: data.id },
         }).catch((e) => console.error('[customer-reports] push send error:', e.message));
       }
+  // Written OUTSIDE the `has a token` guard on purpose: the in-app list is the
+  // DURABLE record and the push is only the alert. Of 4,890 customers, 289 can
+  // receive a push — gating the record on the token would leave the other 94%
+  // with no trace of the thing at all, which is the population this exists for.
+      recordInAppAsync({
+        type: 'report_update',
+        audience: 'astrologer',
+        astrologerId: data.astrologer_id,
+        title: 'Update on your report',
+        body: admin_note,
+        data: { reportId: data.id },
+        // The astrologer app has no My Orders and a safety report has no screen of
+        // its own there, so this stays a message rather than a destination.
+        deepLink: null,
+      });
     }
     return res.json({ success: true, data });
   }));
@@ -1722,6 +1738,18 @@ module.exports = function registerAdminRoutes(app) {
           data: { type: 'report_update', reportId: data.id },
         }).catch((e) => console.error('[reports] push send error:', e.message));
       }
+  // Written OUTSIDE the `has a token` guard on purpose: the in-app list is the
+  // DURABLE record and the push is only the alert. Of 4,890 customers, 289 can
+  // receive a push — gating the record on the token would leave the other 94%
+  // with no trace of the thing at all, which is the population this exists for.
+      recordInAppAsync({
+        type: 'report_update',
+        customerId: data.customer_id,
+        title: 'Update on your report',
+        body: admin_note,
+        data: { reportId: data.id },
+        deepLink: null,
+      });
     }
 
     return res.json({ success: true, data });
@@ -1913,21 +1941,47 @@ module.exports = function registerAdminRoutes(app) {
     // Push, on the states a customer actually wants to hear about.
     if (data.customer_id) {
       const { data: cust } = await db.from('customers').select('fcm_token').eq('id', data.customer_id).single();
-      if (cust?.fcm_token) {
-        if (isDelivering) {
+
+      // WHAT TO SAY, DECIDED ONCE. The push text and the in-app text used to be two
+      // separate literals; deciding here means they cannot drift, and it is what
+      // lets the record be written whether or not a push went out.
+      let msg = null;
+      if (isDelivering) {
+        msg = {
+          type: 'report_delivered',
+          title: 'Your report is ready!',
+          body: `Your ${data.item_title} report has been delivered — open the app to view it.`,
+          extra: { orderId: data.id },
+        };
+      } else if (body.status && before && body.status !== before.status && STATUS_PUSH[body.status]) {
+        const tmpl = STATUS_PUSH[body.status];
+        msg = {
+          type: 'order_update',
+          title: tmpl.title,
+          body: tmpl.body(data),
+          extra: { orderId: data.id, status: body.status },
+        };
+      }
+
+      if (msg) {
+        if (cust?.fcm_token) {
           sendPush(cust.fcm_token, {
-            title: 'Your report is ready!',
-            body: `Your ${data.item_title} report has been delivered — open the app to view it.`,
-            data: { type: 'report_delivered', orderId: data.id },
-          }).catch((e) => console.error('[orders] push error:', e.message));
-        } else if (body.status && before && body.status !== before.status && STATUS_PUSH[body.status]) {
-          const tmpl = STATUS_PUSH[body.status];
-          sendPush(cust.fcm_token, {
-            title: tmpl.title,
-            body: tmpl.body(data),
-            data: { type: 'order_update', orderId: data.id, status: body.status },
+            title: msg.title,
+            body: msg.body,
+            data: { type: msg.type, ...msg.extra },
           }).catch((e) => console.error('[orders] push error:', e.message));
         }
+  // Written OUTSIDE the `has a token` guard on purpose: the in-app list is the
+  // DURABLE record and the push is only the alert. Of 4,890 customers, 289 can
+  // receive a push — gating the record on the token would leave the other 94%
+  // with no trace of the thing at all, which is the population this exists for.
+        recordInAppAsync({
+          type: msg.type,
+          customerId: data.customer_id,
+          title: msg.title,
+          body: msg.body,
+          data: msg.extra,
+        });
       }
     }
 

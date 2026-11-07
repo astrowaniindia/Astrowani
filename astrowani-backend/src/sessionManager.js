@@ -2,6 +2,7 @@
 
 const { createClient } = require('@supabase/supabase-js');
 const { sendPush } = require('./push');
+const { recordInAppAsync } = require('./notifications/inApp');
 const { checkAstrologerBusy } = require('./busyStatus');
 const { notifyWaitlistIfFree } = require('./waitlist');
 const { logError } = require('./errorLogger');
@@ -616,11 +617,26 @@ class SessionManager {
       for (const row of rows) {
         const token = tokenById[row[customerKey]];
         const name = astroNameById[row[astrologerKey]] || 'Astrologer';
+        const missedTitle = kind === 'call' ? 'Missed Call' : 'Missed Chat';
+        const missedBody = `${name} didn't pick up your ${kind} request.`;
         if (token) {
           await sendPush(token, {
-            title: kind === 'call' ? 'Missed Call' : 'Missed Chat',
-            body: `${name} didn't pick up your ${kind} request.`,
+            title: missedTitle,
+            body: missedBody,
             data: { type: 'missed_session', kind },
+          });
+        }
+  // Written OUTSIDE the `has a token` guard on purpose: the in-app list is the
+  // DURABLE record and the push is only the alert. Of 4,890 customers, 289 can
+  // receive a push — gating the record on the token would leave the other 94%
+  // with no trace of the thing at all, which is the population this exists for.
+        if (row[customerKey]) {
+          recordInAppAsync({
+            type: 'missed_session',
+            customerId: row[customerKey],
+            title: missedTitle,
+            body: missedBody,
+            data: { kind },
           });
         }
 
@@ -1634,13 +1650,27 @@ class SessionManager {
         .update({ status: 'rewarded', rewarded_at: new Date().toISOString() })
         .eq('id', referral.id);
 
+      const referralBody = `You earned ₹${referral.reward_amount} because your friend completed their first session.`;
       if (referrer.fcm_token) {
         sendPush(referrer.fcm_token, {
           title: 'Referral Reward!',
-          body: `You earned ₹${referral.reward_amount} because your friend completed their first session.`,
+          body: referralBody,
           data: { type: 'referral_reward' },
         }).catch((e) => console.error('[referral] push error:', e.message));
       }
+  // Written OUTSIDE the `has a token` guard on purpose: the in-app list is the
+  // DURABLE record and the push is only the alert. Of 4,890 customers, 289 can
+  // receive a push — gating the record on the token would leave the other 94%
+  // with no trace of the thing at all, which is the population this exists for.
+      // Money. This one in particular has to be findable later — a reward somebody
+      // only ever saw as a banner they swiped away is a support ticket.
+      recordInAppAsync({
+        type: 'referral_reward',
+        customerId: referrer.id,
+        title: 'Referral Reward!',
+        body: referralBody,
+        data: { amount: referral.reward_amount },
+      });
 
       // In-app popup (ReferralRewardPopup, customer app) for when the referrer
       // already has the app open — the push above covers the backgrounded case.

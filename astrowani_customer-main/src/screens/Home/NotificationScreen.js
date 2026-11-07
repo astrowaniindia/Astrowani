@@ -12,6 +12,7 @@ import { captureEvent } from '../../utils/Analytics';
 import { openFreeCallFromInvite } from '../../utils/freeCallInvite';
 import { navigate } from '../../utils/NavigationService';
 import { trackNotification, resolveDeepLink } from '../../utils/notificationDevice';
+import { handleNotificationTap } from '../../utils/PushNotification';
 
 function timeAgo(dateStr) {
   const diffMs = Date.now() - new Date(dateStr).getTime();
@@ -124,10 +125,14 @@ const NotificationScreen = () => {
         // them rather than a wrong number.
         if (item.campaign_id) trackNotification(item.campaign_id, 'opened').catch(() => {});
         if (item.type === 'free_call_invite') { openFreeCallFromInvite(); return; }
-        // The destination the campaign chose. Until now, tapping an item in this
-        // list went nowhere at all for every type but the free-call invite.
+        // The destination the campaign chose, when it named one.
         const screen = resolveDeepLink(item.deep_link || item.data?.deepLink);
-        if (screen) navigate(screen);
+        if (screen) { navigate(screen); return; }
+        // Otherwise route by TYPE, through the same router a tap on the banner
+        // uses. That is what makes a support reply open its conversation and
+        // 'they are free now' open that astrologer — destinations that need an id
+        // and so cannot be expressed as a bare screen name.
+        handleNotificationTap({ data: { ...(item.data || {}), type: item.type } });
       }}>
       <View style={[styles.iconBadgeRing, item.is_read ? styles.iconBadgeRingRead : styles.iconBadgeRingUnread]}>
         <View style={[styles.iconBadge, item.is_read ? styles.iconBadgeRead : styles.iconBadgeUnread]}>
