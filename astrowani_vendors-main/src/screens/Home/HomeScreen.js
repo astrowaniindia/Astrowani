@@ -17,6 +17,8 @@ import {
   RefreshControl,
   AppState,
   DeviceEventEmitter,
+  Platform,
+  PermissionsAndroid,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { scale, verticalScale, moderateScale } from '../../utils/Scaling';
@@ -53,6 +55,42 @@ import { showStatusPopup } from '../../components/StatusPopup';
 const notifIdFor = (item) => {
   const key = item?.roomId || item?.callerId;
   return key ? `incoming_${key}` : null;
+};
+
+// Camera + microphone are asked for HERE, at the Go Live tap, rather than letting
+// GoLiveScreen's own setup() raise the dialog as it mounts.
+//
+// Android's Activity.requestPermissions() walks the whole view tree
+// (cancelInputsAndStartExitTransition -> ViewGroup.dispatchCancelPendingInputEvents) and
+// React Native's PermissionsModule calls it from the native-modules thread, not the UI
+// thread. Asking mid-navigation therefore reads that tree while the UI thread is still
+// mutating it to mount the new screen, and a null child slot crashes the app with an
+// uncaught NullPointerException on a background thread. Asked on a settled screen, there
+// is no concurrent mutation to race.
+//
+// GoLiveScreen keeps its own check as the backstop, for the resume path that reaches it
+// without a tap (activeSessionResume). That is not a second dialog: PermissionsModule
+// resolves already-granted permissions without going near requestPermissions().
+//
+// FAILS OPEN, like the customer app's ensureCallPermissions: only an explicit denial
+// returns false. A thrown bridge error proceeds and lets GoLiveScreen ask again, so the
+// worst case is today's behaviour rather than a broadcast blocked by a misfiring probe.
+// Android only — iOS has no PermissionsAndroid and its prompt comes from getUserMedia.
+const ensureBroadcastPermissions = async () => {
+  if (Platform.OS !== 'android') return true;
+  const wanted = [
+    PermissionsAndroid.PERMISSIONS.CAMERA,
+    PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+  ];
+  try {
+    const held = await Promise.all(wanted.map((p) => PermissionsAndroid.check(p)));
+    if (held.every(Boolean)) return true;
+    const res = await PermissionsAndroid.requestMultiple(wanted);
+    return wanted.every((p) => res[p] === PermissionsAndroid.RESULTS.GRANTED);
+  } catch (e) {
+    console.log('[goLive] permission pre-check failed, continuing:', e?.message || e);
+    return true;
+  }
 };
 
 // On-brand animated toggle (replaces the default RN Switch for a cleaner look).
@@ -950,6 +988,10 @@ const HomeScreen = () => {
           const astroId = await AsyncStorage.getItem('astroId');
           if (!astroId) {
             showToast(t('common.sessionMissing'));
+            return;
+          }
+          if (!(await ensureBroadcastPermissions())) {
+            Alert.alert(t('goLive.permissionsRequired'), t('goLive.cameraMicRequired'));
             return;
           }
           navigation.navigate('GoLiveScreen', { astrologerId: astroId });
