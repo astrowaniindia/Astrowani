@@ -66,14 +66,21 @@ async function sweepAbandonedRecharges(client) {
   const { data: rows, error } = await client
     .from('wallet_recharges')
     .select('customer_id, created_at, status')
-    .neq('status', 'paid')
     .gte('created_at', new Date(now - ABANDONED_MAX_AGE_MIN * 60000).toISOString())
     .lte('created_at', new Date(now - ABANDONED_MIN_AGE_MIN * 60000).toISOString())
-    .limit(200);
+    .limit(400);
   if (error) throw error;
   if (!rows?.length) return;
 
-  const candidates = [...new Set(rows.map((r) => String(r.customer_id)).filter(Boolean))];
+  // Filtered HERE rather than with `.neq('status', 'paid')`, because in SQL
+  // `status <> 'paid'` evaluates to NULL — not true — for a row whose status is
+  // NULL, so those rows were silently excluded. A created-but-never-updated
+  // recharge is precisely the abandoned case this sweep exists to find, which
+  // made the filter drop its best candidates.
+  const unpaid = rows.filter((r) => String(r.status || '') !== 'paid');
+  if (!unpaid.length) return;
+
+  const candidates = [...new Set(unpaid.map((r) => String(r.customer_id)).filter(Boolean))];
   if (!candidates.length) return;
 
   // Anyone who has since paid is NOT an abandoned recharge — they are a customer

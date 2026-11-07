@@ -23,6 +23,13 @@ const { safeInValues } = require('../pgrstFilter');
 
 const GOVERNED = new Set(['engagement', 'promotional']);
 
+// How many uuids may go into one `.in()`. 150 is this project's own established
+// figure — see the comment on chunkIds in src/pagedSelect.js ("150 UUIDs ~= 5.6
+// KB, comfortably inside every default limit") and the 414 that ~1000 of them
+// caused. Not a number to raise casually: the failure is an HTTP 414 from a URL
+// nobody can see.
+const ID_CHUNK = 150;
+
 // Platform defaults, overridable per customer in notification_preferences and
 // globally in app_settings.notification_limits.
 //
@@ -185,12 +192,11 @@ async function preferencesFor(customerIds) {
   const out = new Map();
   if (!client || !customerIds?.length) return out;
   const ids = [...new Set(customerIds.map(String))];
-  const CHUNK = 300;
-  for (let i = 0; i < ids.length; i += CHUNK) {
+  for (let i = 0; i < ids.length; i += ID_CHUNK) {
     const { rows } = await pageAll(() => client
       .from('notification_preferences')
       .select('customer_id, promotional, engagement, horoscope, quiet_start, quiet_end, timezone')
-      .in('customer_id', safeInValues(ids.slice(i, i + CHUNK))));
+      .in('customer_id', safeInValues(ids.slice(i, i + ID_CHUNK))));
     for (const r of rows) out.set(String(r.customer_id), r);
   }
   return out;
@@ -236,35 +242,49 @@ async function frequencyCapped(customerIds, category) {
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const ids = [...new Set(customerIds.map(String))];
 
-  // Campaign ids for the governed categories, so the join can be done with two
-  // flat reads instead of a PostgREST embedded filter (which cannot express
-  // "sends whose campaign has category in (...)").
-  const { rows: camps } = await pageAll(() => client
-    .from('notification_campaigns')
-    .select('id, category')
-    .in('category', ['engagement', 'promotional'])
-    .gte('created_at', new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString()));
-  const catById = new Map(camps.map((c) => [String(c.id), c.category]));
-  if (!catById.size) return capped;
-
-  const counts = new Map(); // id -> { promo, total }
-  const CHUNK = 300;
-  for (let i = 0; i < ids.length; i += CHUNK) {
+  // The sends in the window first, then the categories of EXACTLY those
+  // campaigns.
+  //
+  // THE ORDER MATTERS AND THIS USED TO BE THE OTHER WAY ROUND: the categories
+  // were read from campaigns CREATED in the last 3 days while the sends were
+  // counted over the last 24 hours. A campaign scheduled a week in advance and
+  // sent today had no category in the map, so it counted towards nobody's cap —
+  // meaning scheduling far ahead silently defeated the frequency cap, which is
+  // the one thing it exists to prevent. Deriving the ids from the sends removes
+  // the window, and the guess with it.
+  const sends = [];
+  for (let i = 0; i < ids.length; i += ID_CHUNK) {
     const { rows } = await pageAll(() => client
       .from('notification_sends')
       .select('customer_id, campaign_id')
       .eq('status', 'sent')
       .gte('sent_at', since)
-      .in('customer_id', safeInValues(ids.slice(i, i + CHUNK))));
-    for (const r of rows) {
-      const cat = catById.get(String(r.campaign_id));
-      if (!cat) continue;
-      const key = String(r.customer_id);
-      const c = counts.get(key) || { promo: 0, total: 0 };
-      if (cat === 'promotional') c.promo += 1;
-      c.total += 1;
-      counts.set(key, c);
-    }
+      .in('customer_id', safeInValues(ids.slice(i, i + ID_CHUNK))));
+    sends.push(...rows);
+  }
+  if (!sends.length) return capped;
+
+  const campaignIds = [...new Set(sends.map((r) => String(r.campaign_id)).filter(Boolean))];
+  const catById = new Map();
+  for (let i = 0; i < campaignIds.length; i += ID_CHUNK) {
+    const { rows } = await pageAll(() => client
+      .from('notification_campaigns')
+      .select('id, category')
+      .in('id', safeInValues(campaignIds.slice(i, i + ID_CHUNK))));
+    for (const c of rows) catById.set(String(c.id), c.category);
+  }
+
+  const counts = new Map(); // id -> { promo, total }
+  for (const r of sends) {
+    const cat = catById.get(String(r.campaign_id));
+    // Transactional sends are not counted: a day full of order updates must not
+    // use up somebody's promotional allowance.
+    if (!GOVERNED.has(cat)) continue;
+    const key = String(r.customer_id);
+    const c = counts.get(key) || { promo: 0, total: 0 };
+    if (cat === 'promotional') c.promo += 1;
+    c.total += 1;
+    counts.set(key, c);
   }
 
   for (const [id, c] of counts) {
@@ -295,12 +315,11 @@ async function withinCooldown(automationId, cooldownDays) {
   if (!camps.length) return seen;
 
   const campIds = camps.map((c) => String(c.id));
-  const CHUNK = 100;
-  for (let i = 0; i < campIds.length; i += CHUNK) {
+  for (let i = 0; i < campIds.length; i += ID_CHUNK) {
     const { rows } = await pageAll(() => client
       .from('notification_sends')
       .select('customer_id')
-      .in('campaign_id', safeInValues(campIds.slice(i, i + CHUNK)))
+      .in('campaign_id', safeInValues(campIds.slice(i, i + ID_CHUNK)))
       // 'sent' only. Somebody who was SUPPRESSED (quiet hours, say) has not heard
       // from us, so counting them would mean the cooldown silently consumed a
       // notification that was never delivered.

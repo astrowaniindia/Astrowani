@@ -410,6 +410,16 @@ async function main() {
     // ════════════════════════════════════════════════ 6. the governor
     section('the governor — and a positive control for every refusal');
 
+    // BACK-DATE the first campaign ten days. Its SEND is still inside the 24-hour
+    // window, so it must still count towards the cap — and under the original
+    // implementation it did not: categories were read from campaigns CREATED in
+    // the last 3 days, so a campaign scheduled far in advance counted towards
+    // nobody and silently defeated the cap. This is the assertion that proves the
+    // fix rather than the shape of it.
+    await client.from('notification_campaigns')
+      .update({ created_at: new Date(Date.now() - 10 * 86400000).toISOString() })
+      .eq('id', c1);
+
     // The frequency cap should already bite, because a promotional campaign went
     // out to this person a moment ago. That is the control for the cap itself.
     r = await makeCampaign({ title: 'Second promo', body: 'again' });

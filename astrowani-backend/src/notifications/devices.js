@@ -20,6 +20,10 @@ const { normalizePlatform } = require('../devicePlatform');
 
 const PERMISSION_STATES = new Set(['undetermined', 'granted', 'denied', 'blocked']);
 
+// See the note on ID_CHUNK in targeting.js: 150 is this project's own safe size
+// for a `.in()` list of uuids, learned from a 414.
+const ID_CHUNK = 150;
+
 /** Unrecognised reads as `undetermined` rather than throwing: an older app build,
  *  or a platform that reports something new, must not break a login. */
 function normalisePermission(value) {
@@ -137,10 +141,9 @@ async function liveDevicesFor(customerIds) {
   if (!client || !customerIds?.length) return out;
 
   const ids = [...new Set(customerIds.map(String))];
-  const CHUNK = 300; // keeps the generated ?in=(...) query string well under 414 territory
 
-  for (let i = 0; i < ids.length; i += CHUNK) {
-    const slice = ids.slice(i, i + CHUNK);
+  for (let i = 0; i < ids.length; i += ID_CHUNK) {
+    const slice = ids.slice(i, i + ID_CHUNK);
     const { rows } = await pageAll(() => client
       .from('customer_devices')
       .select('customer_id, fcm_token, locale, platform, last_seen_at')
@@ -197,13 +200,12 @@ async function liveAstrologerDevicesFor(astrologerIds) {
   if (!client || !astrologerIds?.length) return out;
 
   const ids = [...new Set(astrologerIds.map(String))];
-  const CHUNK = 300;
-  for (let i = 0; i < ids.length; i += CHUNK) {
+  for (let i = 0; i < ids.length; i += ID_CHUNK) {
     try {
       const { rows } = await pageAll(() => client
         .from('vendor_devices')
         .select('astrologer_id, fcm_token, locale, platform, last_seen_at')
-        .in('astrologer_id', ids.slice(i, i + CHUNK))
+        .in('astrologer_id', ids.slice(i, i + ID_CHUNK))
         .not('fcm_token', 'is', null)
         .is('app_removed_at', null)
         .eq('permission_status', 'granted')

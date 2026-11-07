@@ -24,7 +24,13 @@ const devices = require('./devices');
 const targeting = require('./targeting');
 
 const PUSH_CHUNK = 500;     // FCM multicast limit
-const ROW_CHUNK = 500;      // PostgREST insert batch
+const ROW_CHUNK = 500;      // PostgREST INSERT batch — rows travel in the body
+// A uuid list in a `.in()` filter travels in the QUERY STRING, so it needs the
+// project's own safe size (see chunkIds in src/pagedSelect.js). Reusing
+// ROW_CHUNK here built an ~18 KB URL and risked a 414 at the very end of a large
+// send — after the pushes had gone out — leaving the send rows at 'queued' and
+// the campaign counters wrong, with nothing to see.
+const ID_CHUNK = 150;
 
 /** Substitutes the handful of placeholders a template may carry. Unknown
  *  placeholders are left ALONE rather than blanked: "Hi {naem}" reads as a typo an
@@ -318,11 +324,11 @@ async function deliverCampaign(campaignId, io = null) {
     const stamp = new Date().toISOString();
     const markIds = async (ids, patch) => {
       const unique = [...new Set(ids)];
-      for (let i = 0; i < unique.length; i += ROW_CHUNK) {
+      for (let i = 0; i < unique.length; i += ID_CHUNK) {
         await client.from('notification_sends')
           .update(patch)
           .eq('campaign_id', campaign.id)
-          .in(ownerCol, unique.slice(i, i + ROW_CHUNK));
+          .in(ownerCol, unique.slice(i, i + ID_CHUNK));
       }
     };
     if (okIds.length) await markIds(okIds, { status: 'sent', sent_at: stamp });

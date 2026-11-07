@@ -291,18 +291,45 @@ export async function displayGenericNotification({ title, body, image, deepLink,
       ...(deepLink ? { deepLink: String(deepLink) } : {}),
       ...(campaignId ? { campaignId: String(campaignId) } : {}),
     },
-    android: {
-      channelId: CHANNEL_ID_SILENT,
-      importance: AndroidImportance.HIGH,
-      largeIcon: 'ic_launcher',
-      pressAction: { id: 'default', launchActivity: 'default' },
-      // `largeIcon: null` collapses the logo thumbnail while the picture is
-      // expanded, which is the Android convention — without it the logo sits on top
-      // of the image.
-      ...(image ? { style: { type: AndroidStyle.BIGPICTURE, picture: String(image) }, largeIcon: null } : {}),
-    },
+    android: buildGenericAndroid(image),
     ...(image ? { ios: { attachments: [{ url: String(image) }] } } : {}),
+  }).catch(async (e) => {
+    // A rejected attachment or style must not cost the whole notification. Retry
+    // with the plain shape that has been working since this function was written.
+    console.log('[notifications] rich notification refused, falling back to text:', e?.message);
+    await notifee.displayNotification({
+      title: title || 'Astrowani',
+      body,
+      data: {
+        type: type || 'admin_broadcast',
+        ...(deepLink ? { deepLink: String(deepLink) } : {}),
+        ...(campaignId ? { campaignId: String(campaignId) } : {}),
+      },
+      android: buildGenericAndroid(null),
+    });
   });
+}
+
+/**
+ * The android block for a generic notification.
+ *
+ * THE largeIcon KEY IS OMITTED ENTIRELY when there is a picture, never set to
+ * null. notifee's validator checks `objectHasProperty(android, 'largeIcon')`,
+ * which is TRUE for a null value, and then rejects anything that is not a
+ * number, string or object — so `largeIcon: null` THROWS and the astrologer sees
+ * nothing at all for a campaign carrying an image. Omitting it is the Android
+ * convention anyway: the logo thumbnail would otherwise sit on top of the
+ * expanded picture.
+ */
+function buildGenericAndroid(image) {
+  return {
+    channelId: CHANNEL_ID_SILENT,
+    importance: AndroidImportance.HIGH,
+    pressAction: { id: 'default', launchActivity: 'default' },
+    ...(image
+      ? { style: { type: AndroidStyle.BIGPICTURE, picture: String(image) } }
+      : { largeIcon: 'ic_launcher' }),
+  };
 }
 
 export async function cancelIncomingRequestNotification(notificationId) {
