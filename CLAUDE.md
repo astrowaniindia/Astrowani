@@ -4777,11 +4777,80 @@ detect the new target and ask to create an App ID and provisioning profile for
 is interactive, on the owner's Apple account. Per EK, pick identifiers by
 IDENTIFIER and never by name.
 
+### ER4. The review pass before shipping, and what actually went live
+
+Five defects found by reading everything back before deploying, two of which would
+have been invisible in production (commit `c942ed1e`):
+
+1. **The frequency cap was defeated by scheduling.** `frequencyCapped` read campaign
+   categories from campaigns *created* in the last 3 days while counting *sends* from
+   the last 24 hours, so a campaign scheduled a week ahead had no category in the map,
+   hit the `continue`, and counted towards nobody's cap — defeating the one guard that
+   exists because the same Diwali offer went out three times in 24 hours. The ids now
+   come from the sends themselves, so there is no window to get wrong. The suite
+   back-dates a campaign ten days and asserts its send still counts; reinstating the
+   old lookup makes that fail with `sent: 1`.
+2. **`largeIcon: null` THROWS inside notifee's validator**, so every image campaign to
+   an astrologer would have shown *nothing at all* — worse than no image.
+   `validateAndroidNotification` checks `objectHasProperty(android, 'largeIcon')`,
+   which is TRUE for a null value, then rejects anything not a number/string/object.
+   The key is omitted entirely when there is a picture, and the call has a plain-text
+   fallback. **The customer app's `bigLargeIcon: ''` is fine** — RNPN's Java explicitly
+   tests `!bigLargeIcon.isEmpty()`. The two libraries differ; do not copy one's idiom
+   to the other.
+3. **`.in()` lists were 2–3× this project's own safe size.** `chunkIds` settles on 150
+   uuids after a 414 from ~1000; I had invented 300, and `sender.markIds` reused the
+   *insert* batch size of 500 for an `.in()` FILTER — an ~18 KB URL that would have
+   failed at the END of a large send, after the pushes had gone, leaving every send row
+   at `queued` and the counters wrong. `ID_CHUNK = 150` wherever a uuid list goes into
+   a query string; `ROW_CHUNK = 500` stays for inserts, where rows travel in the body.
+4. **A NULL recharge status was invisible to the abandoned-recharge sweep** —
+   `status <> 'paid'` is NULL, not true, and a created-but-never-updated recharge is
+   exactly the abandoned case. Filtered in JS.
+5. Two checks in the iOS structure suite were themselves wrong (a "Firebase" substring
+   matching the comment explaining Firebase's absence; a regex starting mid-block so
+   `CURRENT_PROJECT_VERSION` read as missing).
+
+Confirmed clean by checking rather than assuming: **no new npm dependency and no
+Podfile change** in any of the four projects, and `LanguageContext` imports only React
+and AsyncStorage in both apps, so the new utils introduce no circular import.
+
+### What is live, verified after deploying (2026-11-07)
+
+| | state |
+|---|---|
+| database (6 tables, 4 functions, seeds, backfills) | **live** |
+| backend | **live** — every new route probed, 401 not 404 (POST-only routes probed with POST; a GET on them returns 404 and is NOT a failure) |
+| admin Notification Center | **live** — the served bundle contains the page, `astrologer-reach` and `audience-preview`; the old page is relabelled "Quick Push (classic)" |
+| customer app, **Android** | **OTA'd** — bundle `01a1b5ee-798c-7def-b52b-e019653bc5ce`, 24.1.x, from `c942ed1e` |
+| customer app, iOS | **held** — owner's instruction: nothing ships for iOS |
+| vendor app | **held** — see below |
+| iOS Notification Service Extension | **held** — needs a store build (ER3) |
+
+> **WHY THE VENDOR OTA WAS HELD, and it is the one judgement call here.** The newest
+> enabled *Android* vendor bundle is `76d31a76`, but the newest *iOS* one is `0a7855da`
+> — so **seven commits of the EM session's CallKit/iOS work have shipped to iPhone
+> astrologers and never to Android ones**. An Android vendor OTA now would carry all of
+> it to Android for the first time, in the same bundle as the notification work, which
+> is exactly what the standing rule about OTA bundles shipping the whole commit warns
+> about. Some of it is genuinely Android-relevant (EM2's `popupQueue` fix is the
+> "popup goes invisible" and "keeps vibrating after I accept" pair), but that is the
+> owner's call, not a side effect of shipping notifications.
+>
+> **The consequence while it is held:** astrologer permission state is not reported, so
+> the astrologer Reach panel keeps showing what the backfill inferred (97 reachable of
+> 117, 6 open-but-unreachable) and will not refine until that OTA goes. Everything
+> server-side — the panel, campaigns to astrologers, multi-device sends — works now.
+
+**The customer Android OTA carried nothing extra:** the previous enabled Android bundle
+was built from `2ca432d4`, which was HEAD when this work started, so the diff is exactly
+this session's commits. That was checked before shipping, not assumed.
+
 ### Not done, deliberately
 
-1. **Nothing is deployed and no OTA has been sent.** The backend half is inert without
-   the apps (no device reports, no opens), and the app half degrades safely without the
-   backend (the device and track posts 404 and are ignored).
+1. ~~Nothing is deployed and no OTA has been sent.~~ **SHIPPED 2026-11-07 — see ER4.**
+   Backend and admin are live; the customer app is OTA'd on **Android only**. The
+   customer iOS OTA and the vendor OTA are deliberately held — ER4 says why.
 2. ~~iOS images need a Notification Service Extension~~ — **BUILT the same day, see
    ER3. Not compiled and not shipped**; it needs a store build and EAS credentials
    for the new target.
