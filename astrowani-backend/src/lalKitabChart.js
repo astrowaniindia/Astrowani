@@ -264,6 +264,97 @@ function buildFacts(raw) {
  * cannot ground a single sentence, and a model handed an empty fact sheet will
  * cheerfully invent one. So an empty chart is a hard failure, not a thin one.
  */
+/* ------------------------------------------------------------------ */
+/* Findings — what is actually WRONG in this chart                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Turn the fact sheet into a list of PROBLEMS, each carrying its own remedies.
+ *
+ * This is the shape the app's main screen renders: the person gives their birth
+ * details, we tell them what is out of order in their chart, and every item opens
+ * to the fix Lal Kitab prescribes for exactly that. The chat is a layer on top of
+ * this list, not the other way round.
+ *
+ * A finding only exists where Lal Kitab actually HAS something to say. A planet
+ * with no remedies listed is not a problem we can solve, so it is not shown as
+ * one — listing it with nothing behind it is how an app teaches people that
+ * tapping things is pointless.
+ *
+ * Pure: no network, no database, no clock, so the ordering and severity rules
+ * below are unit-testable.
+ */
+function buildFindings(facts) {
+  const f = facts || {};
+  const out = [];
+
+  // Which planets sit in a khana that debilitates them, and which khanas sleep.
+  // Used only to RANK — never to invent a problem that has no remedy.
+  const debilitated = new Set();
+  const sleepingHouses = new Set();
+  for (const k of f.khanas || []) {
+    for (const p of k.debilitated || []) debilitated.add(String(p).toLowerCase());
+    if (k.sleeping) sleepingHouses.add(k.house);
+  }
+
+  // Which house each planet is in, from the chart grid. planetRemedies carries a
+  // `house` of its own but it is often null in the live payload (measured
+  // 2026-11-09), and "Saturn" alone is a worse heading than "Saturn in house 11".
+  const houseOf = new Map();
+  for (const h of f.houseGrid || []) {
+    for (const p of h.planets || []) houseOf.set(String(p).toLowerCase(), h.house);
+  }
+
+  // ── Karmic debts first. They are the headline finding in Lal Kitab and the
+  // one a person recognises by name. ────────────────────────────────────────
+  for (const [i, d] of (f.debts || []).entries()) {
+    if (!d || !(d.remedies || []).length) continue;
+    out.push({
+      id: `debt-${i}`,
+      kind: 'debt',
+      severity: 'high',
+      title: d.name || 'Karmic debt',
+      subtitle: d.summary || '',
+      // The debt's own indications are what makes it concrete to the reader.
+      points: (d.indications || []).concat(d.events || []).slice(0, 6),
+      remedies: d.remedies, // verbatim
+    });
+  }
+
+  // ── Then the planets that have a remedy written for them. ────────────────
+  for (const p of f.planetRemedies || []) {
+    if (!p || !(p.remedies || []).length) continue;
+    const key = String(p.planet || '').toLowerCase();
+    const house = p.house || houseOf.get(key) || null;
+    out.push({
+      id: `planet-${key || out.length}`,
+      kind: 'planet',
+      severity: debilitated.has(key) || (house && sleepingHouses.has(house)) ? 'high' : 'medium',
+      title: house ? `${p.planet} in house ${house}` : String(p.planet || 'Planet'),
+      planet: p.planet,
+      house,
+      subtitle: p.effects || '',
+      points: [],
+      remedies: p.remedies, // verbatim
+    });
+  }
+
+  // High severity first; then DEBTS ahead of planets at the same severity,
+  // because a karmic debt is the headline finding in Lal Kitab and the one a
+  // person recognises by name — burying "Pitra Rin" under a planet reads as a
+  // list that has not been thought about. Then by how much Lal Kitab has to say,
+  // and finally a stable tiebreak on title so two reads of the same chart give
+  // the identical order.
+  const rank = { high: 0, medium: 1, low: 2 };
+  const kindRank = { debt: 0, planet: 1 };
+  out.sort((a, b) => (rank[a.severity] - rank[b.severity])
+    || (kindRank[a.kind] - kindRank[b.kind])
+    || (b.remedies.length - a.remedies.length)
+    || a.title.localeCompare(b.title));
+
+  return out;
+}
+
 function chartIsUsable(facts) {
   const c = (facts && facts.counts) || {};
   return (c.remedies || 0) > 0 || ((c.houses || 0) > 0 && (c.planetsWithRemedies || 0) > 0);
@@ -397,6 +488,7 @@ async function getChart(birthInput, deps = {}) {
 module.exports = {
   getChart,
   buildFacts,
+  buildFindings,
   birthKey,
   normaliseBirth,
   validateBirth,

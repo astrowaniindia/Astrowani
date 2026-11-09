@@ -36,7 +36,7 @@
 const jwt = require('jsonwebtoken');
 const { createClient } = require('@supabase/supabase-js');
 const { findCustomerByPhone, findCustomerById } = require('./customerLookup');
-const { getChart } = require('./lalKitabChart');
+const { getChart, buildFindings } = require('./lalKitabChart');
 const gemini = require('./geminiChat');
 const { BANNED_PATTERNS } = require('./blogAgent/quality');
 
@@ -478,6 +478,78 @@ module.exports = function registerLalKitabAssistant(app, deps = {}) {
   const askGemini = deps.ask || gemini.ask;
 
   /**
+   * THE MAIN SCREEN'S ENDPOINT: read this person's chart and tell them what is
+   * out of order in it.
+   *
+   * This, not the chat, is what the feature is. Someone gives their birth
+   * details and gets back a list of the problems Lal Kitab finds in their chart,
+   * each carrying the remedy for exactly that problem. The chat exists so they
+   * can ask about any one of them.
+   *
+   * The remedies travel WITH the findings rather than being fetched per tap:
+   * they are already in the cached chart row, so sending them costs nothing and
+   * tapping a problem is then instant and works offline. A per-tap round trip
+   * would add latency to the one interaction the whole screen is built around.
+   */
+  app.post('/api/lal-kitab/chart', h(async (req, res) => {
+    rollDay();
+    const config = await loadConfig();
+    if (!config.enabled) {
+      return res.status(503).json({ success: false, enabled: false, message: 'The Lal Kitab assistant is not available right now.' });
+    }
+    const customer = await resolveCustomer(req);
+    if (!customer) return res.status(401).json({ success: false, message: 'Please log in again.' });
+
+    const body = req.body || {};
+    const language = body.language === 'hi' ? 'hi' : 'en';
+
+    let chart;
+    try {
+      chart = await getChart(body.birth, { db, fetchFromApi: chartFetcher, log: () => {} });
+    } catch (e) {
+      const code = (e && e.statusCode) || 500;
+      if (code !== 400) state.lastError = { at: new Date().toISOString(), message: String(e && e.message) };
+      return res.status(code).json({
+        success: false,
+        message: code === 400
+          ? 'Please check the birth details and try again.'
+          : 'Your chart could not be read just now. Please try again in a moment.',
+        missing: e && e.missing,
+      });
+    }
+
+    state.stats.charts += 1;
+    if (chart.cached) state.stats.chartHits += 1;
+
+    const findings = buildFindings(chart.facts);
+
+    // A conversation row is created here, not on the first message, so that the
+    // chat is already attached to THIS chart whenever they tap "ask".
+    let conversationId = null;
+    try {
+      const { data, error } = await db
+        .from('lal_kitab_conversations')
+        .insert({ customer_id: customer.id, chart_id: chart.id, messages: [], language })
+        .select('id')
+        .maybeSingle();
+      if (!error && data) conversationId = data.id;
+    } catch (_) { /* the screen still works without one */ }
+
+    return res.json({
+      success: true,
+      enabled: true,
+      conversationId,
+      name: customer.name || null,
+      counts: chart.facts.counts,
+      findings,
+      // The placements, for the "your chart at a glance" strip.
+      houses: chart.facts.houseGrid || [],
+      positions: chart.facts.positions || [],
+      typing: config.typing,
+    });
+  }));
+
+  /**
    * Start (or resume) a conversation.
    *
    * The chart is fetched here, once, and the conversation holds a reference to
@@ -607,8 +679,31 @@ module.exports = function registerLalKitabAssistant(app, deps = {}) {
       return { reply, source: 'scripted', reason };
     };
 
+    // WHICH PROBLEM THEY TAPPED. The app opens this chat from a finding, and a
+    // question like "how long do I do it for?" only means something against the
+    // one they are looking at. Without this the model answers about the chart in
+    // general and the person has to re-explain what they just tapped on, which
+    // makes the screen feel disconnected from the chat it launched.
+    // The focus is resolved from the STORED chart by id, never taken from the
+    // request body as text, so the app cannot put words in the model's mouth.
+    let focusBlock = '';
+    if (facts && body.focusId) {
+      const finding = buildFindings(facts).find((x) => x.id === String(body.focusId));
+      if (finding) {
+        const lines = [
+          '',
+          'WHAT THEY ARE ASKING ABOUT. They opened this chat from one specific finding in their chart:',
+          `  ${finding.title}${finding.subtitle ? ` — ${finding.subtitle}` : ''}`,
+        ];
+        for (const r of finding.remedies || []) lines.push(`  REMEDY (VERBATIM): ${r}`);
+        lines.push('Answer about THIS unless they clearly move on to something else. Do not re-introduce the whole chart.');
+        focusBlock = lines.join('\n');
+      }
+    }
+
     const system = config.instructions
       + (facts ? `\n\n${factSheet(facts)}` : '')
+      + focusBlock
       + fixedRules({ language, hasChart: !!facts, factCounts: facts ? facts.counts : null });
 
     const turns = history.concat(message ? [{ sender: 'me', message }] : []);
