@@ -101,3 +101,25 @@ export const FREE_CALL_RATING_PROMPT_ENABLED = true;
  *          (queueFreeCallFromCampaign / queueCampaignDeclined).
  */
 export const CAMPAIGN_GIFT_REVEAL_ENABLED = true;
+
+/**
+ * The Lal Kitab assistant (screens/LalKitab/LalKitabAssistantScreen.js): an AI
+ * astrologer that reads the customer's Lal Kitab chart and gives the remedies
+ * written in it, with optional spoken replies and press-to-talk.
+ *
+ * ANDROID ONLY, and off by default, for two separate reasons:
+ *
+ * 1. The VOICE half is Android's own on-device speech engines (react-native-tts
+ *    and @react-native-voice/voice). Nothing has been built or tested for iOS,
+ *    and both iOS apps are in App Store review.
+ * 2. It is an AI persona that takes birth details, which is exactly what
+ *    FREE_BOT_CHAT_ENABLED above is switched off on iOS for (Guideline
+ *    5.1.2(i)): an AI label and a consent screen come first. The screen does
+ *    carry an AI disclosure line, so this is a smaller gap than the free chat
+ *    has - but it is the owner's call, not a code one.
+ *
+ * It is ALSO gated server-side by app_settings.lal_kitab_assistant, which ships
+ * { "enabled": false } - so turning this flag on alone shows an entry point whose
+ * every request answers 503. Both have to be on.
+ */
+export const LAL_KITAB_ASSISTANT_ENABLED = Platform.OS === 'android';

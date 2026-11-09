@@ -28,6 +28,7 @@ import UserProfileScreen from '../screens/drawerScreens/UserProfileScreen';
 import BlockedAstrologersScreen from '../screens/drawerScreens/BlockedAstrologersScreen';
 import ChatSessionScreen from '../screens/ChatSessionScreen';
 import FreeBotChatScreen from '../screens/FreeBotChat/FreeBotChatScreen';
+import LalKitabAssistantScreen from '../screens/LalKitab/LalKitabAssistantScreen';
 import Video from '../screens/Video/Video';
 import Call from '../screens/Call/Call';
 import Live from '../screens/Live/Live';
@@ -62,7 +63,7 @@ import Wallet from '../screens/Home/Wallet/Wallet';
 import CoinStore from '../screens/Coins/CoinStore';
 import { initIap } from '../utils/iap';
 import { DIGITAL_PURCHASES_ENABLED } from '../utils/payments';
-import { FREE_BOT_CHAT_ENABLED } from '../utils/featureFlags';
+import { FREE_BOT_CHAT_ENABLED, LAL_KITAB_ASSISTANT_ENABLED } from '../utils/featureFlags';
 import History from '../screens/Home/Wallet/History';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { COLORS } from '../Theme/Colors';
@@ -806,6 +807,15 @@ export default function Navigation({ initialRoute, initialParams, onReady }) {
           <Stack.Screen
             name="FreeBotChatScreen"
             component={FreeBotChatScreen}
+            options={{ headerShown: false }}
+          />
+        )}
+        {/* Android only, and the backend refuses every request until
+            app_settings.lal_kitab_assistant says enabled (utils/featureFlags.js). */}
+        {LAL_KITAB_ASSISTANT_ENABLED && (
+          <Stack.Screen
+            name="LalKitabAssistantScreen"
+            component={LalKitabAssistantScreen}
             options={{ headerShown: false }}
           />
         )}

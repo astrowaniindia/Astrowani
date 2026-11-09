@@ -22,6 +22,25 @@
  
  <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
 
+    <!-- PACKAGE VISIBILITY for the Lal Kitab assistant's speech (2026-11-09).
+         NOT a permission: nothing new appears on the Play listing and no user
+         prompt is added. From Android 11 (API 30) an app cannot see another
+         app's services unless it declares the intents it means to resolve, and
+         both on-device speech engines live in OTHER apps (usually Google's).
+         Without this block SpeechRecognizer.isRecognitionAvailable() returns
+         false and TextToSpeech finds no engine, on a device where both work
+         perfectly for every other app - which reads as "our voice feature is
+         broken" rather than "we forgot to declare a query".
+         RECORD_AUDIO itself is already declared above, for calls. -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
+
  <!-- REMOVED 2026-09-09, all eight verified unused before deletion: zero references
       across src/, no dependency in package.json provides them, and the release
       manifest-merger blame report attributes every one solely to THIS file (no library

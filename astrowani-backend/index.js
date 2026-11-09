@@ -1114,6 +1114,17 @@ require('./src/dakshinaRoutes')(app);
 // adminRoutes' requireAdmin for its settings/test endpoints. See src/freeChatAi.js.
 require('./src/freeChatAi')(app);
 
+// The Lal Kitab assistant: a conversational astrologer grounded on the customer's
+// own Lal Kitab chart, which src/lalKitabChart.js fetches ONCE per set of birth
+// details and caches, so a conversation costs no Jyotisham credits per turn.
+// Every remedy it gives is quoted from what the API returned for that chart;
+// inventing one is forbidden in the fixed rules and a reply that trips the output
+// guard is replaced by a scripted one built from the same chart.
+// OFF until app_settings.lal_kitab_assistant says { "enabled": true } - the
+// routes answer 503 until then. Needs adminRoutes' requireAdmin for its settings
+// endpoints, so it registers after it. See src/lalKitabAssistant.js.
+require('./src/lalKitabAssistant')(app);
+
 // In-app support: the AI agent, escalation to a real person with an SLA, and the
 // admin console that replies into the same thread. Replaces the fire-and-forget
 // POST /api/support/create-support form, which is kept below for older installed

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import client from '../api/client';
 import ImageField from '../components/ImageField';
+import LalKitabAssistantCard from '../components/LalKitabAssistantCard';
 
 // Persona/card shown in the customer app's free 5-minute bot-chat welcome
 // popup and in the chat screen's header. Stored as one JSON string under the
@@ -62,6 +63,12 @@ export default function FreeBotChat() {
         astrologer is on the other end: replies come from the AI below when it is on, and
         from the built-in scripted chat otherwise (or whenever the AI is unavailable).
       </p>
+
+      {/* The OTHER AI chat. It lives on this page rather than on one of its own
+          because both are "an AI pretending to be an astrologer", both run on the
+          same Gemini key chain and both fall back to a script - keeping them
+          together is how an admin sees at a glance that two of these exist. */}
+      <LalKitabAssistantCard />
 
       <div className="card" style={{ maxWidth: 520 }}>
         <div className="field checkbox-row">
