@@ -33,6 +33,12 @@ jobs:
           # The seventh Gemini key ("rajiv"), last in the chain in
           # src/blogAgent/gemini.js and src/freeChatAi.js's naming convention.
           GEMINI_API_KEY_RAJIV: ${{ secrets.GEMINI_API_KEY_RAJIV }}
+          # The eighth Gemini key ("krish", 2026-11-09), last in the chain in
+          # src/freeChatAi.js and src/blogAgent/gemini.js. NOTE: rajiv above has
+          # never had a GitHub secret created for it, so the loop below has always
+          # skipped it and the VPS has six keys, not seven. Create both secrets and
+          # the server picks them up on the next run of this workflow.
+          GEMINI_API_KEY_KRISH: ${{ secrets.GEMINI_API_KEY_KRISH }}
           # Free Pexels key — photographs for blog articles. WITHOUT IT the agent
           # still works, but every article gets a locally drawn gradient card
           # instead of a photograph (src/blogAgent/images.js falls through to its
@@ -117,7 +123,7 @@ jobs:
           # NOTE: real line continuations. This list previously held a literal
           # backslash-n, which bash expands to the word `n` - a spurious iteration
           # that stayed harmless only because ${!n} is unset.
-          for opt in GEMINI_API_KEY_RAJIV PEXELS_API_KEY UNSPLASH_ACCESS_KEY RAZORPAY_WEBHOOK_SECRET \
+          for opt in GEMINI_API_KEY_RAJIV GEMINI_API_KEY_KRISH PEXELS_API_KEY UNSPLASH_ACCESS_KEY RAZORPAY_WEBHOOK_SECRET \
                      BREVO_API_KEY ALERT_EMAIL_TO ALERT_EMAIL_FROM \
                      RAZORPAY_WEBHOOK_SECRET_ALERTS \
                      APNS_KEY_ID APNS_TEAM_ID APNS_PRIVATE_KEY \

@@ -72,6 +72,10 @@ function geminiKeys() {
     // which also means adding it cannot change the behaviour of anything that
     // was already working.
     ['rajiv', e.GEMINI_API_KEY_RAJIV],
+    // "krish" (the owner's name for it, 2026-11-09), eighth and last. Same
+    // reasoning as rajiv above: last in the chain, so adding it cannot change
+    // the behaviour of anything that was already working.
+    ['krish', e.GEMINI_API_KEY_KRISH],
   ];
   return chain.filter(([, k]) => !!k).map(([tier, key]) => ({ tier, key }));
 }

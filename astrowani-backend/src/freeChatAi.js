@@ -28,8 +28,8 @@
 // to multiply one model's FREE quota is not: Google's API terms forbid circumventing
 // limits, which is why there is exactly one free key.
 //
-// SIX KEYS, 2026-10-03 (owner's decision; was five from 2026-10-02, four earlier that same
-// day, three from 2026-09-20, two from 2026-09-14). Tried strictly in order, each one only
+// SEVEN KEYS, 2026-11-09 (owner's decision; was six from 2026-10-03, five from 2026-10-02,
+// four earlier that same day, three from 2026-09-20, two from 2026-09-14). Tried strictly in order, each one only
 // after the one before it is USED UP (every model on it out of quota), with the same model
 // list, in the same order, under exactly the same limits and skipping rules:
 //
@@ -41,7 +41,9 @@
 //   5. GEMINI_API_KEY_WASTEEE006  - "wasteee006" (the owner's name for it), same kind of
 //      account as the startup key
 //   6. GEMINI_API_KEY_PRIYA       - "priya" (the owner's name for it), same kind of account
-//      as the two before it, added last as a sixth line of defence
+//      as the two before it, added as a sixth line of defence
+//   7. GEMINI_API_KEY_KRISH       - "krish" (the owner's name for it, 2026-11-09), same kind
+//      of account as the three before it, added as a seventh line of defence
 //
 // When the last key runs out too, the chat falls back to the scripted engine, which is
 // what it has always done after the last key.
@@ -198,7 +200,7 @@ const state = {
 // fine on the next, so each key needs its own entry or a block on one would silently
 // disable the model everywhere. The free key keeps the bare model name (it is the
 // original, and changing it would orphan the stats already collected against it).
-const TIER_SUFFIX = { consult: ' (consult key)', product: ' (product key)', startup: ' (startup key)', wasteee006: ' (wasteee006 key)', priya: ' (priya key)' };
+const TIER_SUFFIX = { consult: ' (consult key)', product: ' (product key)', startup: ' (startup key)', wasteee006: ' (wasteee006 key)', priya: ' (priya key)', krish: ' (krish key)' };
 const slot = (model, tier) => `${model}${TIER_SUFFIX[tier] || ''}`;
 
 // The consult key. GEMINI_API_KEY_PAID was its first name (2026-09-14) and is still
@@ -217,9 +219,12 @@ const WASTEEE006_KEY = () => process.env.GEMINI_API_KEY_WASTEEE006 || '';
 // "priya" (the owner's name for it, 2026-10-03): same kind of account as the two before it,
 // added as a sixth and last line of defence.
 const PRIYA_KEY = () => process.env.GEMINI_API_KEY_PRIYA || '';
+// "krish" (the owner's name for it, 2026-11-09): same kind of account as the three before
+// it, added as a seventh and last line of defence.
+const KRISH_KEY = () => process.env.GEMINI_API_KEY_KRISH || '';
 
 // The keys to try, in order: free, then consult, then product, then startup, then
-// wasteee006, then priya. A key that is not set is simply absent from the chain, so the
+// wasteee006, then priya, then krish. A key that is not set is simply absent from the chain, so the
 // backend runs unchanged until the env var exists.
 function geminiKeys() {
   const keys = [];
@@ -229,6 +234,7 @@ function geminiKeys() {
   if (STARTUP_KEY()) keys.push({ tier: 'startup', key: STARTUP_KEY() });
   if (WASTEEE006_KEY()) keys.push({ tier: 'wasteee006', key: WASTEEE006_KEY() });
   if (PRIYA_KEY()) keys.push({ tier: 'priya', key: PRIYA_KEY() });
+  if (KRISH_KEY()) keys.push({ tier: 'krish', key: KRISH_KEY() });
   return keys;
 }
 
@@ -669,13 +675,14 @@ module.exports = function registerFreeChatAiRoutes(app) {
       config,
       defaults: { instructions: DEFAULT_INSTRUCTIONS, models: DEFAULTS.models, typing: DEFAULTS.typing },
       status: {
-        apiKeyConfigured: !!(process.env.GEMINI_API_KEY || CONSULT_KEY() || PRODUCT_KEY() || STARTUP_KEY() || WASTEEE006_KEY() || PRIYA_KEY()),
+        apiKeyConfigured: !!(process.env.GEMINI_API_KEY || CONSULT_KEY() || PRODUCT_KEY() || STARTUP_KEY() || WASTEEE006_KEY() || PRIYA_KEY() || KRISH_KEY()),
         freeKeyConfigured: !!process.env.GEMINI_API_KEY,
         consultKeyConfigured: !!CONSULT_KEY(),
         productKeyConfigured: !!PRODUCT_KEY(),
         startupKeyConfigured: !!STARTUP_KEY(),
         wasteee006KeyConfigured: !!WASTEEE006_KEY(),
         priyaKeyConfigured: !!PRIYA_KEY(),
+        krishKeyConfigured: !!KRISH_KEY(),
         today: { day: stats() && state.statsDay, ...state.stats },
         modelBlocks: blocks,
         lastError: state.lastError,
@@ -765,8 +772,8 @@ module.exports = function registerFreeChatAiRoutes(app) {
   // the list is not built from guessed names.
   app.get('/api/admin/free-bot-chat/ai/models', requireAdmin, h(async (req, res) => {
     // Any configured key can list models; they all see the same catalogue.
-    const key = process.env.GEMINI_API_KEY || CONSULT_KEY() || PRODUCT_KEY() || STARTUP_KEY() || WASTEEE006_KEY() || PRIYA_KEY();
-    if (!key) return res.status(400).json({ success: false, message: 'No Gemini key is set on the server (GEMINI_API_KEY, GEMINI_API_KEY_CONSULT, GEMINI_API_KEY_PRODUCT, GEMINI_API_KEY_STARTUP, GEMINI_API_KEY_WASTEEE006 or GEMINI_API_KEY_PRIYA).' });
+    const key = process.env.GEMINI_API_KEY || CONSULT_KEY() || PRODUCT_KEY() || STARTUP_KEY() || WASTEEE006_KEY() || PRIYA_KEY() || KRISH_KEY();
+    if (!key) return res.status(400).json({ success: false, message: 'No Gemini key is set on the server (GEMINI_API_KEY, GEMINI_API_KEY_CONSULT, GEMINI_API_KEY_PRODUCT, GEMINI_API_KEY_STARTUP, GEMINI_API_KEY_WASTEEE006, GEMINI_API_KEY_PRIYA or GEMINI_API_KEY_KRISH).' });
     const found = [];
     let pageToken;
     for (let page = 0; page < 10; page++) {
