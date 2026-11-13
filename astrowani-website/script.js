@@ -466,30 +466,49 @@ function astroBadgeChip(a) {
   return '';
 }
 
+// Every value below that came from /api/astrologers is ASTROLOGER-EDITABLE (name,
+// languages, photo URL, specialties) and lands in innerHTML. Unescaped, one astrologer
+// typing markup into their own name ran script on every page that lists them — with
+// the visiting customer's login token sitting in localStorage (security audit
+// 2026-11-13). Escape at the template, not at the data layer, so text shown elsewhere
+// via textContent is not double-escaped.
+function astroEsc(v) {
+  return String(v == null ? '' : v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+// A photo URL may only be http(s) or our own relative asset path — never javascript:
+// or data:, which an attribute escape alone does not stop.
+function astroImgSrc(a) {
+  const u = String(a.photoUrl || '');
+  if (/^https?:\/\//i.test(u)) return astroEsc(u);
+  return astroEsc(`assets/astrologers/${String(a.photo || '').replace(/[^A-Za-z0-9._-]/g, '')}`);
+}
+
 function astroCardHtml(a, idx) {
   const ring = idx % 2 === 0 ? 'var(--gold)' : 'var(--maroon)';
   const ratingHtml = a.reviews > 0
-    ? `${ASTROWANI_STAR_SVG}<span style="font-weight:800; color:var(--maroon);">${a.rating}</span><span style="color:var(--ink-soft); margin-left:2px;">(${a.reviews})</span>`
+    ? `${ASTROWANI_STAR_SVG}<span style="font-weight:800; color:var(--maroon);">${astroEsc(a.rating)}</span><span style="color:var(--ink-soft); margin-left:2px;">(${astroEsc(a.reviews)})</span>`
     : `${ASTROWANI_SPROUT_SVG}<span style="font-weight:700; color:var(--maroon);">New astrologer</span>`;
-  const catLabel = a.cats.length > 2 ? a.cats.slice(0, 2).join(', ') + ` +${a.cats.length - 2}` : a.cats.join(', ');
+  const catLabel = astroEsc(a.cats.length > 2 ? a.cats.slice(0, 2).join(', ') + ` +${a.cats.length - 2}` : a.cats.join(', '));
   // Real in-page actions, not Play Store links: the web client runs the
   // consultation here. aw/astrologers.js owns the click via delegation, and
   // falls back to the store link only if the web client failed to load.
   const chatBtn = a.chatOn
-    ? `<button type="button" class="btn-ghost" data-aw-action="chat" data-astro-id="${a.id}">Chat &#8377;${a.chat}</button>`
+    ? `<button type="button" class="btn-ghost" data-aw-action="chat" data-astro-id="${astroEsc(a.id)}">Chat &#8377;${astroEsc(a.chat)}</button>`
     : `<span class="btn-ghost">Chat off</span>`;
   const callBtn = a.callOn
-    ? `<button type="button" class="btn-gold" data-aw-action="call" data-astro-id="${a.id}">Call &#8377;${a.call}</button>`
+    ? `<button type="button" class="btn-gold" data-aw-action="call" data-astro-id="${astroEsc(a.id)}">Call &#8377;${astroEsc(a.call)}</button>`
     : `<span class="btn-gold">Call off</span>`;
   return `
-    <div class="astro-card tilt-card" data-cats="${a.cats.join('|')}" data-astro-id="${a.id}">
+    <div class="astro-card tilt-card" data-cats="${astroEsc(a.cats.join('|'))}" data-astro-id="${astroEsc(a.id)}">
       ${astroBadgeChip(a)}
       <div class="astro-status" data-aw-status></div>
-      <div class="astro-avatar" style="background:${ring};"><img src="${a.photoUrl || `assets/astrologers/${a.photo}`}" alt="${a.name}" loading="lazy" style="width:100%; height:100%; border-radius:50%; object-fit:cover;"></div>
-      <div class="astro-name">${a.name}</div>
-      <div class="astro-meta">${catLabel} &middot; ${a.exp} yrs exp</div>
+      <div class="astro-avatar" style="background:${ring};"><img src="${astroImgSrc(a)}" alt="${astroEsc(a.name)}" loading="lazy" style="width:100%; height:100%; border-radius:50%; object-fit:cover;"></div>
+      <div class="astro-name">${astroEsc(a.name)}</div>
+      <div class="astro-meta">${catLabel} &middot; ${astroEsc(a.exp)} yrs exp</div>
       <div class="astro-rating-row">${ratingHtml}</div>
-      <div style="font-size:12px; color:var(--ink-soft);">${a.lang}</div>
+      <div style="font-size:12px; color:var(--ink-soft);">${astroEsc(a.lang)}</div>
       <div class="astro-actions">${chatBtn}${callBtn}</div>
     </div>`;
 }
@@ -504,22 +523,22 @@ function astroCardHtmlSingle(a, idx, mode) {
   const cfg = ASTROWANI_CONSULT_MODES[mode] || ASTROWANI_CONSULT_MODES.chat;
   const ring = idx % 2 === 0 ? 'var(--gold)' : 'var(--maroon)';
   const ratingHtml = a.reviews > 0
-    ? `${ASTROWANI_STAR_SVG}<span style="font-weight:800; color:var(--maroon);">${a.rating}</span><span style="color:var(--ink-soft); margin-left:2px;">(${a.reviews})</span>`
+    ? `${ASTROWANI_STAR_SVG}<span style="font-weight:800; color:var(--maroon);">${astroEsc(a.rating)}</span><span style="color:var(--ink-soft); margin-left:2px;">(${astroEsc(a.reviews)})</span>`
     : `${ASTROWANI_SPROUT_SVG}<span style="font-weight:700; color:var(--maroon);">New astrologer</span>`;
-  const catLabel = a.cats.length > 2 ? a.cats.slice(0, 2).join(', ') + ` +${a.cats.length - 2}` : a.cats.join(', ');
+  const catLabel = astroEsc(a.cats.length > 2 ? a.cats.slice(0, 2).join(', ') + ` +${a.cats.length - 2}` : a.cats.join(', '));
   const enabled = a[cfg.verb];
   const actionBtn = enabled
-    ? `<button type="button" class="${cfg.btn}" style="width:100%;" data-aw-action="${mode}" data-astro-id="${a.id}">${cfg.label} &#8377;${a[cfg.price]}/min</button>`
+    ? `<button type="button" class="${cfg.btn}" style="width:100%;" data-aw-action="${mode}" data-astro-id="${astroEsc(a.id)}">${cfg.label} &#8377;${astroEsc(a[cfg.price])}/min</button>`
     : `<span class="${cfg.btn}" style="width:100%;">${cfg.label} unavailable</span>`;
   return `
-    <div class="astro-card tilt-card" data-cats="${a.cats.join('|')}" data-enabled="${enabled ? '1' : '0'}" data-astro-id="${a.id}">
+    <div class="astro-card tilt-card" data-cats="${astroEsc(a.cats.join('|'))}" data-enabled="${enabled ? '1' : '0'}" data-astro-id="${astroEsc(a.id)}">
       ${astroBadgeChip(a)}
       <div class="astro-status" data-aw-status></div>
-      <div class="astro-avatar" style="background:${ring};"><img src="${a.photoUrl || `assets/astrologers/${a.photo}`}" alt="${a.name}" loading="lazy" style="width:100%; height:100%; border-radius:50%; object-fit:cover;"></div>
-      <div class="astro-name">${a.name}</div>
-      <div class="astro-meta">${catLabel} &middot; ${a.exp} yrs exp</div>
+      <div class="astro-avatar" style="background:${ring};"><img src="${astroImgSrc(a)}" alt="${astroEsc(a.name)}" loading="lazy" style="width:100%; height:100%; border-radius:50%; object-fit:cover;"></div>
+      <div class="astro-name">${astroEsc(a.name)}</div>
+      <div class="astro-meta">${catLabel} &middot; ${astroEsc(a.exp)} yrs exp</div>
       <div class="astro-rating-row">${ratingHtml}</div>
-      <div style="font-size:12px; color:var(--ink-soft);">${a.lang}</div>
+      <div style="font-size:12px; color:var(--ink-soft);">${astroEsc(a.lang)}</div>
       <div class="astro-actions">${actionBtn}</div>
     </div>`;
 }

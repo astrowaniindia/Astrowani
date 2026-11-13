@@ -1,13 +1,13 @@
-import { api } from './api.js?v=58';
-import { getSocket, joinSessionWithRetry } from './socket.js?v=58';
-import { toast, esc, confirmDialog } from './ui.js?v=58';
-import { isSignedIn } from './session.js?v=58';
-import { requireSignIn } from './auth.js?v=58';
-import { fetchBalance, ensureFunds } from './wallet.js?v=58';
-import { findAstrologer, onRosterChange, refresh as refreshRoster } from './astrologers.js?v=58';
-import { requestConsultation, RequestClosed } from './request.js?v=58';
-import { trackViewportHeight, keepAwake, ensureAudioPlays } from './mobile.js?v=58';
-import { track } from './analytics.js?v=58';
+import { api } from './api.js?v=59';
+import { getSocket, joinSessionWithRetry } from './socket.js?v=59';
+import { toast, esc, confirmDialog } from './ui.js?v=59';
+import { isSignedIn } from './session.js?v=59';
+import { requireSignIn } from './auth.js?v=59';
+import { fetchBalance, ensureFunds } from './wallet.js?v=59';
+import { findAstrologer, onRosterChange, refresh as refreshRoster } from './astrologers.js?v=59';
+import { requestConsultation, RequestClosed } from './request.js?v=59';
+import { trackViewportHeight, keepAwake, ensureAudioPlays } from './mobile.js?v=59';
+import { track } from './analytics.js?v=59';
 
 /**
  * call.html — the voice / video consultation screen.

@@ -5,6 +5,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
+const { cleanAstrologerProfile } = require('./src/profileText');
 const { sendPush, clearAppRemovedMark } = require('./src/push');
 // Records failures that endpoints deliberately swallow, so a silent mass
 // outage still reaches Sentry and /health. See src/degradation.js.
@@ -667,11 +668,77 @@ io.on('connection', (socket) => {
     return authId;
   };
 
+  // ── Relay authorisation (security audit 2026-11-13) ─────────────────────────
+  // The relays below used to forward whatever a socket sent into whichever room it
+  // named. Socket.io lets a socket emit TO a room it is not in, so a connection with no
+  // login at all could push webrtc_offer / ICE into any call, and any logged-in user
+  // could tell any customer "your call was accepted" or ring any astrologer. Proven
+  // live with the store-reviewer accounts before this change.
+
+  // Is this socket a verified participant of `sessionId`? The fast path is membership
+  // of the room, which only the verified join_session grants. The slow path covers the
+  // normal race at call start (a relay arriving before join_session has acked): the
+  // same participant check against chat_sessions, then the socket is joined so the
+  // next event takes the fast path. Results are cached per socket, so a flood of
+  // relays costs one query, not one each.
+  const sessionAccess = new Map(); // sessionId -> Promise<boolean>
+  const isSessionMember = (sessionId) => {
+    const sid = String(sessionId || '');
+    if (!sid) return Promise.resolve(false);
+    if (socket.rooms.has(sid) && sid !== String(socket.data?.userId || '')) return Promise.resolve(true);
+    if (!isUuid(sid)) return Promise.resolve(false);
+    if (!sessionAccess.has(sid)) {
+      sessionAccess.set(sid, (async () => {
+        try {
+          const actor = await getSocketActor();
+          if (!actor) return false;
+          const { data: row } = await supabaseService.from('chat_sessions')
+            .select('caller_id, vendor_id, ended_at').eq('id', sid).maybeSingle();
+          const ok = !!row && !row.ended_at
+            && (String(row.caller_id) === String(actor) || String(row.vendor_id) === String(actor));
+          if (ok) socket.join(sid);
+          else sessionAccess.delete(sid); // a row not visible yet may be visible next time
+          return ok;
+        } catch (_) {
+          sessionAccess.delete(sid);
+          return false;
+        }
+      })());
+    }
+    return sessionAccess.get(sid);
+  };
+
+  // Does the customer have a real, recent request to this astrologer? A call/chat
+  // request row is what links the two; without one there is nothing for either side to
+  // accept, reject, cancel or ring. 30 minutes covers a 5-minute ring plus a slow accept.
+  const REQUEST_LINK_WINDOW_MS = 30 * 60 * 1000;
+  const hasRecentRequest = async (customerId, astrologerId) => {
+    if (!isUuid(String(customerId || '')) || !isUuid(String(astrologerId || ''))) return false;
+    const since = new Date(Date.now() - REQUEST_LINK_WINDOW_MS).toISOString();
+    try {
+      const [calls, chats] = await Promise.all([
+        supabaseService.from('call_requests').select('id').eq('customer_id', customerId)
+          .eq('astrologer_id', astrologerId).gte('created_at', since).limit(1),
+        supabaseService.from('chat_requests').select('id').eq('caller_id', customerId)
+          .eq('receiver_id', astrologerId).gte('created_at', since).limit(1),
+      ]);
+      return !!((calls.data && calls.data.length) || (chats.data && chats.data.length));
+    } catch (_) {
+      return false;
+    }
+  };
+
   socket.on('initiate_call', async (data) => {
     if (!data || !data.astrologer_id) return;
     const actorId = await getSocketActor();
     if (!actorId) {
       console.warn(`[socket] unauthenticated initiate_call from socket ${socket.id} dropped`);
+      return;
+    }
+    // /api/call/initiate already rings the astrologer; this relay is a duplicate kept for
+    // old builds. Only the customer who actually made the request may use it.
+    if (!(await hasRecentRequest(actorId, data.astrologer_id))) {
+      console.warn(`[socket] initiate_call from ${actorId} to ${data.astrologer_id} dropped — no request between them`);
       return;
     }
     const ringRoom = await vendorDevices.ringRoomFor(data.astrologer_id);
@@ -686,6 +753,12 @@ io.on('connection', (socket) => {
       console.warn(`[socket] unauthenticated accept_call from socket ${socket.id} dropped`);
       return;
     }
+    // /api/session/accept already notifies the customer; only the astrologer that
+    // customer actually asked may relay it too.
+    if (!(await hasRecentRequest(data.customer_id, actorId))) {
+      console.warn(`[socket] accept_call from ${actorId} to ${data.customer_id} dropped — no request between them`);
+      return;
+    }
     console.log('Call accepted by vendor, notifying customer:', data.customer_id);
     io.to(data.customer_id).emit('call_accepted', data);
   });
@@ -695,6 +768,10 @@ io.on('connection', (socket) => {
     const actorId = await getSocketActor();
     if (!actorId) {
       console.warn(`[socket] unauthenticated reject_call from socket ${socket.id} dropped`);
+      return;
+    }
+    if (!(await hasRecentRequest(data.customer_id, actorId))) {
+      console.warn(`[socket] reject_call from ${actorId} to ${data.customer_id} dropped — no request between them`);
       return;
     }
     console.log('Call rejected by vendor, notifying customer:', data.customer_id);
@@ -708,6 +785,12 @@ io.on('connection', (socket) => {
     const actorId = await getSocketActor();
     if (!actorId) {
       console.warn(`[socket] unauthenticated cancel_call from socket ${socket.id} dropped`);
+      return;
+    }
+    // Without this any logged-in user could dismiss a real customer's incoming call on
+    // any astrologer's phone — the astrologer silently misses a paying customer.
+    if (!(await hasRecentRequest(actorId, data.astrologer_id))) {
+      console.warn(`[socket] cancel_call from ${actorId} to ${data.astrologer_id} dropped — no request between them`);
       return;
     }
     console.log('Call cancelled by customer, notifying vendor:', data.astrologer_id);
@@ -789,8 +872,9 @@ io.on('connection', (socket) => {
   // passthrough over the session room both sides already join for signal_connection/
   // session_ended. No DB write, no persistence — purely ephemeral, same as the broadcast
   // channel it replaces.
-  socket.on('chat_typing', (data) => {
+  socket.on('chat_typing', async (data) => {
     if (!data || !data.sessionId) return;
+    if (!(await isSessionMember(data.sessionId))) return;
     socket.to(data.sessionId).emit('chat_typing', { isTyping: !!data.isTyping });
   });
 
@@ -811,6 +895,8 @@ io.on('connection', (socket) => {
     const realId = await resolveSocketIdentity(socket.handshake.auth && socket.handshake.auth.token);
     const viewerId = realId || data.viewerId; // fall back for unauthenticated/guest viewers
     socket.join('live_' + data.sessionId);
+    // The only viewer id this socket may speak for in live_answer / live_ice.
+    socket.data.liveViewerId = String(viewerId);
     // The broadcaster joins its own room as a "viewer" with its own id. Mark that socket
     // so sweepLiveSessions() can tell "the host is still here" from "only viewers are
     // left watching a stream whose host has gone".
@@ -821,14 +907,31 @@ io.on('connection', (socket) => {
     io.to(data.astrologerId).emit('live_viewer_joined', { ...data, viewerId });
   });
   // Broadcaster → specific viewer (offer); viewer → broadcaster (answer); both ways (ICE).
-  socket.on('live_offer', (data) => {
-    if (data?.viewerId) io.to(data.viewerId).emit('live_offer', data);
+  // Host of THIS stream? `liveHostOf` is set at live_join only when the verified token
+  // is the stream's astrologer; isSessionHost covers a host socket that has not joined.
+  const isLiveHost = async (sessionId) => {
+    if (!sessionId) return false;
+    if (String(socket.data?.liveHostOf || '') === String(sessionId)) return true;
+    return liveModeration.isSessionHost(socket.handshake.auth && socket.handshake.auth.token, sessionId);
+  };
+  // A viewer may only speak for itself, in a stream it actually joined.
+  const isLiveViewerSelf = (data) => !!data?.sessionId
+    && socket.rooms.has('live_' + data.sessionId)
+    && String(data.viewerId || '') === String(socket.data?.liveViewerId || '');
+
+  socket.on('live_offer', async (data) => {
+    if (!data?.viewerId || !(await isLiveHost(data.sessionId))) return;
+    io.to(data.viewerId).emit('live_offer', data);
   });
   socket.on('live_answer', (data) => {
-    if (data?.astrologerId) io.to(data.astrologerId).emit('live_answer', data);
+    if (!data?.astrologerId || !isLiveViewerSelf(data)) return;
+    io.to(data.astrologerId).emit('live_answer', data);
   });
-  socket.on('live_ice', (data) => {
-    if (data?.to) io.to(data.to).emit('live_ice', data);
+  socket.on('live_ice', async (data) => {
+    if (!data?.to) return;
+    const allowed = data.role === 'broadcaster' ? await isLiveHost(data.sessionId) : isLiveViewerSelf(data);
+    if (!allowed) return;
+    io.to(data.to).emit('live_ice', data);
   });
   socket.on('live_leave', (data) => {
     if (data?.sessionId) socket.leave('live_' + data.sessionId);
@@ -856,34 +959,40 @@ io.on('connection', (socket) => {
       sessionId: String(data.sessionId), senderId: String(data.senderId),
     });
   });
-  socket.on('live_gift', (data) => {
-    if (data?.sessionId) io.to('live_' + data.sessionId).emit('live_gift', data);
-  });
-  // Broadcaster ended the stream — drop all viewers.
-  socket.on('end_live', (data) => {
-    if (data?.sessionId) io.to('live_' + data.sessionId).emit('live_ended', data);
+  // NO client 'live_gift' relay any more (removed 2026-11-13). A real gift is announced
+  // by the server itself after the payment (POST /api/gift/send); no app ever emitted
+  // this event, so the relay only ever served fake "X gifted ₹5000" toasts.
+  // Broadcaster ended the stream — drop all viewers. Only that stream's host may.
+  socket.on('end_live', async (data) => {
+    if (!data?.sessionId || !(await isLiveHost(data.sessionId))) return;
+    io.to('live_' + data.sessionId).emit('live_ended', data);
   });
 
   // WebRTC signaling relay — both peers join the session room; relay to the other peer
-  socket.on('webrtc_ready', (data) => {
-    if (data?.sessionId) socket.to(data.sessionId).emit('webrtc_ready', data);
+  socket.on('webrtc_ready', async (data) => {
+    if (!data?.sessionId || !(await isSessionMember(data.sessionId))) return;
+    socket.to(data.sessionId).emit('webrtc_ready', data);
   });
-  socket.on('webrtc_offer', (data) => {
-    if (data?.sessionId) socket.to(data.sessionId).emit('webrtc_offer', data);
+  socket.on('webrtc_offer', async (data) => {
+    if (!data?.sessionId || !(await isSessionMember(data.sessionId))) return;
+    socket.to(data.sessionId).emit('webrtc_offer', data);
   });
-  socket.on('webrtc_answer', (data) => {
-    if (data?.sessionId) socket.to(data.sessionId).emit('webrtc_answer', data);
+  socket.on('webrtc_answer', async (data) => {
+    if (!data?.sessionId || !(await isSessionMember(data.sessionId))) return;
+    socket.to(data.sessionId).emit('webrtc_answer', data);
   });
-  socket.on('webrtc_ice_candidate', (data) => {
-    if (data?.sessionId) socket.to(data.sessionId).emit('webrtc_ice_candidate', data);
+  socket.on('webrtc_ice_candidate', async (data) => {
+    if (!data?.sessionId || !(await isSessionMember(data.sessionId))) return;
+    socket.to(data.sessionId).emit('webrtc_ice_candidate', data);
   });
 
   // Disabling a local video track stops sending frames but sends no signal, so the
   // far end just holds the last frame forever and reads as a frozen/broken call.
   // This relays the intent so the peer can say "X paused their video" instead.
   // Presentational only — it moves no media and touches no billing.
-  socket.on('video_paused', (data) => {
-    if (data?.sessionId) socket.to(data.sessionId).emit('video_paused', data);
+  socket.on('video_paused', async (data) => {
+    if (!data?.sessionId || !(await isSessionMember(data.sessionId))) return;
+    socket.to(data.sessionId).emit('video_paused', data);
   });
 
   // "I am leaving on purpose", as opposed to a socket that simply went quiet.
@@ -7178,6 +7287,8 @@ app.put('/api/vendor/profile', async (req, res) => {
     ];
     const body = {};
     for (const k of allowed) if (k in (req.body || {})) body[k] = req.body[k];
+    // Strip markup from the text every customer sees (security audit 2026-11-13).
+    Object.assign(body, cleanAstrologerProfile(body));
 
     // astrologers.specialties is uuid[] referencing categories.id. A non-uuid
     // member would make Postgres reject the whole UPDATE, losing every other
@@ -7530,7 +7641,7 @@ app.post('/api/vendor/register', async (req, res) => {
     // insertAccountRow from the server's own clock.
     const { data: created, error } = await insertAccountRow(
       'astrologers',
-      buildVendorRegistrationRow(req.body, decoded.phone),
+      cleanAstrologerProfile(buildVendorRegistrationRow(req.body, decoded.phone)),
       'signup_form',
     );
     if (error) throw error;
