@@ -162,6 +162,10 @@ async function priceCart(rawItems) {
       title: row.title,
       titleHi: row.title_hi || null,
       type: row.type,
+      // Raw on purpose: this quote line is persisted verbatim into
+      // order_items.image below (an invoice record), so a render URL built
+      // from today's transform parameters would outlive them. Resize at the
+      // display route instead — see GET /api/remedies in index.js.
       image: row.image || null,
       unitLabel: row.unit_label || null,
       unitPrice,

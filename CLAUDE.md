@@ -4929,3 +4929,134 @@ already-expired `astrologer_free` is hidden from it.
    prompt BOTH ways and check the Reach tab separates them; then send an image campaign
    with a deep link to one phone and confirm the picture renders, the tap lands on the
    right screen, and the campaign's open and tap counts both move.
+
+---
+
+## Session 2026-11-13: can we go back to the Free plan? (ES)
+
+Full measurement, every query to re-run, and the plan:
+[`MD files/Supabase-Free-Plan-Feasibility-2026-11-13.md`](MD%20files/Supabase-Free-Plan-Feasibility-2026-11-13.md).
+
+### ES. No — and the blocker is not the quota, it is that Free has no render endpoint
+
+Measured against production 2026-11-13 (24 h of `edge_logs`, plus live DB/storage reads):
+
+| Usage item | Free quota | Measured | |
+|---|---|---|---|
+| **Cached egress** | **5 GB/mo** | **375 MB/day → 11.3 GB/mo** | **2.3x over** |
+| Uncached egress | 5 GB/mo | ~5 MB/day | 3% |
+| **Images transformed** | **unavailable on Free** | **20,083 req/day, ~98 sources** | **not offered** |
+| Database size | 500 MB | 71 MB | 14% |
+| Storage size | 1 GB | 285 MB (1,064 objects) | 28% |
+| Monthly active users | 50,000 | **0** (`auth.users` empty — own JWT) | n/a |
+| Edge function invocations | 500,000/mo | 524/day | 3% |
+| Realtime messages | 2 million/mo | est. under 0.7M | probably ok |
+| Realtime peak connections | **200** | **unmeasured from here** | read the dashboard |
+
+**99% of the egress is `cf_cache_status: HIT`** (375.2 MB of 379.6), so it lands on the
+Cached quota — the one that hard-blocked the project in October. **REST is irrelevant:
+193,091 requests/day for 2 MB total.** Everything is images.
+
+> **The quota is the smaller problem. `Storage Images Transformed` is "Unavailable on
+> Free Plan" in Supabase's own quota table, and 282 of our 380 MB/day goes through
+> `/storage/v1/render/image`.** Downgrading does not make the images bigger, it makes
+> that delivery path *stop*, and the fallback is the raw originals — i.e. straight back
+> to the 735 MB/day that caused the October block. **Free is not "tight" here, it is
+> architecturally unavailable while Supabase serves our images.** Note we transform ~98
+> distinct source images and **Pro includes exactly 100** before $5/1000, so we are on
+> that line already, on the plan we pay for.
+
+**The route to Free, if it is ever wanted, is Cloudflare R2** — egress free and
+unlimited, already used for OTA bundles, `src/objectStorage.js` already talks to it.
+Images on R2 puts Supabase cached egress at ~0.06 GB/mo (REST only) and removes the
+transformation dependency outright. Pre-resizing at upload is the other half and is
+worth doing on Pro regardless. The remaining measured step is the cache-control header
+(below). **What Free still costs: daily backups** — bought with Pro in October (EC) on a
+database holding wallets, both ledgers and withdrawals — **plus the fact that the Fair
+Use grace period is already spent, so the next overage is an immediate 402 with no
+warning.**
+
+### ES1. 94 MB/day of profile photos never reached `src/imageUrl.js` — FIXED
+
+`src/imageUrl.js` has been correct since 2026-10-19. It was simply never called from
+ten returns, and **87.4 of the 97.7 MB/day of raw `object/public` egress was
+`okhttp/4.12.0`** — the Android app's image loader — pulling faces at 64 KB where the
+same face at `AVATAR` width is 10 KB. Measured on a real one: **29.0 KB → 7.8 KB, 73%.**
+
+Wrapped (all read-only display paths):
+- `src/freeCallRoutes.js` — 5 sites (`approvedAstrologerFaces` roster, `instantCard`,
+  the hold status, the incoming-ring push payload, the incoming poll). This file did not
+  import the helper at all, and **it is the free instant-call screen: the first thing
+  every new install sees, a grid of astrologer faces at full resolution.**
+- `index.js` — `GET /api/customer/chat-threads` and `/:astrologerId` (both inside
+  `httpPhotoOnly()`, which still rejects the legacy `data:` values first),
+  `GET /api/customer/voice-notes`, `GET /api/remedies` (→ `cardUrl`), `GET /api/gifts`
+  (→ `iconUrl`).
+
+> **TWO SITES ARE DELIBERATELY LEFT RAW. Do not "finish the job".** Both are
+> write-back paths, and both now carry a comment saying so.
+> - `index.js` `toProfile()` `profilePic` — the app POSTs this value straight back on
+>   `PUT /api/users/profile`, so a render URL would be written INTO
+>   `customers.profile_image`; `transformedUrl` refuses a URL that already carries a
+>   query string, so the photo would be pinned at AVATAR width for good. It is also one
+>   fetch of a customer's own photo: 0.5 MB/day.
+> - `src/orderRoutes.js` `priceCart()` `image` — persisted verbatim into
+>   `order_items.image`, an invoice record that would outlive today's transform
+>   parameters.
+> - **`chat-images/` is also left alone on purpose** (6.1 MB/day at 135 KB): DX built
+>   that whole subsystem to preserve full resolution so an astrologer can zoom into a
+>   photographed chart.
+
+### ES2. The cache-control header is malformed on every object — NOT yet fixed
+
+```
+max-age=3600                  963 objects   87 MB    <- the 1-hour default
+max-age=max-age=31536000      101 objects  199 MB    <- MALFORMED, caches nothing
+```
+
+The 101 touched by the October recompress pass carry a **doubled prefix** (something
+passed the string `max-age=31536000` to an API that prepends `max-age=` itself), which
+is not a valid `Cache-Control` value — so the "fixed" objects cache no better than the
+default ones. Nothing in `src/` or `scripts/` sets `cacheControl` at all.
+
+> **Size it honestly before spending time on it: only 7% of egress (26.7 MB/day) is the
+> same device re-fetching the same URL inside 24 h** (19,706 device+URL pairs for 21,879
+> requests). The intuitive guess here is ~70% and it is wrong. Real, free, worth doing —
+> not the big lever. Filenames are already content-unique, so
+> `max-age=31536000, immutable` is safe.
+
+### Verified 2026-11-13 — 27/27 over real HTTP against the live database
+`scripts/imageEgressDeliveryCheck.js`
+(`PORT=4599 node --env-file=.env scripts/imageEgressDeliveryCheck.js`). It boots
+`scripts/devServer.js`, **never `index.js`**, and refuses an occupied port rather than
+testing whatever is listening on it (`REUSE_SERVER=1` to opt in deliberately).
+
+It **asserts on the URLs a client actually receives from the real routes**, with real
+production rows behind them, because the defect being fixed is precisely one a suite
+built on `avatarUrl()` would have reported green throughout (BN). Then it **fetches the
+rewritten URL and compares bytes** — a URL that 400s or returns the original is still
+spelled correctly. Every "no raw URL" check is preceded by a positive control that the
+list is non-empty, and the `.every()` calls are guarded with `length > 0` because
+`[].every()` is true: an empty list would otherwise report a dead route as passing.
+It also asserts the two write-back exceptions are STILL raw.
+
+> **Verified to FAIL on two deliberate regressions.** Un-wrapping the chat-threads list
+> gives 2 failures naming the exact raw URL served; un-wrapping the two free-call sites
+> gives 2 more. Worth noting which check caught which: the **source grep in section 7
+> did not see the chat-threads regression at all** (`httpPhotoOnly(...)` does not match
+> a `|| ''` pattern) and only the HTTP assertions did — which is the argument for
+> driving the routes rather than grepping for the helper.
+
+Also: `node --check` clean on all three changed backend files.
+
+**Not exercised on a device.** Nothing is deployed and no OTA was sent — **and none is
+needed**: every URL here is built server-side, so a backend deploy reaches every
+installed build, including the ones already in the stores.
+
+### Still open from this session
+1. **`cacheControl` is unset in `src/uploadRoutes.js`** and malformed on 101 objects (ES2).
+2. **Pre-resize at upload instead of transforming per request** — the change that both
+   cuts bytes further and removes the Free-plan blocker.
+3. **Read Realtime peak connections off the dashboard** (Free cap 200, 16 tables in the
+   publication). It is the only Free limit that could not be measured from here.
+4. **Images to R2** — the only option that makes Free safe rather than marginal.

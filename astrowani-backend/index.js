@@ -2820,6 +2820,15 @@ function toProfile(row, decoded = {}) {
     placeOfBirth: row?.place_of_birth || '',
     state: row?.state || '',
     maritalStatus: row?.marital_status || '',
+    // NOT routed through src/imageUrl.js, deliberately — and do not "finish
+    // the job" by adding it. The app POSTs this value straight back on a
+    // profile save (`if (b.profilePic != null ...) upd.profile_image = ...`
+    // in PUT /api/users/profile), so returning a render URL here would
+    // write that URL into the column; transformedUrl refuses a URL that
+    // already carries a query string, so the photo would be pinned at
+    // AVATAR width for good. This is also a customer fetching their OWN
+    // photo once — 0.5 MB/day measured 2026-11-13. Only read-only display
+    // surfaces get the helper; write-back paths must stay raw.
     profilePic: row?.profile_image || '',
     handPic: row?.hand_image || '',
     isProfileComplete: customerProfileComplete(row),
@@ -3391,7 +3400,7 @@ app.get('/api/remedies', async (req, res) => {
           title: r.title,
           description: r.description,
           price: r.price,
-          image: r.image,
+          image: imageUrl.cardUrl(r.image),
           // Retail presentation, added with the cart checkout (2026-08-21). mrp drives the
           // struck-through "was ₹X" and the discount badge; unitLabel is the "5.25 ratti"
           // line under the name. All three are null on rows an admin hasn't filled in yet,
@@ -7801,7 +7810,7 @@ app.get('/api/customer/chat-threads', async (req, res) => {
           ...byAstrologer[id],
           kind: 'astrologer',
           name: name || 'Astrologer',
-          profileImage: httpPhotoOnly(a?.profile_pic_url),
+          profileImage: imageUrl.avatarUrl(httpPhotoOnly(a?.profile_pic_url)),
         };
       });
     }
@@ -7870,7 +7879,7 @@ app.get('/api/customer/chat-threads/:astrologerId', async (req, res) => {
       astrologer: {
         id: astrologerId,
         name: name || 'Astrologer',
-        profileImage: httpPhotoOnly(astrologer?.profile_pic_url),
+        profileImage: imageUrl.avatarUrl(httpPhotoOnly(astrologer?.profile_pic_url)),
       },
       // Fetched newest-first so the LIMIT keeps the most recent 1000, then
       // reversed back to oldest-first for display.
@@ -8012,7 +8021,7 @@ app.get('/api/customer/voice-notes', async (req, res) => {
     const data = (notes || []).map((n) => ({
       ...n,
       astrologerName: `${byId[n.astrologer_id]?.first_name || ''} ${byId[n.astrologer_id]?.last_name || ''}`.trim() || 'Astrologer',
-      astrologerImage: byId[n.astrologer_id]?.profile_pic_url || null,
+      astrologerImage: imageUrl.avatarUrl(byId[n.astrologer_id]?.profile_pic_url) || null,
     }));
 
     return res.status(200).json({ success: true, data });
@@ -8053,7 +8062,7 @@ app.get('/api/gifts', async (req, res) => {
         .from('gifts').select('*').eq('is_active', true).order('sort_order', { ascending: true });
       if (error) throw error;
       return {
-        data: (data || []).map((g) => ({ _id: g.id, name: g.name, price: g.price, image: g.image })),
+        data: (data || []).map((g) => ({ _id: g.id, name: g.name, price: g.price, image: imageUrl.iconUrl(g.image) })),
       };
     });
     return res.status(200).json(payload);

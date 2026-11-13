@@ -34,6 +34,7 @@ const { normaliseMilestones, DEFAULT_MILESTONES } = require('./freeCallPayout');
 // Named audienceRules, not `audience`: inviteRecipients(audience, targetIds) below
 // already uses that identifier for its own string parameter, and a shadowed module
 // reference inside that function would be a silent trap for whoever edits it next.
+const { avatarUrl } = require('./imageUrl');
 const audienceRules = require('./audience');
 const freeCallAttempts = require('./freeCallAttempts');
 
@@ -1087,7 +1088,7 @@ async function approvedAstrologerFaces() {
       .map((a) => ({
         id: a.id,
         name: astrologerFullName(a) || 'Astrologer',
-        image: a.profile_pic_url || '',
+        image: avatarUrl(a.profile_pic_url) || '',
       }));
     rosterCache = { at: Date.now(), rows };
     return rows;
@@ -1368,7 +1369,7 @@ module.exports = function registerFreeCallRoutes(app) {
   const instantCard = (a, busy) => ({
     id: a.id,
     name: astrologerFullName(a) || 'Astrologer',
-    image: a.profile_pic_url || '',
+    image: avatarUrl(a.profile_pic_url) || '',
     experience: a.experience || 0,
     rating: Number(a.average_rating) || 0,
     totalReviews: a.total_reviews || 0,
@@ -1908,7 +1909,7 @@ module.exports = function registerFreeCallRoutes(app) {
       active: true,
       astrologerId: hold.astrologer_id,
       astrologerName: astrologerFullName(astro || {}) || 'Astrologer',
-      astrologerImage: astro?.profile_pic_url || '',
+      astrologerImage: avatarUrl(astro?.profile_pic_url) || '',
       ratePerMinute: rate,
       options,
       // Reported, never acted on BEFORE payment — see the comment on `sellable` above.
@@ -2930,7 +2931,7 @@ module.exports = function registerFreeCallRoutes(app) {
       .eq('id', astrologerId)
       .maybeSingle();
     const astroName = booking.astrologer_name || astrologerFullName(astro || {}) || 'Astrologer';
-    const astroImage = astro?.profile_pic_url || '';
+    const astroImage = avatarUrl(astro?.profile_pic_url) || '';
 
     const payload = {
       type: 'free_call_incoming',
@@ -3027,7 +3028,7 @@ module.exports = function registerFreeCallRoutes(app) {
         sessionId: booking.call_session_id,
         astrologerId: booking.astrologer_id,
         astrologerName: booking.astrologer_name || astrologerFullName(astro || {}) || 'Astrologer',
-        astrologerImage: astro?.profile_pic_url || '',
+        astrologerImage: avatarUrl(astro?.profile_pic_url) || '',
         durationMinutes: booking.duration_minutes || 7,
       },
     });
