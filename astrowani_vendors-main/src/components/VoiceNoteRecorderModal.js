@@ -2,7 +2,7 @@
 // POST /api/vendor/voice-notes. Extracted out of MyCustomers.js so ChatHistoryThread.js
 // (referring back to what was said, then sending a follow-up voice note) can reuse the
 // exact same modal instead of a second copy of the recording/upload logic.
-import React, { useContext, useState } from 'react';
+import React, { useContext, useRef, useState } from 'react';
 import {
   Modal,
   View,
@@ -38,6 +38,7 @@ const VoiceNoteRecorderModal = ({ target, onClose, onSent }) => {
   const [durationMs, setDurationMs] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [sending, setSending] = useState(false);
+  const stoppingRef = useRef(false);
 
   const requestMicPermission = async () => {
     if (Platform.OS !== 'android') return true;
@@ -76,30 +77,64 @@ const VoiceNoteRecorderModal = ({ target, onClose, onSent }) => {
     setRecording(true);
   };
 
-  const stopRecording = async () => {
-    const path = await audioRecorderPlayer.stopRecorder();
+  // react-native-audio-recorder-player resolves stopRecorder() with a sentinel string
+  // ('Already stopped') rather than a file path whenever its own recording flag is already
+  // clear. Storing that as recordedPath makes the preview ask the player for a file called
+  // "Already stopped", which fails with ENOENT. Only a real path is accepted.
+  const isRecordingPath = (path) =>
+    typeof path === 'string' && (path.startsWith('file:') || path.startsWith('/'));
+
+  const recordingFailed = () => {
     audioRecorderPlayer.removeRecordBackListener();
-    setRecording(false);
-    setRecordedPath(path);
+    resetState();
+    Alert.alert(t('customers.recordFailed'), t('common.tryAgain'));
+  };
+
+  const stopRecording = async () => {
+    // A second tap while the first stop is still in flight is what produced the sentinel
+    // above: `recording` only flips to false once the await below has resolved.
+    if (stoppingRef.current) return;
+    stoppingRef.current = true;
+    try {
+      const path = await audioRecorderPlayer.stopRecorder();
+      if (!isRecordingPath(path)) {
+        recordingFailed();
+        return;
+      }
+      audioRecorderPlayer.removeRecordBackListener();
+      setRecording(false);
+      setRecordedPath(path);
+    } catch (_) {
+      recordingFailed();
+    } finally {
+      stoppingRef.current = false;
+    }
   };
 
   const previewPlayback = async () => {
     if (!recordedPath) return;
-    if (playing) {
-      await audioRecorderPlayer.stopPlayer();
-      audioRecorderPlayer.removePlayBackListener();
-      setPlaying(false);
-      return;
-    }
-    setPlaying(true);
-    await audioRecorderPlayer.startPlayer(recordedPath);
-    audioRecorderPlayer.addPlayBackListener((e) => {
-      if (e.currentPosition >= e.duration) {
-        audioRecorderPlayer.stopPlayer();
+    try {
+      if (playing) {
+        await audioRecorderPlayer.stopPlayer();
         audioRecorderPlayer.removePlayBackListener();
         setPlaying(false);
+        return;
       }
-    });
+      setPlaying(true);
+      await audioRecorderPlayer.startPlayer(recordedPath);
+      audioRecorderPlayer.addPlayBackListener((e) => {
+        if (e.currentPosition >= e.duration) {
+          audioRecorderPlayer.stopPlayer();
+          audioRecorderPlayer.removePlayBackListener();
+          setPlaying(false);
+        }
+      });
+    } catch (_) {
+      // Without this the rejection goes unhandled and the button stays stuck on "pause".
+      audioRecorderPlayer.removePlayBackListener();
+      setPlaying(false);
+      Alert.alert(t('customers.playFailed'), t('common.tryAgain'));
+    }
   };
 
   const sendVoiceNote = async () => {
