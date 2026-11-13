@@ -138,6 +138,18 @@ async function listFolder(folder) {
       console.log(`  ${APPLY ? 'write' : 'would'} ${obj.path} — ${(buf.length / 1024).toFixed(0)} KB -> ${(out.length / 1024).toFixed(0)} KB (-${pct}%)`);
 
       if (APPLY) {
+        // DELIBERATELY does not pass imageUrl.UPLOAD_CACHE_CONTROL, and must not.
+        // This is the one tool here that overwrites an EXISTING path, and every
+        // object in app-images now carries `immutable` (2026-11-13), which tells a
+        // client never to revalidate. So a device that already holds the old bytes
+        // keeps them for up to a year, and Cloudflare keeps serving them until the
+        // edge copy ages out — the same trap EC hit when four resized-in-place
+        // assets went on being served at their old size.
+        //
+        // To make a recompression actually reach users, write a NEW path and update
+        // the referencing row, as the two PNG->JPEG conversions in EC did. Leaving
+        // this call as-is keeps the object's existing header rather than extending
+        // it, which is the lesser harm.
         const { error: upErr } = await db.storage.from(BUCKET)
           .upload(obj.path, out, { contentType: blob.type || `image/${meta.format}`, upsert: true });
         if (upErr) throw new Error(upErr.message);

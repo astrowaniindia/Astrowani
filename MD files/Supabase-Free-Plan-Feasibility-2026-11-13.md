@@ -112,19 +112,37 @@ render is **10 KB**. The call sites:
 **Fix: wrap those returns in `avatarUrl()`. Backend only, no OTA, no app release.**
 Measured saving: **~94 MB/day (-25%)**, taking 380 → ~286 MB/day on its own.
 
-### 2. The cache-control header is wrong on every object, including the "fixed" ones
+### 2. Every image was cached for ONE HOUR — FIXED 2026-11-13
 
 ```
-max-age=3600                  963 objects   87 MB    <- 1 hour
-max-age=max-age=31536000      101 objects  199 MB    <- MALFORMED
+app-images                           963 objects   87 MB   max-age=3600
+hot-updater-storage-for-astrowani     54 objects  104 MB   max-age=max-age=31536000
+hot-updater-storage-..-vendor         47 objects   94 MB   max-age=max-age=31536000
 ```
 
-The 101 objects touched by the October recompress pass carry
-**`max-age=max-age=31536000`**, a doubled prefix (something passed the string
-`max-age=31536000` to an API that prepends `max-age=` itself). That is not a valid
-`Cache-Control` value, so those objects cache no better than the 3600 ones — and
-nothing in `src/` or `scripts/` sets `cacheControl` at all, which is why the other
-963 are on the 1-hour default.
+> **CORRECTION to the first version of this file, which said the 101 malformed
+> objects were "touched by the October recompress pass". They were not.** The split
+> is by BUCKET and it is clean: all 963 `app-images` objects were on `max-age=3600`,
+> and the 101 malformed ones are **OTA `bundle.zip` files** in the two
+> `hot-updater-storage-*` buckets, written by the `hot-updater` library, not by our
+> code. They are not images, they are not part of the 380 MB/day, and a device
+> downloads a bundle once per release — so that half is cosmetic. **The real finding
+> was the other one: every image in the app was cached for an hour.**
+
+`max-age=max-age=31536000` is a doubled prefix: storage-js emits
+`cache-control: max-age=${cacheControl}` verbatim, so passing the string
+`'max-age=31536000'` produces an invalid directive that caches nothing. Our own
+sites had the opposite bug — **not one of them set `cacheControl` at all**, so they
+all inherited the SDK default of `'3600'`. Confirmed on the wire: both the raw
+object AND the render endpoint served `Cache-Control: public, max-age=3600`, so the
+transformed response inherits the source object's header.
+
+**Fixed.** `imageUrl.UPLOAD_CACHE_CONTROL = '31536000, immutable'` is now passed by
+every production upload path, and the 667 existing objects in the shared-screen
+folders were repaired with `scripts/repairStorageCacheControl.js` (`chat-images/`
+and `voice-notes/` deliberately left alone — one-to-one user content fetched once
+or twice in its life, so nothing to gain). Verified on the wire at the widths the
+app actually requests.
 
 **Honest sizing, because the obvious guess is wrong:** only **7% of egress
 (26.7 MB/day) is the same device re-fetching the same URL inside 24 h**
@@ -141,7 +159,7 @@ Target: under **167 MB/day**. We are at 380.
 |---|---|---|---|
 | 1. Wrap the raw `profile_pic_url` returns in `avatarUrl()` | **-94 MB/day** | ~1 hour | No — backend only |
 | 2. Pre-generate WebP derivatives at upload; serve `object/public` | **-~130 MB/day** | 1–2 days | No — URLs come from the API |
-| 3. `cacheControl: max-age=31536000, immutable` + fix the malformed 101 | **-27 MB/day** | ~1 hour | No |
+| 3. ~~`cacheControl`~~ **DONE 2026-11-13** | **-27 MB/day** | done | No |
 | | **≈ 129 MB/day ≈ 3.9 GB/mo** | | |
 
 Step 2 is the one that matters twice over: it both cuts bytes (avatars 10→~5 KB,

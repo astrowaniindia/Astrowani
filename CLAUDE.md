@@ -5007,23 +5007,71 @@ Wrapped (all read-only display paths):
 >   that whole subsystem to preserve full resolution so an astrologer can zoom into a
 >   photographed chart.
 
-### ES2. The cache-control header is malformed on every object — NOT yet fixed
+### ES2. Every image in the app was cached for ONE HOUR — fixed, and two traps found
 
-```
-max-age=3600                  963 objects   87 MB    <- the 1-hour default
-max-age=max-age=31536000      101 objects  199 MB    <- MALFORMED, caches nothing
-```
+> **CORRECTION to this section's first version, which said the 101 malformed objects
+> came from the October recompress pass. They did not.** The split is by BUCKET:
+> all 963 `app-images` objects were on `max-age=3600`, and the 101
+> `max-age=max-age=31536000` ones are **OTA `bundle.zip` files** in the two
+> `hot-updater-storage-*` buckets, written by the `hot-updater` library. Not images,
+> not part of the 380 MB/day, downloaded once per release — cosmetic. The real
+> finding was the other half.
 
-The 101 touched by the October recompress pass carry a **doubled prefix** (something
-passed the string `max-age=31536000` to an API that prepends `max-age=` itself), which
-is not a valid `Cache-Control` value — so the "fixed" objects cache no better than the
-default ones. Nothing in `src/` or `scripts/` sets `cacheControl` at all.
+**Not one upload call site set `cacheControl`**, so every image inherited storage-js's
+`'3600'` default — one hour, on files whose names are already content-unique
+(`${Date.now()}-${randomBytes(6)}`) and can therefore never change. Confirmed on the
+wire: the raw object AND the render endpoint both served
+`Cache-Control: public, max-age=3600`, so a transformed response inherits the source
+object's header.
 
-> **Size it honestly before spending time on it: only 7% of egress (26.7 MB/day) is the
-> same device re-fetching the same URL inside 24 h** (19,706 device+URL pairs for 21,879
-> requests). The intuitive guess here is ~70% and it is wrong. Real, free, worth doing —
-> not the big lever. Filenames are already content-unique, so
-> `max-age=31536000, immutable` is safe.
+`src/imageUrl.js` now exports **`UPLOAD_CACHE_CONTROL = '31536000, immutable'`**, passed
+by `src/uploadRoutes.js`, `index.js` (chat images) and `src/blogAgent/images.js`.
+**The value must NOT start with `max-age=`** — storage-js emits
+`cache-control: max-age=${cacheControl}` verbatim, which is exactly how the OTA buckets
+ended up with a doubled, invalid directive. `immutable` is safe only because every
+upload path mints a fresh name.
+
+**667 existing objects repaired** with `scripts/repairStorageCacheControl.js` (dry run by
+default; `--apply --force --limit --prefix --concurrency`). 634 + 33, **0 failed, every
+one byte-verified**, then confirmed on the wire at the widths the app really requests —
+avatars 300, cards 520, banners 1080, icons 240 — with the excluded chat image still
+reading 3600 as a control.
+
+> **TWO TRAPS, both of which made a wrong fix look like a working one.**
+>
+> **1. `storage.objects.metadata` is a MIRROR, not the source of truth.** The obvious
+> cheap repair — `UPDATE storage.objects SET metadata = jsonb_set(...)` — was tried on
+> one object. The row changed; a render request on a cache key nothing had ever
+> requested (`CF-Cache-Status: MISS`, straight from origin) **still returned
+> max-age=3600**. The row was reverted immediately, because a database that claims a
+> year while the wire says an hour is worse than one that is uniformly wrong. Do not
+> spend time on that route again.
+>
+> **2. `upload(..., { upsert: true })` DOES NOT refresh the served header. `update()`
+> does.** Both write the bytes and both update the database row. After an upsert, three
+> objects sat with `cacheControl: max-age=31536000, immutable` in the row and
+> `max-age=3600` on the wire — a complete, silent no-op that records success. `update()`
+> on the same object changed both the raw and the render response at once. The repair
+> script uses `update()`, and `--force` exists precisely because a matching row is only
+> a hint: those three would otherwise have been skipped as already done.
+>
+> The decisive experiment was a **brand-new object** uploaded with three different
+> `cacheControl` values (`'31536000, immutable'`, `'31536000'`, `'7200'`): all three
+> served exactly what was asked for, on raw and render alike. That is what separated
+> "the code fix is wrong" from "upsert does not refresh metadata", and it took one
+> throwaway upload. The probe objects were deleted and `cc-probe/` asserted empty.
+
+**`scripts/recompressStorageImages.js` deliberately does NOT set this**, and must not.
+It is the one tool here that overwrites an EXISTING path, and `immutable` tells a client
+never to revalidate — so a resize-in-place would be invisible to every device holding the
+old bytes for up to a year, the same trap EC hit when four resized-in-place assets went on
+being served at their old size. To make a recompression reach users, write a NEW path and
+update the referencing row, as EC's two PNG→JPEG conversions did.
+
+> **Size it honestly: only 7% of egress (26.7 MB/day) was the same device re-fetching the
+> same URL inside 24 h** (19,706 device+URL pairs for 21,879 requests). The intuitive
+> guess is ~70% and it is wrong. This is worth ~27 MB/day same-day plus more across days
+> for returning users — real, free, worth doing, **not** the big lever.
 
 ### Verified 2026-11-13 — 27/27 over real HTTP against the live database
 `scripts/imageEgressDeliveryCheck.js`
@@ -5047,14 +5095,22 @@ It also asserts the two write-back exceptions are STILL raw.
 > a `|| ''` pattern) and only the HTTP assertions did — which is the argument for
 > driving the routes rather than grepping for the helper.
 
-Also: `node --check` clean on all three changed backend files.
+Also: `scripts/testImageEgress.js` is now **64 checks** (was 46), covering the
+constant, the doubling trap, every upload site passing it rather than a literal,
+`recompressStorageImages.js` NOT setting it, and the repair tool using `update()`
+with a hash check and a dry-run default. **Verified to FAIL on two deliberate
+regressions**: putting `max-age=` back on the constant (2 failures) and making an
+upload site hardcode `'3600'` (2 more). One of its own assertions had to be fixed
+first — it grepped for `upsert: true` and matched the COMMENT that warns about it.
+`node --check` clean on every changed backend file.
 
 **Not exercised on a device.** Nothing is deployed and no OTA was sent — **and none is
 needed**: every URL here is built server-side, so a backend deploy reaches every
 installed build, including the ones already in the stores.
 
 ### Still open from this session
-1. **`cacheControl` is unset in `src/uploadRoutes.js`** and malformed on 101 objects (ES2).
+1. ~~`cacheControl`~~ **DONE 2026-11-13** (ES2). Still open on the OTA buckets, which the
+   `hot-updater` library writes — cosmetic, and not our code.
 2. **Pre-resize at upload instead of transforming per request** — the change that both
    cuts bytes further and removes the Free-plan blocker.
 3. **Read Realtime peak connections off the dashboard** (Free cap 200, 16 tables in the

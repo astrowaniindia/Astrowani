@@ -5388,7 +5388,11 @@ app.post('/api/chat/image', async (req, res) => {
     const objectName = `chat-images/${Date.now()}-${crypto.randomBytes(6).toString('hex')}.jpg`;
     const { error: upErr } = await supabaseService.storage
       .from('app-images')
-      .upload(objectName, composed.buffer, { contentType: composed.contentType, upsert: false });
+      .upload(objectName, composed.buffer, {
+        contentType: composed.contentType,
+        upsert: false,
+        cacheControl: imageUrl.UPLOAD_CACHE_CONTROL,
+      });
     if (upErr) throw upErr;
     const { data: pub } = supabaseService.storage.from('app-images').getPublicUrl(objectName);
 

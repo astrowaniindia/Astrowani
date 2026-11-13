@@ -76,6 +76,31 @@ const WIDTH = {
 };
 
 /**
+ * The `cacheControl` every upload must pass, and the reason it is a constant.
+ *
+ * Measured 2026-11-13: every one of the 963 objects in `app-images` was serving
+ * `Cache-Control: public, max-age=3600`, because NOT ONE upload call site set
+ * this and storage-js defaults to '3600'. One hour, on files whose names are
+ * already content-unique (`${Date.now()}-${randomBytes(6)}`) and can therefore
+ * never change — so every device re-downloaded the whole image set hourly.
+ *
+ * The value is SECONDS, optionally followed by more directives. storage-js emits
+ * `cache-control: max-age=${cacheControl}` verbatim, so it must NOT start with
+ * `max-age=`: the OTA buckets are full of `max-age=max-age=31536000` from a
+ * library that made exactly that mistake, and a doubled directive is invalid, so
+ * those objects cache no better than the ones that set nothing at all.
+ *
+ * `immutable` is safe here ONLY because every upload path mints a fresh name.
+ * It tells the client never to revalidate, so it is actively wrong for anything
+ * that overwrites an existing path — see the warning in
+ * scripts/recompressStorageImages.js.
+ *
+ * This governs the render endpoint too: the transformed response inherits the
+ * source object's header, verified against production the same day.
+ */
+const UPLOAD_CACHE_CONTROL = '31536000, immutable';
+
+/**
  * Rewrite a Supabase public-object URL to its transformed variant.
  *
  * Returns the input UNTOUCHED for anything that is not a Supabase public-object
@@ -110,6 +135,7 @@ const bannerUrl = (url) => transformedUrl(url, WIDTH.BANNER);
 
 module.exports = {
   WIDTH,
+  UPLOAD_CACHE_CONTROL,
   OBJECT_PREFIX,
   RENDER_PREFIX,
   transformedUrl,

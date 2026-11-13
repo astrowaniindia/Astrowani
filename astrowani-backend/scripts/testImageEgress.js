@@ -212,6 +212,57 @@ const OBJ = 'https://fxpoustnddrgumhwdcma.supabase.co/storage/v1/object/public/a
   ok('so the route keeps the original in that case (guard asserted above)',
     /if \(out\.buffer\.length >= buffer\.length\) return null;/.test(src));
 
+  // ─────────────────────────── cache-control ───────────────────────────
+  // Measured 2026-11-13: every object in app-images served max-age=3600, because
+  // no upload call site set `cacheControl` and storage-js defaults to '3600'.
+  section('upload cache-control');
+
+  const CC = imageUrl.UPLOAD_CACHE_CONTROL;
+  ok('UPLOAD_CACHE_CONTROL is exported', typeof CC === 'string' && CC.length > 0, CC);
+  // storage-js emits `cache-control: max-age=${cacheControl}`, so a value that
+  // starts with max-age= produces `max-age=max-age=...`, which is invalid and
+  // caches NOTHING. The OTA buckets are full of exactly that.
+  ok('it does NOT start with "max-age=" (the doubling trap)', !/^max-age=/.test(CC), CC);
+  ok('it begins with a seconds count', /^\d+/.test(CC), CC);
+  ok('that count is a year or more', Number(CC.match(/^(\d+)/)[1]) >= 31536000, CC);
+  ok('the header it produces is valid', /^max-age=\d+(, [a-z-]+)*$/.test(`max-age=${CC}`), `max-age=${CC}`);
+
+  const uploadSrcs = {
+    'src/uploadRoutes.js': fs.readFileSync(path.join(__dirname, '..', 'src/uploadRoutes.js'), 'utf8'),
+    'src/blogAgent/images.js': fs.readFileSync(path.join(__dirname, '..', 'src/blogAgent/images.js'), 'utf8'),
+    'index.js': fs.readFileSync(path.join(__dirname, '..', 'index.js'), 'utf8'),
+  };
+  for (const [f, s] of Object.entries(uploadSrcs)) {
+    // Each of these files has exactly one app-images upload. The point is that it
+    // passes the shared constant rather than a literal that can drift from it.
+    ok(`${f} passes cacheControl on its upload`,
+      /cacheControl:\s*(imageUrl\.)?UPLOAD_CACHE_CONTROL/.test(s));
+    ok(`${f} does not hardcode a seconds value`,
+      !/cacheControl:\s*['"]\d/.test(s));
+  }
+
+  // The one tool that overwrites an EXISTING path must NOT extend the cache, or a
+  // resize-in-place becomes invisible to every device that already holds the file.
+  const recompress = fs.readFileSync(path.join(__dirname, 'recompressStorageImages.js'), 'utf8');
+  ok('recompressStorageImages.js does NOT set a long cacheControl (it overwrites paths)',
+    !/cacheControl/.test(recompress));
+  ok('...and says why', /immutable/.test(recompress) && /upsert: true/.test(recompress));
+
+  // The repair tool must use update(), not upsert: an upsert writes the bytes and
+  // the database row WITHOUT changing the served header, so it reports success and
+  // achieves nothing. Measured on production the same day.
+  const repair = fs.readFileSync(path.join(__dirname, 'repairStorageCacheControl.js'), 'utf8');
+  ok('repairStorageCacheControl.js uses .update()', /\.update\(o\.path, before, \{/.test(repair));
+  // Comments stripped first: this file EXPLAINS the upsert trap at length, and a
+  // naive grep matches the explanation and reports the bug it warns about.
+  const repairCode = repair.split(/\r?\n/).filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+  ok('...and not upsert, in code', !/upsert:\s*true/.test(repairCode));
+  ok('...re-reads and compares a hash after writing', /sha\(afterBuf\) !== digest/.test(repair));
+  ok('...is a dry run unless --apply', /const APPLY = argv\.includes\('--apply'\)/.test(repair)
+    && /if \(!APPLY\)/.test(repair));
+  ok('...checks the download length BEFORE writing', repair.indexOf('short download')
+    < repair.indexOf('.update(o.path'));
+
   section(`${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });

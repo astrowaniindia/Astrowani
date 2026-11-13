@@ -7,6 +7,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const { UPLOAD_CACHE_CONTROL } = require('./imageUrl');
 const sharp = require('sharp');
 const { createClient } = require('@supabase/supabase-js');
 
@@ -206,7 +207,13 @@ module.exports = function registerUploadRoutes(app) {
 
       const { error: uploadError } = await db.storage
         .from(BUCKET)
-        .upload(filename, outBuffer, { contentType: outMime, upsert: false });
+        .upload(filename, outBuffer, {
+          contentType: outMime,
+          upsert: false,
+          // `filename` above is timestamp + 6 random bytes, so this object can
+          // never change under this URL. See src/imageUrl.js.
+          cacheControl: UPLOAD_CACHE_CONTROL,
+        });
       if (uploadError) throw uploadError;
 
       const { data: publicUrlData } = db.storage.from(BUCKET).getPublicUrl(filename);

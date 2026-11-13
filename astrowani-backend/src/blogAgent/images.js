@@ -23,6 +23,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 const axios = require('axios');
 const crypto = require('crypto');
+const { UPLOAD_CACHE_CONTROL } = require('../imageUrl');
 const path = require('path');
 const sharp = require('sharp');
 
@@ -285,7 +286,11 @@ async function fetchAndNormalise(url) {
  */
 async function upload(db, buffer, { contentType = 'image/jpeg', ext = 'jpg' } = {}) {
   const name = `${FOLDER}/${Date.now()}-${crypto.randomBytes(6).toString('hex')}.${ext}`;
-  const { error } = await db.storage.from(BUCKET).upload(name, buffer, { contentType, upsert: false });
+  const { error } = await db.storage.from(BUCKET).upload(name, buffer, {
+    contentType,
+    upsert: false,
+    cacheControl: UPLOAD_CACHE_CONTROL,
+  });
   if (error) throw new Error(`storage upload failed: ${error.message}`);
   const { data } = db.storage.from(BUCKET).getPublicUrl(name);
   if (!data?.publicUrl) throw new Error('storage upload returned no public url');
