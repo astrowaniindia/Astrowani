@@ -16,7 +16,7 @@ import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityI
 import {COLORS} from '../Theme/Colors';
 import {moderateScale, scale, verticalScale} from '../utils/Scaling';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {supabase} from '../api/SupabaseClient';
+import {fetchUnreadNotificationCount} from '../api/NotificationsApi';
 import {fetchAstrologerRow} from '../utils/vendorProfile';
 import useNotificationBadgeSync from '../utils/useNotificationBadgeSync';
 import {LanguageContext} from '../context/LanguageContext';
@@ -54,12 +54,10 @@ const CustomHeader = ({title, showLanguage}) => {
     let cancelled = false;
 
     const fetchCount = async (id) => {
-      const { count } = await supabase
-        .from('notifications')
-        .select('id', { count: 'exact', head: true })
-        .eq('astrologer_id', id)
-        .eq('is_read', false);
-      if (!cancelled) setUnreadCount(count || 0);
+      // Through the backend (2026-11-13) — a direct read kept the whole notifications
+      // table readable with the public key. null = could not ask: keep the old badge.
+      const count = await fetchUnreadNotificationCount();
+      if (!cancelled && count !== null) setUnreadCount(count);
     };
 
     const setup = async () => {
@@ -84,12 +82,9 @@ const CustomHeader = ({title, showLanguage}) => {
   // screen, so that pattern meant an always-on Realtime connection per vendor.
   useNotificationBadgeSync(astroId, () => {
     if (!astroId) return;
-    supabase
-      .from('notifications')
-      .select('id', { count: 'exact', head: true })
-      .eq('astrologer_id', astroId)
-      .eq('is_read', false)
-      .then(({ count }) => setUnreadCount(count || 0));
+    fetchUnreadNotificationCount().then((count) => {
+      if (count !== null) setUnreadCount(count);
+    });
   });
 
   const toggleLanguageModal = () => {

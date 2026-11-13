@@ -621,6 +621,53 @@ module.exports = function registerNotificationPlatformRoutes(app) {
     });
   }));
 
+  // ── Unread badge counts + the astrologer's list (2026-11-13) ───────────────
+  // The last reads of `notifications` the apps did straight from Supabase on the
+  // publishable key: the header badge (both apps) and the astrologer's list. While
+  // they existed, anon needed SELECT on the WHOLE table — 25,503 rows of other
+  // people's support replies and order updates, readable by anyone holding the key
+  // that ships inside both APKs. These routes let hardening_25 take that grant away.
+  //
+  // Expired rows are excluded from the count exactly as the list excludes them, so
+  // the badge can never promise something the list then hides.
+  async function unreadCount(column, ownerId) {
+    const { data, error } = await client().from('notifications')
+      .select('expires_at')
+      .eq(column, ownerId)
+      .eq('is_read', false)
+      .limit(1000);
+    if (error) throw error;
+    const now = Date.now();
+    return (data || []).filter((n) => !n.expires_at || new Date(n.expires_at).getTime() > now).length;
+  }
+
+  app.get('/api/notifications/unread-count', h(async (req, res) => {
+    const customerId = await customerFromReq(req);
+    if (!customerId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+    return res.json({ success: true, unread: await unreadCount('customer_id', customerId) });
+  }));
+
+  app.get('/api/vendor/notifications/unread-count', h(async (req, res) => {
+    const astrologerId = vendorFromReq(req);
+    if (!astrologerId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+    return res.json({ success: true, unread: await unreadCount('astrologer_id', astrologerId) });
+  }));
+
+  app.get('/api/vendor/notifications/list', h(async (req, res) => {
+    const astrologerId = vendorFromReq(req);
+    if (!astrologerId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
+    const { data, error } = await client().from('notifications')
+      .select('id, title, body, type, category, is_read, read_at, image_url, deep_link, data, campaign_id, created_at, expires_at')
+      .eq('astrologer_id', astrologerId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    const now = Date.now();
+    const rows = (data || []).filter((n) => !n.expires_at || new Date(n.expires_at).getTime() > now);
+    return res.json({ success: true, data: rows, unread: rows.filter((n) => !n.is_read).length });
+  }));
+
   console.log('[notifications] platform routes registered (/api/admin/notifications/*, /api/notifications/*)');
 };
 

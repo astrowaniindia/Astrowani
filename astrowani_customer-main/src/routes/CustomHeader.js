@@ -12,7 +12,7 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { supabase } from '../api/SupabaseClient';
+import { fetchUnreadNotificationCount } from '../api/RequestsApi';
 import {COLORS} from '../Theme/Colors';
 import {moderateScale, scale, verticalScale} from '../utils/Scaling';
 import useNotificationBadgeSync from '../hooks/useNotificationBadgeSync';
@@ -53,12 +53,10 @@ const CustomHeader = ({title, showLanguage, showCart}) => {
     let cancelled = false;
 
     const fetchCount = async (id) => {
-      const { count } = await supabase
-        .from('notifications')
-        .select('id', { count: 'exact', head: true })
-        .eq('customer_id', id)
-        .eq('is_read', false);
-      if (!cancelled) setUnreadCount(count || 0);
+      // Through the backend (2026-11-13) — a direct read kept the whole notifications
+      // table readable with the public key. null = could not ask: keep the old badge.
+      const count = await fetchUnreadNotificationCount();
+      if (!cancelled && count !== null) setUnreadCount(count);
     };
 
     const setup = async () => {
@@ -89,12 +87,9 @@ const CustomHeader = ({title, showLanguage, showCart}) => {
   // screen, so that pattern meant an always-on Realtime connection per customer.
   useNotificationBadgeSync(customerId, () => {
     if (!customerId) return;
-    supabase
-      .from('notifications')
-      .select('id', { count: 'exact', head: true })
-      .eq('customer_id', customerId)
-      .eq('is_read', false)
-      .then(({ count }) => setUnreadCount(count || 0));
+    fetchUnreadNotificationCount().then((count) => {
+      if (count !== null) setUnreadCount(count);
+    });
   });
 
   const toggleLanguage = () => {

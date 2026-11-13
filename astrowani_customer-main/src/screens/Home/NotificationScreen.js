@@ -2,8 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, SectionList, TouchableOpacity, RefreshControl, Image } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { supabase } from '../../api/SupabaseClient';
-import { markNotificationsRead } from '../../api/RequestsApi';
+import { markNotificationsRead, fetchNotificationList } from '../../api/RequestsApi';
 import { COLORS } from '../../Theme/Colors';
 import { moderateScale, scale, verticalScale } from '../../utils/Scaling';
 import { LanguageContext } from '../../context/LanguageContext';
@@ -61,18 +60,12 @@ const NotificationScreen = () => {
       if (!userData?.id) { setLoading(false); return; }
       setCustomerId(userData.id);
 
-      const { data, error } = await supabase
-        .from('notifications')
-        .select('*')
-        .eq('customer_id', userData.id)
-        .order('created_at', { ascending: false });
-      if (error) console.log('Notification fetch error:', error.message);
-      // An expired offer should stop appearing. `expires_at` is NULL on every row
-      // written before 2026-11-07, so this hides nothing that already exists.
-      const now = Date.now();
-      setNotifications((data || []).filter(
-        (n) => !n.expires_at || new Date(n.expires_at).getTime() > now,
-      ));
+      // Through the backend (2026-11-13), not a direct Supabase read — that read is
+      // what kept the whole notifications table readable with the public key. The
+      // server also drops expired offers. null = the request failed: keep what is
+      // already on screen rather than blanking it.
+      const data = await fetchNotificationList(100);
+      if (data) setNotifications(data);
     } catch (e) {
       console.log('Error loading notifications:', e.message);
     } finally {

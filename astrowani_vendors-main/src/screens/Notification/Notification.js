@@ -2,7 +2,7 @@ import React, { useCallback, useContext, useEffect, useState } from 'react';
 import { StyleSheet, Text, View, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, Image } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { supabase } from '../../api/SupabaseClient';
+import { fetchNotificationList } from '../../api/NotificationsApi';
 import Instance from '../../api/ApiCall';
 import { COLORS } from '../../Theme/Colors';
 import useNotificationBadgeSync from '../../utils/useNotificationBadgeSync';
@@ -34,14 +34,11 @@ export default function Notification() {
       if (!id) return;
       setAstroId(id);
 
-      const { data: notificationsData, error } = await supabase
-        .from('notifications')
-        .select('*')
-        .eq('astrologer_id', id)
-        .order('created_at', { ascending: false });
-
-      if (error) console.log('Supabase error:', error.message);
-      setData(notificationsData || []);
+      // Through the backend (2026-11-13), not a direct Supabase read — that read is
+      // what kept the whole notifications table readable with the public key.
+      // null = the request failed: keep what is already on screen.
+      const notificationsData = await fetchNotificationList(100);
+      if (notificationsData) setData(notificationsData);
     } catch (error) {
       console.error('Error fetching notifications:', error);
     } finally {

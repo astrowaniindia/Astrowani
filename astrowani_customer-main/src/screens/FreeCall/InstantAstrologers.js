@@ -38,6 +38,7 @@ import { formatBusyLabel } from '../../utils/busyLabel';
 import { requestNotifyMe } from '../../utils/notifyMe';
 import { ensureCallPermissions } from '../../utils/callPermissions';
 import { captureEvent } from '../../utils/Analytics';
+import { awaitRequestOutcome } from '../../utils/awaitRequestOutcome';
 
 const CREAM = '#FFF9F3';
 const BORDER = '#E9D9C9';
@@ -76,6 +77,7 @@ export default function InstantAstrologers({ navigation, route }) {
   // the paid Talk-To-Experts flow (CLAUDE.md, round 3).
   const socketRef = useRef(null);
   const channelRef = useRef(null);
+  const outcomePollerRef = useRef(null);
   const navigatedRef = useRef(false);
 
   // ── Journey tracking ───────────────────────────────────────────────────────
@@ -169,6 +171,7 @@ export default function InstantAstrologers({ navigation, route }) {
       }
       if (ringTimerRef.current) clearTimeout(ringTimerRef.current);
       if (channelRef.current) supabase.removeChannel(channelRef.current);
+      outcomePollerRef.current?.stop();
       // Leaving the screen mid-ring must not leave the astrologer's phone ringing for a
       // customer who has gone. Fire-and-forget: the server sweeps it anyway.
       if (ringRef.current && !navigatedRef.current) giveUpInstantRing(ringRef.current.requestId, 'cancelled');
@@ -180,6 +183,7 @@ export default function InstantAstrologers({ navigation, route }) {
   const stopRinging = useCallback((status) => {
     if (ringTimerRef.current) { clearTimeout(ringTimerRef.current); ringTimerRef.current = null; }
     if (channelRef.current) { supabase.removeChannel(channelRef.current); channelRef.current = null; }
+    if (outcomePollerRef.current) { outcomePollerRef.current.stop(); outcomePollerRef.current = null; }
     socketRef.current?.off('call_accepted');
     socketRef.current?.off('call_rejected');
     const active = ringRef.current;
@@ -292,6 +296,20 @@ export default function InstantAstrologers({ navigation, route }) {
           else if (payload.new.status === 'rejected') rejected();
         })
         .subscribe();
+
+      // Third path: poll the server (2026-11-13). Every other call entry point has had
+      // this since 2026-09-30; the free instant call — the first call most new customers
+      // ever make — had only the socket and the Realtime UPDATE above. hardening_25 takes
+      // anon's SELECT on call_requests away, which silences that Realtime path for good,
+      // so without this a dropped socket message would leave the customer ringing until
+      // the timer. 'missed' is left to the ring timer below, which owns that popup.
+      outcomePollerRef.current = awaitRequestOutcome({
+        kind: 'call',
+        requestId: res.requestId,
+        label: 'free instant call',
+        onAccepted: (sid) => goToCall(sid),
+        onClosed: (status) => { if (status === 'rejected') rejected(); },
+      });
 
       // Ring for the server-set window, then hand them back to the list so they can try
       // somebody else. 'missed' rather than 'cancelled': the astrologer did not answer,

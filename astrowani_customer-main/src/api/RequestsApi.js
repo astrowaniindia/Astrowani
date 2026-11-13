@@ -56,3 +56,36 @@ export async function markNotificationsRead(ids) {
     return 0;
   }
 }
+
+// Reads of `notifications` (2026-11-13). These used to go straight to Supabase on the
+// publishable key, which meant anon needed SELECT on the whole table — everyone's
+// support replies and order updates. Both helpers resolve and never throw, like the
+// direct reads they replace: a failed fetch shows an empty list / no badge, it does
+// not break the screen. They return null on failure so a caller can tell "nothing"
+// from "could not ask" and keep what it already shows.
+
+/** @returns {Promise<object[]|null>} the customer's notifications, newest first */
+export async function fetchNotificationList(limit = 100) {
+  try {
+    const auth = await authHeader();
+    if (!auth) return null;
+    const res = await Instance.get(`/api/notifications/list?limit=${limit}`, auth);
+    return Array.isArray(res?.data?.data) ? res.data.data : null;
+  } catch (e) {
+    console.log('[notifications] list failed —', e?.message);
+    return null;
+  }
+}
+
+/** @returns {Promise<number|null>} unread count, or null if it could not be read */
+export async function fetchUnreadNotificationCount() {
+  try {
+    const auth = await authHeader();
+    if (!auth) return null;
+    const res = await Instance.get('/api/notifications/unread-count', auth);
+    return typeof res?.data?.unread === 'number' ? res.data.unread : null;
+  } catch (e) {
+    console.log('[notifications] unread count failed —', e?.message);
+    return null;
+  }
+}
