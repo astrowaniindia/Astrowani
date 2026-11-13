@@ -2961,12 +2961,19 @@ function astrologerVisibleToCustomers(row) {
 }
 
 // Maps a customers row to the profile shape the app consumes.
-function toProfile(row, decoded = {}) {
+//
+// `decoded` is normalised rather than defaulted in the signature: a default
+// parameter only applies to `undefined`, so an explicit null argument sailed
+// straight past `decoded = {}` and `decoded.userId` threw. The callers resolve
+// it from the request, and one of them legitimately produces null (no auth
+// header at all), so this helper must tolerate it (ASTROWANI-BACKEND-M).
+function toProfile(row, decoded) {
+  const d = decoded || {};
   return {
-    id: row?.id || decoded.userId || decoded.id || null,
+    id: row?.id || d.userId || d.id || null,
     name: row?.name || 'User',
     email: row?.email || '',
-    phone: row?.mobile || decoded.phone || '',
+    phone: row?.mobile || d.phone || '',
     gender: row?.gender || '',
     dob: row?.dob || '',
     timeOfBirth: row?.time_of_birth || '',
@@ -3032,6 +3039,15 @@ app.get('/api/users/profile', async (req, res) => {
   try {
     const { decoded, row } = await getCustomerRowFromReq(req);
 
+    // No Authorization header at all. getCustomerRowFromReq returns a null
+    // `decoded` for that, which is NOT the same as a token it could not verify
+    // (that throws and is handled in the catch below). It has to be answered
+    // here: the guard underneath is deliberately "valid token, no row", so a
+    // header-less request used to fall through to toProfile(null, null) and
+    // 500, reporting a caller's missing credentials as a backend error. An
+    // unauthenticated read of somebody's profile is a 401 like any other.
+    if (!decoded) return sendSessionExpired(res);
+
     // A VALID token whose customer row cannot be resolved is a FAILURE, not an
     // empty profile, and that difference matters to the person holding the phone.
     // This used to answer 200 success:true with every field '' -- toProfile(null)
@@ -3084,6 +3100,10 @@ app.get('/api/users/profile', async (req, res) => {
 app.put('/api/users/profile', async (req, res) => {
   try {
     const { decoded, row } = await getCustomerRowFromReq(req);
+    // As in the GET above. Without this, a request carrying no credentials was
+    // told "we could not save your profile just now, please try again" -- which
+    // invites a retry that can never work -- instead of being sent to Login.
+    if (!decoded) return sendSessionExpired(res);
     if (!row || !row.id) {
       // Same root cause as the GET above. 404 'Customer not found' read as
       // "your account does not exist" -- alarming and wrong. The account was
