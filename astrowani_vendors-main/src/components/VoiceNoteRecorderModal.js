@@ -2,7 +2,7 @@
 // POST /api/vendor/voice-notes. Extracted out of MyCustomers.js so ChatHistoryThread.js
 // (referring back to what was said, then sending a follow-up voice note) can reuse the
 // exact same modal instead of a second copy of the recording/upload logic.
-import React, { useContext, useState } from 'react';
+import React, { useContext, useRef, useState } from 'react';
 import {
   Modal,
   View,
@@ -38,6 +38,9 @@ const VoiceNoteRecorderModal = ({ target, onClose, onSent }) => {
   const [durationMs, setDurationMs] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [sending, setSending] = useState(false);
+  // Set before the first await, so a second tap on the same button can't run a
+  // start/stop concurrently with the one already in flight.
+  const busyRef = useRef(false);
 
   const requestMicPermission = async () => {
     if (Platform.OS !== 'android') return true;
@@ -64,23 +67,49 @@ const VoiceNoteRecorderModal = ({ target, onClose, onSent }) => {
   };
 
   const startRecording = async () => {
-    const ok = await requestMicPermission();
-    if (!ok) {
-      Alert.alert(t('customers.micRequiredTitle'), t('customers.micRequiredBody'));
-      return;
+    if (busyRef.current) return;
+    busyRef.current = true;
+    try {
+      const ok = await requestMicPermission();
+      if (!ok) {
+        Alert.alert(t('customers.micRequiredTitle'), t('customers.micRequiredBody'));
+        return;
+      }
+      setRecordedPath(null);
+      setDurationMs(0);
+      await audioRecorderPlayer.startRecorder();
+      audioRecorderPlayer.addRecordBackListener((e) => setDurationMs(e.currentPosition));
+      setRecording(true);
+    } catch (_) {
+      // Another app (or a call we're on) holds the mic. Leave the modal on "Tap to
+      // record" rather than letting the rejection escape unhandled.
+      audioRecorderPlayer.removeRecordBackListener();
+      setRecording(false);
+      setDurationMs(0);
+      Alert.alert(t('customers.recordFailedTitle'), t('customers.recordStartFailedBody'));
+    } finally {
+      busyRef.current = false;
     }
-    setRecordedPath(null);
-    setDurationMs(0);
-    await audioRecorderPlayer.startRecorder();
-    audioRecorderPlayer.addRecordBackListener((e) => setDurationMs(e.currentPosition));
-    setRecording(true);
   };
 
   const stopRecording = async () => {
-    const path = await audioRecorderPlayer.stopRecorder();
-    audioRecorderPlayer.removeRecordBackListener();
-    setRecording(false);
-    setRecordedPath(path);
+    if (busyRef.current) return;
+    busyRef.current = true;
+    try {
+      const path = await audioRecorderPlayer.stopRecorder();
+      setRecordedPath(path);
+    } catch (_) {
+      // Android's MediaRecorder.stop() throws when it was stopped before it captured
+      // any audio — tapping mic and stop straight away. Without this the rejection
+      // escaped and the modal stayed on "Recording…" for good, with no way out but
+      // Cancel. Drop back to "Tap to record" so they can simply record again.
+      setDurationMs(0);
+      Alert.alert(t('customers.recordFailedTitle'), t('customers.recordFailedBody'));
+    } finally {
+      audioRecorderPlayer.removeRecordBackListener();
+      setRecording(false);
+      busyRef.current = false;
+    }
   };
 
   const previewPlayback = async () => {
@@ -92,14 +121,20 @@ const VoiceNoteRecorderModal = ({ target, onClose, onSent }) => {
       return;
     }
     setPlaying(true);
-    await audioRecorderPlayer.startPlayer(recordedPath);
-    audioRecorderPlayer.addPlayBackListener((e) => {
-      if (e.currentPosition >= e.duration) {
-        audioRecorderPlayer.stopPlayer();
-        audioRecorderPlayer.removePlayBackListener();
-        setPlaying(false);
-      }
-    });
+    try {
+      await audioRecorderPlayer.startPlayer(recordedPath);
+      audioRecorderPlayer.addPlayBackListener((e) => {
+        if (e.currentPosition >= e.duration) {
+          audioRecorderPlayer.stopPlayer();
+          audioRecorderPlayer.removePlayBackListener();
+          setPlaying(false);
+        }
+      });
+    } catch (_) {
+      audioRecorderPlayer.removePlayBackListener();
+      setPlaying(false);
+      Alert.alert(t('customers.recordFailedTitle'), t('customers.previewFailedBody'));
+    }
   };
 
   const sendVoiceNote = async () => {
