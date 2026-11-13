@@ -33,6 +33,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Instance from '../../api/ApiCall';
 import { LanguageContext } from '../../context/LanguageContext';
 import { captureEvent } from '../../utils/Analytics';
+import { maybeAskForSupportNotifications } from '../../utils/supportNotifyPrompt';
 
 // While a human owns the thread there is no push-free way to learn they replied,
 // so the screen polls. Only while it is focused and only while a person is
@@ -231,6 +232,9 @@ export default function SupportChatScreen({ navigation, route }) {
       const id = await ensureConversation();
       await Instance.post(`/api/support/conversations/${id}/messages`, { body }, await auth());
       await loadThread(id);
+      // They have just asked us something: the one moment "let us tell you when we
+      // reply" makes obvious sense. Once per conversation, never if already allowed.
+      maybeAskForSupportNotifications(id);
     } catch (e) {
       setMessages((prev) => [...prev, {
         id: `err-${Date.now()}`,
@@ -251,6 +255,7 @@ export default function SupportChatScreen({ navigation, route }) {
       const id = await ensureConversation();
       await Instance.post(`/api/support/conversations/${id}/escalate`, {}, await auth());
       await loadThread(id);
+      maybeAskForSupportNotifications(id);
     } catch (e) {
       captureEvent('support_escalation_failed');
       setMessages((prev) => [...prev, { id: `err-${Date.now()}`, sender: 'system', body: failureLine(e) }]);

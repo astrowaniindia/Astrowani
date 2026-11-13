@@ -29,6 +29,7 @@ import {moderateScale, scale, verticalScale} from '../utils/Scaling';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Instance from '../api/ApiCall';
 import {LanguageContext} from '../context/LanguageContext';
+import {maybeAskForSupportNotifications} from '../utils/supportNotifyPrompt';
 
 // Only while a human is involved — see the customer screen for the reasoning.
 const POLL_MS = 6000;
@@ -192,6 +193,8 @@ export default function Support({navigation}) {
       const id = await ensureConversation();
       await Instance.post(`/api/support/conversations/${id}/messages`, {body}, await auth());
       await loadThread(id);
+      // Ask now, while they are waiting on us — once per conversation.
+      maybeAskForSupportNotifications(id);
     } catch (e) {
       setMessages(prev => [...prev, {id: `err-${Date.now()}`, sender: 'system', body: failureLine(e)}]);
     } finally {
@@ -206,6 +209,7 @@ export default function Support({navigation}) {
       const id = await ensureConversation();
       await Instance.post(`/api/support/conversations/${id}/escalate`, {}, await auth());
       await loadThread(id);
+      maybeAskForSupportNotifications(id);
     } catch (e) {
       setMessages(prev => [...prev, {id: `err-${Date.now()}`, sender: 'system', body: failureLine(e)}]);
     } finally {

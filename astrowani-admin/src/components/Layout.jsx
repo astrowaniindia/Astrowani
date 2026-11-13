@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { NavLink, Outlet, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import useSupportQueue from './useSupportQueue';
 
 // Primary Workspaces — groups 29 tools into 4 logical departments
 const WORKSPACES = [
@@ -155,6 +156,8 @@ export default function Layout() {
   const [search, setSearch] = useState('');
   const [activeWorkspace, setActiveWorkspace] = useState('all');
   const location = useLocation();
+  // Above the early return: a hook must run on every render.
+  const supportQueue = useSupportQueue(isAuthed);
 
   if (!isAuthed) return <Navigate to="/login" replace />;
 
@@ -262,7 +265,11 @@ export default function Layout() {
                         <span className="nav-dot" />
                         <span>{item.label}</span>
                       </div>
-                      {item.badge && (
+                      {item.to === '/support-inbox' && supportQueue?.waiting > 0 ? (
+                        <span className="nav-badge-pill nav-badge-alert" title="Waiting for a reply from us">
+                          {supportQueue.waiting}
+                        </span>
+                      ) : item.badge && (
                         <span className="nav-badge-pill">{item.badge}</span>
                       )}
                     </NavLink>
@@ -316,6 +323,18 @@ export default function Layout() {
           </div>
 
           <div className="topbar-right">
+            {/* Visible from every page, so a waiting customer is never one
+                page-visit away from being noticed. */}
+            {supportQueue?.waiting > 0 && (
+              <NavLink to="/support-inbox" className="support-alert-pill" title="Open the Support Inbox">
+                <span className="pulse-dot" />
+                <span>
+                  {supportQueue.waiting} waiting on support
+                  {supportQueue.urgent ? ` · ${supportQueue.urgent} urgent` : ''}
+                  {supportQueue.overdue ? ` · ${supportQueue.overdue} overdue` : ''}
+                </span>
+              </NavLink>
+            )}
             <button
               type="button"
               className="theme-toggle-btn"

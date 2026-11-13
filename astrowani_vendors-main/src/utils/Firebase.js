@@ -195,6 +195,18 @@ messaging().onMessage(async remoteMessage => {
     // Sent as data-only (see backend notificationRoutes.js) specifically so it reaches this
     // handler instead of being silently auto-displayed by the OS without our large icon.
     await displayGenericNotification(data);
+  } else if (data.type === 'support_reply') {
+    // A support reply carries a top-level notification, so the OS draws it while the
+    // app is backgrounded — but with the app OPEN Android hands it here and draws
+    // nothing, and this branch did not exist: an astrologer looking at their dashboard
+    // never saw that support had answered. Foreground only, deliberately: adding it to
+    // the background handler would draw it twice.
+    await displayGenericNotification({
+      title: remoteMessage?.notification?.title || data.title || 'Astrowani Support',
+      body: remoteMessage?.notification?.body || data.body || '',
+      type: 'support_reply',
+      deepLink: 'Support',
+    });
   }
 })
 

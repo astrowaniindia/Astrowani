@@ -12,7 +12,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import client from '../api/client';
 
 const TABS = [
-  { key: 'open', label: 'Needs a person' },
+  // THE to-do list: our turn to answer. Includes a customer writing back after we
+  // already replied, which 'Needs a person' (status-based) never distinguished.
+  { key: 'waiting', label: 'Waiting on us' },
+  { key: 'open', label: 'With a person' },
   { key: 'bot', label: 'With the assistant' },
   { key: 'resolved', label: 'Resolved' },
   { key: 'all', label: 'All' },
@@ -28,7 +31,19 @@ const STATUS_LABEL = {
 // watches a queue they have to remember to reload.
 const POLL_MS = 20000;
 
+function waited(m) {
+  if (m == null) return '';
+  if (m < 60) return `${m}m`;
+  if (m < 48 * 60) return `${Math.round(m / 60)}h`;
+  return `${Math.round(m / 1440)}d`;
+}
+
 function Sla({ row }) {
+  // Waiting on us: say for how long, in red once it is past the time we promised.
+  if (row.waitingOnUs) {
+    const late = row.slaBreached || (row.first_human_response_at && row.waitingMinutes > 240);
+    return <span className={`badge ${late ? 'red' : 'amber'}`}>Waiting {waited(row.waitingMinutes)}</span>;
+  }
   if (!row.first_response_due_at) return <span className="muted">—</span>;
   if (row.first_human_response_at) return <span className="badge green">Answered</span>;
   if (row.slaBreached) return <span className="badge red">Overdue</span>;
@@ -39,7 +54,7 @@ function Sla({ row }) {
 
 export default function SupportInbox() {
   const [rows, setRows] = useState([]);
-  const [tab, setTab] = useState('open');
+  const [tab, setTab] = useState('waiting');
   const [appFilter, setAppFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [tableMissing, setTableMissing] = useState(false);
@@ -64,6 +79,14 @@ export default function SupportInbox() {
   }, [tab, appFilter]);
 
   useEffect(() => { setLoading(true); load(); }, [load]);
+
+  // The alert emails link here with ?c=<conversation id>, so a tap from the
+  // phone lands on that thread rather than on the list.
+  useEffect(() => {
+    const c = new URLSearchParams(window.location.search).get('c');
+    if (c) openThread(c).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useEffect(() => {
     const id = setInterval(load, POLL_MS);
     return () => clearInterval(id);
@@ -152,7 +175,7 @@ export default function SupportInbox() {
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 1fr) minmax(360px, 1.2fr)', gap: 16, alignItems: 'start' }}>
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Who</th><th>Issue</th><th>Priority</th><th>SLA</th><th>Status</th></tr></thead>
+            <thead><tr><th>Who</th><th>What they said</th><th>Priority</th><th>Reply</th><th>Status</th></tr></thead>
             <tbody>
               {loading && <tr><td colSpan={5} className="empty">Loading…</td></tr>}
               {!loading && rows.length === 0 && <tr><td colSpan={5} className="empty">Nothing here.</td></tr>}
@@ -165,7 +188,14 @@ export default function SupportInbox() {
                     {r.partyName}
                     <div className="muted" style={{ fontSize: 11 }}>{r.app === 'vendor' ? 'Astrologer' : 'Customer'}</div>
                   </td>
-                  <td className="muted">{r.category || '—'}</td>
+                  <td>
+                    <div className="muted" style={{ fontSize: 11 }}>{r.category || '—'}</div>
+                    {r.lastUserMessage && (
+                      <div style={{ fontSize: 12, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.lastUserMessage}>
+                        {r.lastUserMessage}
+                      </div>
+                    )}
+                  </td>
                   <td><span className={`badge ${PRIORITY_COLOR[r.priority] || 'gray'}`}>{r.priority}</span></td>
                   <td><Sla row={r} /></td>
                   <td className="muted">{STATUS_LABEL[r.status] || r.status}</td>
@@ -239,6 +269,14 @@ export default function SupportInbox() {
                 {thread.status !== 'resolved' && (
                   <button className="btn secondary" onClick={() => patch({ status: 'resolved' })} disabled={busy}>
                     Mark resolved
+                  </button>
+                )}
+                {/* For the ones that need nothing — "hi", a test, a duplicate.
+                    Takes it off the waiting list without sending anything. */}
+                {thread.awaiting_reply_since && (
+                  <button className="btn secondary" onClick={() => patch({ status: 'closed' })} disabled={busy}
+                    title="No reply needed — remove from the waiting list without messaging them">
+                    Close, no reply needed
                   </button>
                 )}
                 <select

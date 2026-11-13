@@ -24,6 +24,8 @@ const { findCustomerByPhone, findAstrologerByPhone } = require('./customerLookup
 const { generateReply } = require('./supportBot');
 const { sendPush } = require('./push');
 const { recordInAppAsync } = require('./notifications/inApp');
+const supportAlerts = require('./supportAlerts');
+const notifDevices = require('./notifications/devices');
 
 
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -283,12 +285,17 @@ module.exports = function registerSupportRoutes(app) {
         category: conv.category,
         priority: conv.priority === 'urgent' ? 'urgent' : 'high',
       });
+      supportAlerts.onAwaitingReply(conv.id, { message: body, trigger: 'reopened' });
       return res.json({ success: true, status: 'awaiting_human', reopened: true });
     }
 
-    // A human owns it — stay out of the way. Notify nobody here; the admin
-    // console polls its queue and shows the unread count.
+    // A human owns it — stay out of the way, BUT it is now our turn to answer.
+    // This used to notify nobody ("the admin console polls"), which is how a
+    // customer writing back after our reply left no trace anywhere: the status
+    // stayed 'human' and nothing said they were waiting. Not awaited — a slow
+    // alert email must never slow the customer's send; it never throws.
     if (conv.status === 'human' || conv.status === 'awaiting_human') {
+      supportAlerts.onAwaitingReply(conv.id, { message: body, trigger: 'message' });
       return res.json({ success: true, status: conv.status, awaitingHuman: true });
     }
 
@@ -316,6 +323,7 @@ module.exports = function registerSupportRoutes(app) {
         await addMessage(conv.id, 'agent', "Let me get a person onto this — I don't want to guess at something this important.");
       }
       await escalate(conv, result);
+      supportAlerts.onAwaitingReply(conv.id, { message: body, trigger: 'escalated' });
       return res.json({ success: true, status: 'awaiting_human', escalated: true, degraded: !!result.degraded });
     }
 
@@ -351,6 +359,7 @@ module.exports = function registerSupportRoutes(app) {
       // not urgent, which is reserved for lost money, lockout and safety.
       priority: conv.priority === 'urgent' ? 'urgent' : 'high',
     });
+    supportAlerts.onAwaitingReply(conv.id, { trigger: 'escalated' });
     return res.json({ success: true, status: 'awaiting_human' });
   }));
 
@@ -384,6 +393,7 @@ module.exports = function registerSupportRoutes(app) {
           category: full.category,
           priority: 'high',
         });
+        supportAlerts.onAwaitingReply(full.id, { message: comment || `Rated ${rating}/5`, trigger: 'reopened' });
       }
     }
     return res.json({ success: true });
@@ -397,8 +407,10 @@ module.exports = function registerSupportRoutes(app) {
 
     let q = db.from('support_conversations').select('*');
     if (status && status !== 'all') {
-      // 'open' is the working queue: everything still needing a person.
-      if (status === 'open') q = q.in('status', ['awaiting_human', 'human']);
+      // 'waiting' is the to-do list: our turn to answer, whatever the status says.
+      if (status === 'waiting') q = q.not('awaiting_reply_since', 'is', null);
+      // 'open' is everything still with a person, answered or not.
+      else if (status === 'open') q = q.in('status', ['awaiting_human', 'human']);
       else q = q.eq('status', status);
     }
     if (appFilter === 'customer' || appFilter === 'vendor') q = q.eq('app', appFilter);
@@ -423,23 +435,66 @@ module.exports = function registerSupportRoutes(app) {
       (a || []).forEach((x) => { names[x.id] = `${x.first_name || ''} ${x.last_name || ''}`.trim() || 'Astrologer'; });
     }
 
+    // What they last said, so triage can happen from the list — telling "my ₹500
+    // was deducted" from "nice app" should not need a click into each thread.
+    const lastSaid = {};
+    if (rows.length) {
+      const { data: msgs } = await db.from('support_messages')
+        .select('conversation_id, body, created_at')
+        .in('conversation_id', rows.map((r) => r.id).slice(0, 150))
+        .eq('sender', 'user')
+        .order('created_at', { ascending: false })
+        .limit(1000);
+      (msgs || []).forEach((m) => { if (!lastSaid[m.conversation_id]) lastSaid[m.conversation_id] = m.body; });
+    }
+
     const now = Date.now();
-    return res.json({
-      success: true,
-      data: rows.map((r) => ({
-        ...r,
-        partyName: names[r.customer_id || r.astrologer_id] || '—',
-        // Computed for display only. Whether a past conversation breached is a
-        // function of the stored deadline and the stored first response, so this
-        // never rewrites history.
-        slaBreached: !!(r.first_response_due_at && !r.first_human_response_at
-          && new Date(r.first_response_due_at).getTime() < now
-          && ['awaiting_human', 'human'].includes(r.status)),
-        minutesToDue: r.first_response_due_at
-          ? Math.round((new Date(r.first_response_due_at).getTime() - now) / 60000)
-          : null,
-      })),
+    const RANK = { urgent: 0, high: 1, normal: 2, low: 3 };
+    const out = rows.map((r) => ({
+      ...r,
+      partyName: names[r.customer_id || r.astrologer_id] || '—',
+      lastUserMessage: lastSaid[r.id] ? String(lastSaid[r.id]).slice(0, 160) : null,
+      // Our turn to answer. The column is the authority; see sql/support_alerts.sql.
+      waitingOnUs: !!r.awaiting_reply_since,
+      waitingMinutes: r.awaiting_reply_since
+        ? Math.max(0, Math.round((now - new Date(r.awaiting_reply_since).getTime()) / 60000))
+        : null,
+      // Computed for display only. Whether a past conversation breached is a
+      // function of the stored deadline and the stored first response, so this
+      // never rewrites history.
+      slaBreached: !!(r.first_response_due_at && !r.first_human_response_at
+        && new Date(r.first_response_due_at).getTime() < now
+        && ['awaiting_human', 'human'].includes(r.status)),
+      minutesToDue: r.first_response_due_at
+        ? Math.round((new Date(r.first_response_due_at).getTime() - now) / 60000)
+        : null,
+    }));
+
+    // Worst first: waiting on us, then priority, then who has waited longest. The
+    // page's own comment always said "ordered by SLA, not by arrival" — it was in
+    // fact ordered by last_message_at, which buries a breached urgent conversation
+    // under every chatty one.
+    out.sort((a, b) => {
+      if (a.waitingOnUs !== b.waitingOnUs) return a.waitingOnUs ? -1 : 1;
+      const pa = RANK[a.priority] ?? 2; const pb = RANK[b.priority] ?? 2;
+      if (pa !== pb) return pa - pb;
+      if (a.waitingOnUs) return (b.waitingMinutes || 0) - (a.waitingMinutes || 0);
+      return new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0);
     });
+
+    return res.json({ success: true, data: out });
+  }));
+
+  // Counts for the sidebar badge and the inbox's own new-arrival alert.
+  app.get('/api/admin/support/summary', requireAdminToken, h(async (req, res) => {
+    try {
+      return res.json({ success: true, data: await supportAlerts.queueSummary() });
+    } catch (e) {
+      if (isMissingTable(e) || /awaiting_reply_since/.test(e?.message || '')) {
+        return res.json({ success: true, data: { waiting: 0, urgent: 0, high: 0, overdue: 0, newestWaitingAt: null }, notMigrated: true });
+      }
+      throw e;
+    }
   }));
 
   app.get('/api/admin/support/conversations/:id', requireAdminToken, h(async (req, res) => {
@@ -487,30 +542,49 @@ module.exports = function registerSupportRoutes(app) {
     }
     await db.from('support_conversations').update(patch).eq('id', conv.id);
 
+    // Nobody is waiting on us any more. Awaited: the inbox reloads straight after.
+    await supportAlerts.onAnswered(conv.id);
+
     // Push, because the whole point is that the reply reaches them. Best-effort:
     // a failed push must never fail the reply that is already saved.
+    //
+    // DEVICE-AWARE since 2026-11-14. This used to read ONLY the legacy
+    // `fcm_token` account column — one token, whatever phone they last logged in
+    // on, with no idea whether notifications were allowed there. The device tables
+    // know every phone a person uses and which may show a notification, so the
+    // reply goes to all of those; the legacy column stays as the fallback for
+    // installs that have never reported a device.
     try {
       // sendPush(tokens, { title, body, data }) — an options object, NOT positional
       // args. Called positionally this sends a notification with no title and no
       // body, which delivers successfully and shows the customer nothing.
-      const table = conv.customer_id ? 'customers' : 'astrologers';
+      const isCustomer = !!conv.customer_id;
       const partyId = conv.customer_id || conv.astrologer_id;
       if (partyId) {
-        const { data: row } = await db.from(table).select('fcm_token').eq('id', partyId).maybeSingle();
-        if (row?.fcm_token) {
-          await sendPush(row.fcm_token, {
+        const tokens = new Set();
+        try {
+          const map = isCustomer
+            ? await notifDevices.liveDevicesFor([partyId])
+            : await notifDevices.liveAstrologerDevicesFor([partyId]);
+          (map.get(String(partyId))?.tokens || []).forEach((tk) => tokens.add(tk));
+        } catch (_) { /* fall through to the legacy column */ }
+        if (!tokens.size) {
+          const { data: row } = await db.from(isCustomer ? 'customers' : 'astrologers')
+            .select('fcm_token').eq('id', partyId).maybeSingle();
+          if (row?.fcm_token) tokens.add(row.fcm_token);
+        }
+        if (tokens.size) {
+          await sendPush([...tokens], {
             title: 'Astrowani Support',
             body: body.slice(0, 140),
-            data: { screen: 'SupportChat', conversationId: conv.id, type: 'support_reply' },
+            data: { screen: isCustomer ? 'SupportChat' : 'Support', conversationId: conv.id, type: 'support_reply' },
           });
         }
-  // Written OUTSIDE the `has a token` guard on purpose: the in-app list is the
-  // DURABLE record and the push is only the alert. Of 4,890 customers, 289 can
-  // receive a push — gating the record on the token would leave the other 94%
-  // with no trace of the thing at all, which is the population this exists for.
-        // A support reply is the clearest case of all: somebody asked a question and
-        // the answer used to live only in a banner. `deepLink` is given explicitly
-        // for the astrologer because the two apps have different screens.
+        // Written OUTSIDE the `has a token` guard on purpose: the in-app list is the
+        // DURABLE record and the push is only the alert. Of 4,890 customers, 289 can
+        // receive a push — gating the record on the token would leave the other 94%
+        // with no trace of the thing at all. `deepLink` is given explicitly for the
+        // astrologer because the two apps have different screens.
         recordInAppAsync({
           type: 'support_reply',
           audience: conv.customer_id ? 'customer' : 'astrologer',
@@ -546,6 +620,11 @@ module.exports = function registerSupportRoutes(app) {
     // how "resolved" becomes something that happened to them rather than for them.
     if (patch.status === 'resolved') {
       await addMessage(req.params.id, 'system', 'This conversation was marked resolved by the support team.');
+    }
+    // Resolved or closed means nobody is waiting on us — otherwise the queue keeps
+    // counting it and the overdue email keeps listing it.
+    if (patch.status === 'resolved' || patch.status === 'closed') {
+      await supportAlerts.onAnswered(req.params.id);
     }
     return res.json({ success: true, data });
   }));

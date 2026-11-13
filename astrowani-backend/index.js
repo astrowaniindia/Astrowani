@@ -8800,6 +8800,10 @@ server.listen(PORT, () => {
   // and the date it last sent lives in app_settings, so restarting does not resend.
   paymentFailureAlerts.startDigestTicker();
 
+  // Support queue email: who is waiting on the team, and who is past the reply
+  // time we promised them. Production only (gated inside start()).
+  require('./src/supportAlerts').start();
+
   // Scheduled campaigns and notification automations.
   //
   // This one is gated on ENABLE_SESSION_MANAGER *inside* start(), unlike the two
