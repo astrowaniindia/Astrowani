@@ -63,7 +63,17 @@ export default function Withdrawals() {
             {!loading && !error && rows.length === 0 && <tr><td colSpan={10} className="empty">No withdrawal requests yet.</td></tr>}
             {rows.map((r) => (
               <tr key={r.id}>
-                <td>{r.astrologers ? `${r.astrologers.first_name || ''} ${r.astrologers.last_name || ''}`.trim() : '—'}</td>
+                <td>
+                  {r.astrologers ? `${r.astrologers.first_name || ''} ${r.astrologers.last_name || ''}`.trim() : '—'}
+                  {/* Payout details replaced in the last 7 days: confirm with the astrologer
+                      by phone before paying — a hijacked account changes these first. */}
+                  {r.astrologers?.payout_details_changed_at
+                    && Date.now() - new Date(r.astrologers.payout_details_changed_at).getTime() < 7 * 86400000 && (
+                    <div style={{ color: '#c0392b', fontSize: 12, fontWeight: 600, marginTop: 2 }}>
+                      ⚠ Bank/UPI changed {new Date(r.astrologers.payout_details_changed_at).toLocaleString()} — verify before paying
+                    </div>
+                  )}
+                </td>
                 <td className="muted">{r.astrologers?.phone_number || '—'}</td>
                 <td className="muted">{r.amount}</td>
                 <td className="muted">

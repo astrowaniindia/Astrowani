@@ -56,21 +56,9 @@ const db = createClient(
 );
 
 // ── Auth middleware ───────────────────────────────────────────────────────────
-function requireAdmin(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ success: false, message: 'Unauthorized' });
-  const token = authHeader.replace('Bearer ', '');
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    if (decoded.role !== 'admin') {
-      return res.status(403).json({ success: false, message: 'Admin access required' });
-    }
-    req.admin = decoded;
-    next();
-  } catch (err) {
-    return res.status(401).json({ success: false, message: 'Invalid token' });
-  }
-}
+// Delegates to the single admin check (security audit 2026-11-13): a token is an
+// admin token only if its id is a row in `admins` — see src/adminAuth.js.
+const requireAdmin = require('./adminAuth').requireAdmin;
 
 // Small async wrapper so each handler can throw and we return 500 once.
 const h = (fn) => (req, res) => fn(req, res).catch((err) => {
@@ -1568,7 +1556,7 @@ module.exports = function registerAdminRoutes(app) {
   app.get('/api/admin/withdrawals', requireAdmin, h(async (req, res) => {
     const { data, error } = await db
       .from('withdrawal_requests')
-      .select('*, astrologers(first_name, last_name, phone_number)')
+      .select('*, astrologers(first_name, last_name, phone_number, payout_details_changed_at)')
       .order('requested_at', { ascending: false })
       .limit(300);
     if (error) throw error;

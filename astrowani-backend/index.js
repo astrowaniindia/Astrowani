@@ -6,6 +6,8 @@ const crypto = require('crypto');
 const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
 const { cleanAstrologerProfile } = require('./src/profileText');
+const { createOtpGuard, lockedMessage: otpLockedMessage, clientIp: otpClientIp } = require('./src/otpGuard');
+const { rateLimit: otpRateLimit } = require('express-rate-limit');
 const { sendPush, clearAppRemovedMark } = require('./src/push');
 // Records failures that endpoints deliberately swallow, so a silent mass
 // outage still reaches Sentry and /health. See src/degradation.js.
@@ -1963,7 +1965,26 @@ const QA_TEST_OTPS = {
 /**
  * Endpoint to request an OTP
  */
-app.post('/api/users/mobile-otp-request', async (req, res) => {
+// Security audit 2026-11-13 — see src/otpGuard.js. The guard caps wrong guesses per
+// number across codes; the limiter caps SMS sends per client IP (SMS pumping).
+const otpGuard = createOtpGuard(supabaseService);
+const otpSendLimiter = otpRateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: Number(process.env.OTP_SENDS_PER_IP_PER_10MIN || 30),
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: (req) => otpClientIp(req),
+  validate: { keyGeneratorIpFallback: false, xForwardedForHeader: false },
+  // 200 + success:false, the same shape the send failures below use: behind
+  // Cloudflare a 5xx/4xx body can be swapped for an HTML page the apps cannot read.
+  handler: (req, res) => res.status(200).json({
+    success: false,
+    code: 'OTP_RATE_LIMITED',
+    message: 'Too many verification codes requested from this network. Please wait a few minutes and try again.',
+  }),
+});
+
+app.post('/api/users/mobile-otp-request', otpSendLimiter, async (req, res) => {
   const { phoneNumber: rawPhoneNumber, role, intent } = req.body;
 
   if (!rawPhoneNumber) {
@@ -1996,6 +2017,14 @@ app.post('/api/users/mobile-otp-request', async (req, res) => {
       code: 'INVALID_PHONE_NUMBER',
       message: 'That does not look like a valid 10-digit Indian mobile number. Please check it and try again.',
     });
+  }
+
+  // Locked after too many wrong codes: send nothing (and spend nothing).
+  {
+    const lockedTill = await otpGuard.lockedUntil(phoneNumber);
+    if (lockedTill) {
+      return res.status(200).json({ success: false, code: 'OTP_LOCKED', message: otpLockedMessage(lockedTill) });
+    }
   }
 
   // Login must not silently create an account, and signup must not silently log an
@@ -2325,6 +2354,12 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
   }
 
   const otpKey = phoneNumber;
+  {
+    const lockedTill = await otpGuard.lockedUntil(phoneNumber);
+    if (lockedTill) {
+      return res.status(429).json({ success: false, code: 'OTP_LOCKED', message: otpLockedMessage(lockedTill) });
+    }
+  }
   const storedData = await otpStore.get(phoneNumber);
 
   if (!storedData) {
@@ -2369,6 +2404,12 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
 
   if (!matches) {
     const used = await otpStore.recordFailedAttempt(otpKey, storedData.attempts);
+    // Counts across codes, so requesting a fresh code does not reset the attacker.
+    const lockedTill = await otpGuard.recordFailure(phoneNumber);
+    if (lockedTill) {
+      await otpStore.delete(otpKey);
+      return res.status(429).json({ success: false, code: 'OTP_LOCKED', message: otpLockedMessage(lockedTill) });
+    }
     const remaining = Math.max(0, OTP_MAX_ATTEMPTS - used);
     if (remaining === 0) {
       await otpStore.delete(otpKey);
@@ -2388,6 +2429,7 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
 
   // OTP is valid!
   await otpStore.delete(otpKey); // Clear OTP after successful use
+  otpGuard.clear(phoneNumber); // a successful login resets the wrong-guess counter
 
   const isVendor = role === 'astrologer' || role === 'vendor';
   let supabaseCustomerId = null;
@@ -2700,7 +2742,9 @@ app.post('/api/users/mobile-otp-verify', async (req, res) => {
 
   // Generate JWT token with the real Supabase UUID
   const token = jwt.sign(
-    { id: supabaseCustomerId || `user_${Date.now()}`, userId: supabaseCustomerId, phone: phoneNumber, role },
+    // `role` used to be copied from the request body, which let anyone mint a token
+    // claiming role:'admin' (security audit 2026-11-13). Server-decided now.
+    { id: supabaseCustomerId || `user_${Date.now()}`, userId: supabaseCustomerId, phone: phoneNumber, role: isVendor ? 'astrologer' : 'customer' },
     JWT_SECRET,
     { expiresIn: '30d' }
   );
@@ -6961,6 +7005,29 @@ function withdrawalBreakdown(gross) {
   return { gross, tds, net: Math.round((gross - tds) * 100) / 100, percent: WITHDRAWAL_TDS_PERCENT };
 }
 
+// 48h hold on withdrawals after an astrologer REPLACES their bank/UPI details — see
+// the vendor profile route. Long enough for the real owner to see the alert and call
+// support; short enough not to bother someone who simply changed banks.
+const PAYOUT_CHANGE_HOLD_MS = 48 * 60 * 60 * 1000;
+
+/** Alert the astrologer that their payout details changed. Best effort, never throws. */
+function notifyPayoutDetailsChanged(astrologerId) {
+  const title = 'Your payout details were changed';
+  const body = 'Your bank account / UPI for payouts was just updated. Withdrawals are paused for 48 hours '
+    + 'for your safety. If you did not make this change, contact Astrowani support immediately.';
+  (async () => {
+    try {
+      const { recordInAppAsync } = require('./src/notifications/inApp');
+      recordInAppAsync({ type: 'payout_update', astrologerId, title, body });
+      const target = await vendorDevices.pushTargetFor(astrologerId);
+      // 'admin_personal' is a type every installed astrologer build already displays.
+      if (target?.fcm_token) await sendPush(target.fcm_token, { data: { type: 'admin_personal', title, body } });
+    } catch (e) {
+      console.warn('[payout] change alert failed:', e.message);
+    }
+  })();
+}
+
 app.post('/vendor/wallet/withdraw', async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
@@ -6994,10 +7061,21 @@ app.post('/vendor/wallet/withdraw', async (req, res) => {
 
     const { data: astroRow, error: astroErr } = await db
       .from('astrologers')
-      .select('wallet_balance, bank_account_holder, bank_account_number, bank_ifsc, bank_name, upi_id')
+      .select('wallet_balance, bank_account_holder, bank_account_number, bank_ifsc, bank_name, upi_id, payout_details_changed_at')
       .eq('id', vendorId)
       .single();
     if (astroErr) throw astroErr;
+
+    // Held after the payout destination was replaced — see notifyPayoutDetailsChanged.
+    const changedAt = astroRow?.payout_details_changed_at ? new Date(astroRow.payout_details_changed_at).getTime() : 0;
+    if (changedAt && Date.now() - changedAt < PAYOUT_CHANGE_HOLD_MS) {
+      const hrs = Math.ceil((changedAt + PAYOUT_CHANGE_HOLD_MS - Date.now()) / 3600000);
+      return res.status(400).json({
+        success: false,
+        code: 'PAYOUT_DETAILS_RECENTLY_CHANGED',
+        message: `For your security, withdrawals are paused for 48 hours after bank or UPI details change. You can request this withdrawal in about ${hrs} hour(s). If you did not change your details, contact support.`,
+      });
+    }
 
     // Admin has no way to actually pay out without either a bank account or a UPI id —
     // block the request at the source rather than accepting money-nowhere-to-go requests.
@@ -7345,9 +7423,34 @@ app.put('/api/vendor/profile', async (req, res) => {
       }
     }
 
-    const { data, error } = await supabaseService
+    // Payout destination changes (security audit 2026-11-13). Whoever holds an
+    // astrologer's login decides where their earnings are paid, and until now a
+    // changed bank account or UPI id took effect silently and immediately. Replacing
+    // existing details now (a) holds withdrawals for PAYOUT_CHANGE_HOLD_MS, (b) tells
+    // the astrologer at once, so a hijacked account is noticed before money moves, and
+    // (c) is shown to the admin on the withdrawals list. Adding details for the FIRST
+    // time is not held — every new astrologer does that, and it moves no existing money.
+    const PAYOUT_FIELDS = ['bank_account_holder', 'bank_account_number', 'bank_ifsc', 'bank_name', 'upi_id'];
+    let payoutReplaced = false;
+    if (PAYOUT_FIELDS.some((f) => f in body)) {
+      const { data: current } = await supabaseService
+        .from('astrologers').select(PAYOUT_FIELDS.join(', ')).eq('id', vendorId).maybeSingle();
+      const norm = (v) => String(v ?? '').trim().toUpperCase();
+      payoutReplaced = !!current && PAYOUT_FIELDS.some((f) => f in body
+        && norm(current[f]) !== '' && norm(current[f]) !== norm(body[f]));
+      if (payoutReplaced) body.payout_details_changed_at = new Date().toISOString();
+    }
+
+    let { data, error } = await supabaseService
       .from('astrologers').update(body).eq('id', vendorId).select().single();
+    if (error && payoutReplaced && isMissingColumnError(error)) {
+      // sql/payout_change_guard.sql not applied yet: save the profile anyway.
+      delete body.payout_details_changed_at;
+      ({ data, error } = await supabaseService
+        .from('astrologers').update(body).eq('id', vendorId).select().single());
+    }
     if (error) throw error;
+    if (payoutReplaced) notifyPayoutDetailsChanged(vendorId);
     return res.status(200).json({ success: true, data, chargesLocked: chargesRejected });
   } catch (err) {
     console.error('PUT /api/vendor/profile error:', err.message);

@@ -106,18 +106,9 @@ async function resolveParty(req) {
   return { kind: 'customer', id: row.id, name: row.name || 'there' };
 }
 
-function requireAdminToken(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ success: false, message: 'Unauthorized' });
-  try {
-    const decoded = jwt.verify(authHeader.replace('Bearer ', ''), JWT_SECRET);
-    if (decoded.role !== 'admin') return res.status(403).json({ success: false, message: 'Admin access required' });
-    req.admin = decoded;
-    return next();
-  } catch (_) {
-    return res.status(401).json({ success: false, message: 'Invalid token' });
-  }
-}
+// Delegates to the single admin check (security audit 2026-11-13): a token is an
+// admin token only if its id is a row in `admins` — see src/adminAuth.js.
+const requireAdminToken = require('./adminAuth').requireAdmin;
 
 const ownerFilter = (q, party) =>
   party.kind === 'customer' ? q.eq('customer_id', party.id) : q.eq('astrologer_id', party.id);

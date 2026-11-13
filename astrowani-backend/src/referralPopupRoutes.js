@@ -25,21 +25,9 @@ const db = createClient(
   SUPABASE_SERVICE_ROLE_KEY || 'sb_publishable_iLfw8Co1PiXDyYJZvzCRKw_5hQBKn_O'
 );
 
-function requireAdmin(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ success: false, message: 'Unauthorized' });
-  const token = authHeader.replace('Bearer ', '');
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    if (decoded.role !== 'admin') {
-      return res.status(403).json({ success: false, message: 'Admin access required' });
-    }
-    req.admin = decoded;
-    next();
-  } catch (err) {
-    return res.status(401).json({ success: false, message: 'Invalid token' });
-  }
-}
+// Delegates to the single admin check (security audit 2026-11-13): a token is an
+// admin token only if its id is a row in `admins` — see src/adminAuth.js.
+const requireAdmin = require('./adminAuth').requireAdmin;
 
 const h = (fn) => (req, res) => fn(req, res).catch((err) => {
   console.error(`[referral-popup] ${req.method} ${req.path} error:`, err.message);

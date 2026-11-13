@@ -68,7 +68,7 @@ const NON_DISPLAY_COLUMNS = new Set([
   // Push plumbing — rewritten on every login, token refresh and logout.
   'fcm_token', 'voip_token', 'voip_platform',
   // Payout details. Customers must never see these and nothing renders them.
-  'bank_account_holder', 'bank_account_number', 'bank_ifsc', 'bank_name', 'upi_id',
+  'bank_account_holder', 'bank_account_number', 'bank_ifsc', 'bank_name', 'upi_id', 'payout_details_changed_at',
   // Internal bookkeeping.
   'admin_notes', 'charges_locked_at', 'logged_out_at',
   'terms_accepted_at', 'terms_version', 'terms_accepted_source',
