@@ -82,7 +82,7 @@ async function main() {
   const custTok = jwt.sign({ userId: customerId, phone: QA_PHONE }, process.env.JWT_SECRET);
   const adminTok = jwt.sign({ id: admin.id, role: 'admin' }, process.env.JWT_SECRET);
 
-  const app = express(); app.use(express.json());
+  const app = express(); app.use(express.json({ limit: '10mb' })); // index.js's limit
   registerSupportRoutes(app);
   const server = http.createServer(app);
   await new Promise((r) => server.listen(0, r));
@@ -98,6 +98,7 @@ async function main() {
   const convRow = async (id) => (await db.from('support_conversations').select('*').eq('id', id).maybeSingle()).data;
 
   const created = [];
+  const uploaded = []; // public URLs of photos this run stored
   const testStartIso = new Date().toISOString();
   try {
     console.log('\n2. a new conversation with the bot is NOT waiting on us (control)');
@@ -214,6 +215,105 @@ async function main() {
     ok('summary counts it overdue', sumO.overdue >= 1);
     await supportAlerts.runQueueCheck({ force: true });
     ok('overdue reminder stamped once', !!(await convRow(id2)).overdue_alerted_at);
+
+    // ── 10. photos ──
+    console.log('\n10. photos: customer sends one, the bot hands it to a person');
+    const sharp = require('sharp');
+    const png = await sharp({ create: { width: 64, height: 40, channels: 3, background: { r: 200, g: 30, b: 30 } } }).png().toBuffer();
+    const goodImg = `data:image/png;base64,${png.toString('base64')}`;
+    const c3 = await call('POST', '/api/support/conversations', custTok, {});
+    const id3 = c3.json.data.id; created.push(id3);
+    const ph = await call('POST', `/api/support/conversations/${id3}/image`, custTok, { image: goodImg, caption: 'my bank sms' });
+    ok('photo 200', ph.status === 200, JSON.stringify(ph.json));
+    ok('photo in a bot conversation goes to a person', ph.json?.status === 'awaiting_human');
+    if (ph.json?.message?.imageUrl) uploaded.push(ph.json.message.imageUrl);
+    const { data: m3 } = await db.from('support_messages').select('*').eq('conversation_id', id3).eq('sender', 'user');
+    const imgRow = (m3 || []).find((m) => m.image_url);
+    ok('message row carries the image', !!imgRow && imgRow.image_width === 64 && imgRow.image_height === 40,
+      JSON.stringify(imgRow && { w: imgRow.image_width, h: imgRow.image_height }));
+    ok('body is the readable "📷 caption"', imgRow?.body === '📷 my bank sms', imgRow?.body);
+    const stored = await fetch(imgRow?.image_url || 'http://invalid');
+    ok('stored object is a real JPEG', stored.status === 200 && /jpeg/.test(stored.headers.get('content-type') || ''),
+      `${stored.status} ${stored.headers.get('content-type')}`);
+    ok('object is under support-images/', /\/app-images\/support-images\//.test(imgRow?.image_url || ''));
+    const th3 = await call('GET', `/api/support/conversations/${id3}`, custTok);
+    ok('customer thread serves imageUrl + size', (th3.json?.data?.messages || [])
+      .some((m) => m.imageUrl && m.imageWidth === 64 && m.imageHeight === 40));
+    ok('team waiting on it', !!(await convRow(id3)).awaiting_reply_since);
+
+    // The throttle exists for two taps landing TOGETHER (it is claimed before the
+    // first await). Sent concurrently: exactly one may get through.
+    await sleep(2700);
+    const pair = await Promise.all([
+      call('POST', `/api/support/conversations/${id3}/image`, custTok, { image: goodImg }),
+      call('POST', `/api/support/conversations/${id3}/image`, custTok, { image: goodImg }),
+    ]);
+    pair.forEach((p) => { if (p.json?.message?.imageUrl) uploaded.push(p.json.message.imageUrl); });
+    ok('two photos at once: one 200, one 429 TOO_FAST',
+      pair.filter((p) => p.status === 200).length === 1 && pair.some((p) => p.status === 429 && p.json?.code === 'TOO_FAST'),
+      pair.map((p) => p.status).join(','));
+    await sleep(2700);
+    const badImg = await call('POST', `/api/support/conversations/${id3}/image`, custTok, { image: 'data:image/png;base64,AAAAAAAA' });
+    ok('unreadable image -> 400 BAD_IMAGE', badImg.status === 400 && badImg.json?.code === 'BAD_IMAGE', String(badImg.status));
+    const notImg = await call('POST', `/api/support/conversations/${id3}/image`, custTok, { image: 'data:text/plain;base64,aGk=' });
+    ok('non-image data -> 400', notImg.status === 400);
+    const noAuth = await call('POST', `/api/support/conversations/${id3}/image`, null, { image: goodImg });
+    ok('no token -> 401', noAuth.status === 401);
+    const otherConv = await call('POST', '/api/support/conversations/00000000-0000-4000-8000-000000000000/image', custTok, { image: goodImg });
+    ok("someone else's / unknown conversation -> 404", otherConv.status === 404, String(otherConv.status));
+
+    console.log('\n11. admin sends a photo back');
+    const before11 = (await db.from('support_messages').select('id').eq('conversation_id', id3).eq('sender', 'human')).data?.length || 0;
+    const aph = await call('POST', `/api/admin/support/conversations/${id3}/reply`, adminTok, { image: goodImg });
+    ok('admin photo-only reply 200', aph.status === 200, JSON.stringify(aph.json));
+    const { data: hm } = await db.from('support_messages').select('*').eq('conversation_id', id3).eq('sender', 'human');
+    const adminImg = (hm || []).find((m) => m.image_url);
+    ok('one new human message, with the image', (hm || []).length === before11 + 1 && !!adminImg);
+    if (adminImg?.image_url) uploaded.push(adminImg.image_url);
+    ok('photo-only body is "📷 Photo"', adminImg?.body === '📷 Photo', adminImg?.body);
+    ok('photo reply clears the wait', !(await convRow(id3)).awaiting_reply_since);
+    const emptyRep = await call('POST', `/api/admin/support/conversations/${id3}/reply`, adminTok, {});
+    ok('empty reply refused', emptyRep.status === 400);
+
+    console.log('\n12. whose turn: Reply needed / Waiting on them / Solved (the Zendesk model)');
+    const has = async (status, cid) => ((await call('GET', `/api/admin/support/conversations?status=${status}`, adminTok)).json?.data || [])
+      .some((r) => r.id === cid);
+    // After our photo reply in 11, the ball is in their court.
+    ok('after our reply: in "Waiting on them"', await has('pending', id3));
+    ok('after our reply: NOT in "Reply needed"', !(await has('waiting', id3)));
+    await call('POST', `/api/support/conversations/${id3}/messages`, custTok, { body: 'any update?' });
+    await waitFor(async () => (await convRow(id3))?.awaiting_reply_since);
+    ok('they write again: back in "Reply needed" by itself', await has('waiting', id3));
+    ok('...and out of "Waiting on them"', !(await has('pending', id3)));
+    const adminTh = await call('GET', `/api/admin/support/conversations/${id3}`, adminTok);
+    const ctx = adminTh.json?.data?.context;
+    ok('thread carries the person + their account', adminTh.json?.data?.party?.kind === 'customer'
+      && !!ctx && Array.isArray(ctx.recentPayments));
+    ok('bad priority -> 400', (await call('PATCH', `/api/admin/support/conversations/${id3}`, adminTok, { priority: 'mega' })).status === 400);
+    ok('bad status -> 400', (await call('PATCH', `/api/admin/support/conversations/${id3}`, adminTok, { status: 'bot' })).status === 400);
+    await call('PATCH', `/api/admin/support/conversations/${id3}`, adminTok, { status: 'resolved' });
+    ok('marked solved: in "Solved"', await has('solved', id3));
+    ok('marked solved: nobody waiting', !(await has('waiting', id3)) && !(await convRow(id3)).awaiting_reply_since);
+    const st = await call('GET', '/api/admin/support/stats', adminTok);
+    ok('stats 200 (typical first reply)', st.status === 200 && 'medianFirstResponseMin' in (st.json?.data || {}),
+      JSON.stringify(st.json?.data));
+
+    console.log('\n13. saved replies (restored afterwards)');
+    const { data: origSaved } = await db.from('app_settings').select('value').eq('key', 'support_saved_replies').maybeSingle();
+    try {
+      const sr = await call('GET', '/api/admin/support/saved-replies', adminTok);
+      ok('saved replies served', sr.status === 200 && (sr.json?.data || []).length > 0);
+      const put = await call('PUT', '/api/admin/support/saved-replies', adminTok, {
+        replies: [{ title: 'T1', body: 'Hi {name}' }, { title: '', body: 'dropped: no title' }],
+      });
+      ok('save keeps only complete replies', put.status === 200 && put.json?.data?.length === 1);
+      const sr2 = await call('GET', '/api/admin/support/saved-replies', adminTok);
+      ok('saved list read back', sr2.json?.data?.[0]?.title === 'T1');
+      ok('customer cannot edit them', [401, 403].includes((await call('PUT', '/api/admin/support/saved-replies', custTok, { replies: [] })).status));
+    } finally {
+      if (origSaved) await db.from('app_settings').update({ value: origSaved.value }).eq('key', 'support_saved_replies');
+      else await db.from('app_settings').delete().eq('key', 'support_saved_replies');
+    }
   } finally {
     // ── teardown ──
     server.close();
@@ -222,6 +322,10 @@ async function main() {
       await db.from('support_conversations').delete().eq('id', cid);
     }
     await db.from('notifications').delete().eq('customer_id', customerId);
+    // Stored photos. Verified through the STORAGE API, not the public URL — the CDN
+    // keeps answering 200 for a deleted object (CLAUDE.md EB).
+    const paths = uploaded.map((u) => u.split('/app-images/')[1]).filter(Boolean);
+    if (paths.length) await db.storage.from('app-images').remove(paths);
     await db.from('customers').delete().eq('id', customerId);
     // Restore the queue-email state so the forced runs above do not delay prod's.
     const { data: st } = await db.from('app_settings').select('value').eq('key', 'support_alert_state').maybeSingle();
@@ -235,6 +339,22 @@ async function main() {
     console.log('\nteardown');
     ok('conversations removed', (count || 0) === 0);
     ok('synthetic customer removed', !(c || []).length);
+    // Belt and braces: anything this run stored that no message references any
+    // more (e.g. a response that never came back) is swept too.
+    {
+      const { data: objs } = await db.storage.from('app-images').list('support-images', { limit: 1000 });
+      const { data: refs } = await db.from('support_messages').select('image_url').not('image_url', 'is', null);
+      const used = new Set((refs || []).map((r) => r.image_url.split('/app-images/')[1]));
+      const stray = (objs || [])
+        .filter((o) => new Date(o.created_at).getTime() >= new Date(testStartIso).getTime() - 5000)
+        .map((o) => `support-images/${o.name}`)
+        .filter((p) => !used.has(p));
+      if (stray.length) await db.storage.from('app-images').remove(stray);
+      const { data: left } = await db.storage.from('app-images').list('support-images', { limit: 1000 });
+      const names = new Set((left || []).map((o) => `support-images/${o.name}`));
+      ok(`stored photos removed (${paths.length} tracked, ${stray.length} swept)`,
+        paths.every((p) => !names.has(p)) && stray.every((p) => !names.has(p)));
+    }
   }
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

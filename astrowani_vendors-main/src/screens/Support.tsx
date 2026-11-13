@@ -30,6 +30,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Instance from '../api/ApiCall';
 import {LanguageContext} from '../context/LanguageContext';
 import {maybeAskForSupportNotifications} from '../utils/supportNotifyPrompt';
+import ChatImageBubble from '../components/chatImage/ChatImageBubble';
+import ImageEditorModal from '../components/chatImage/ImageEditorModal';
+import AttachSourceSheet from '../components/chatImage/AttachSourceSheet';
+import {pickChatImage, imageErrorKey} from '../utils/chatImage';
+import {showStatusPopup} from '../components/StatusPopup';
 
 // Only while a human is involved — see the customer screen for the reasoning.
 const POLL_MS = 6000;
@@ -88,6 +93,10 @@ export default function Support({navigation}) {
   const [text, setText] = useState('');
   const [thinking, setThinking] = useState(false);
   const [booting, setBooting] = useState(true);
+  // Photos: the source sheet, the picked photo being edited, and the upload.
+  const [attachOpen, setAttachOpen] = useState(false);
+  const [editorSource, setEditorSource] = useState<any>(null);
+  const [imageSending, setImageSending] = useState(false);
 
   const listRef = useRef(null);
   const pollRef = useRef(null);
@@ -203,6 +212,42 @@ export default function Support({navigation}) {
     }
   };
 
+  // Photos — same flow as the customer app's support screen: pick, crop or circle
+  // the part that matters, caption, send. Edits are replayed on the server.
+  const choosePhoto = async ({fromCamera}: {fromCamera: boolean}) => {
+    setAttachOpen(false);
+    const picked: any = await pickChatImage({fromCamera});
+    if (!picked) return;
+    if (picked.error) {
+      showStatusPopup({variant: 'error', title: t('chatImage.failedTitle'), message: t(imageErrorKey(picked.error))});
+      return;
+    }
+    setEditorSource(picked);
+  };
+
+  const submitPhoto = async (edits: any, caption: string) => {
+    if (!editorSource || imageSending) return;
+    setImageSending(true);
+    try {
+      const id = await ensureConversation();
+      const res = await Instance.post(`/api/support/conversations/${id}/image`, {
+        image: editorSource.base64DataUri,
+        edits,
+        caption: caption || '',
+      }, {...(await auth()), timeout: 60000});
+      if (!res?.data?.success) throw Object.assign(new Error('failed'), {code: res?.data?.code});
+      setEditorSource(null);
+      await loadThread(id);
+      maybeAskForSupportNotifications(id);
+    } catch (e: any) {
+      // The editor stays open on failure so the crop and drawing are not lost.
+      const code = e?.response?.data?.code || e?.code || 'failed';
+      showStatusPopup({variant: 'error', title: t('chatImage.failedTitle'), message: t(imageErrorKey(code))});
+    } finally {
+      setImageSending(false);
+    }
+  };
+
   const talkToPerson = async () => {
     setThinking(true);
     try {
@@ -238,15 +283,30 @@ export default function Support({navigation}) {
             <Ionicons name={isHuman ? 'person' : 'headset'} size={moderateScale(14)} color="#fff" />
           </View>
         )}
-        <View style={{maxWidth: '78%'}}>
+        <View style={item.imageUrl ? styles.imageCol : {maxWidth: '78%'}}>
           {isHuman && (
             <Text style={styles.senderLabel}>
               {item.agentName ? t('vsupport.fromAgent', {name: item.agentName}) : t('vsupport.fromTeam')}
             </Text>
           )}
-          <View style={[styles.bubble, mine ? styles.myBubble : isHuman ? styles.humanBubble : styles.agentBubble]}>
-            <Text style={[styles.bubbleText, mine && styles.myBubbleText]}>{item.body}</Text>
-          </View>
+          {item.imageUrl ? (
+            <ChatImageBubble
+              item={{
+                image_url: item.imageUrl,
+                image_width: item.imageWidth,
+                image_height: item.imageHeight,
+                message: item.body,
+              }}
+              isMine={mine}
+              time={item.created_at
+                ? new Date(item.created_at).toLocaleTimeString('en-IN', {hour: '2-digit', minute: '2-digit'})
+                : ''}
+            />
+          ) : (
+            <View style={[styles.bubble, mine ? styles.myBubble : isHuman ? styles.humanBubble : styles.agentBubble]}>
+              <Text style={[styles.bubbleText, mine && styles.myBubbleText]}>{item.body}</Text>
+            </View>
+          )}
         </View>
       </View>
     );
@@ -302,6 +362,16 @@ export default function Support({navigation}) {
       )}
 
       <View style={styles.inputRow}>
+        <TouchableOpacity
+          style={[styles.attachBtn, imageSending && styles.sendBtnOff]}
+          onPress={() => setAttachOpen(true)}
+          disabled={imageSending}
+          accessibilityLabel={t('chatImage.sendPhoto')}
+          activeOpacity={0.85}>
+          {imageSending
+            ? <ActivityIndicator size="small" color={COLORS.AstroMaroon} />
+            : <Ionicons name="image-outline" size={moderateScale(21)} color={COLORS.AstroMaroon} />}
+        </TouchableOpacity>
         <TextInput
           style={styles.input}
           value={text}
@@ -318,6 +388,15 @@ export default function Support({navigation}) {
           <Ionicons name="send" size={moderateScale(19)} color="#fff" />
         </TouchableOpacity>
       </View>
+
+      <AttachSourceSheet visible={attachOpen} onClose={() => setAttachOpen(false)} onPick={choosePhoto} />
+      <ImageEditorModal
+        visible={!!editorSource}
+        source={editorSource}
+        sending={imageSending}
+        onCancel={() => { if (!imageSending) setEditorSource(null); }}
+        onSend={submitPhoto}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -396,4 +475,10 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.AstroMaroon, alignItems: 'center', justifyContent: 'center', marginLeft: scale(8),
   },
   sendBtnOff: {opacity: 0.45},
+  attachBtn: {
+    width: scale(44), height: scale(44), borderRadius: scale(22),
+    backgroundColor: '#fff', borderWidth: 1, borderColor: '#ecdfd8',
+    alignItems: 'center', justifyContent: 'center', marginRight: scale(8),
+  },
+  imageCol: {maxWidth: '85%'},
 });

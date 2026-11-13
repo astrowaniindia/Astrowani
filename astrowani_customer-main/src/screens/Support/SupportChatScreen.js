@@ -34,6 +34,11 @@ import Instance from '../../api/ApiCall';
 import { LanguageContext } from '../../context/LanguageContext';
 import { captureEvent } from '../../utils/Analytics';
 import { maybeAskForSupportNotifications } from '../../utils/supportNotifyPrompt';
+import ChatImageBubble from '../../components/chatImage/ChatImageBubble';
+import ImageEditorModal from '../../components/chatImage/ImageEditorModal';
+import AttachSourceSheet from '../../components/chatImage/AttachSourceSheet';
+import { pickChatImage, imageErrorKey } from '../../utils/chatImage';
+import { showStatusPopup } from '../../components/StatusPopup';
 
 // While a human owns the thread there is no push-free way to learn they replied,
 // so the screen polls. Only while it is focused and only while a person is
@@ -104,6 +109,10 @@ export default function SupportChatScreen({ navigation, route }) {
   const [thinking, setThinking] = useState(false);
   const [booting, setBooting] = useState(true);
   const [rated, setRated] = useState(false);
+  // Photos: the source sheet, the picked photo being edited, and the upload.
+  const [attachOpen, setAttachOpen] = useState(false);
+  const [editorSource, setEditorSource] = useState(null);
+  const [imageSending, setImageSending] = useState(false);
 
   const listRef = useRef(null);
   const pollRef = useRef(null);
@@ -247,6 +256,51 @@ export default function SupportChatScreen({ navigation, route }) {
     }
   };
 
+  // ── Photos ──
+  // A screenshot of the bank SMS or the error is worth ten lines of description,
+  // so support takes photos the same way a consultation chat does: pick, crop or
+  // circle the part that matters, add a caption, send. The edits are replayed on
+  // the server (chatImageComposer), so nothing here needs a native module.
+  const choosePhoto = async ({ fromCamera }) => {
+    setAttachOpen(false);
+    const picked = await pickChatImage({ fromCamera });
+    if (!picked) return; // backed out of the picker
+    if (picked.error) {
+      showStatusPopup({ variant: 'error', title: t('chatImage.failedTitle'), message: t(imageErrorKey(picked.error)) });
+      return;
+    }
+    setEditorSource(picked);
+  };
+
+  const submitPhoto = async (edits, caption) => {
+    if (!editorSource || imageSending) return;
+    setImageSending(true);
+    try {
+      const id = await ensureConversation();
+      const res = await Instance.post(`/api/support/conversations/${id}/image`, {
+        image: editorSource.base64DataUri,
+        edits,
+        caption: caption || '',
+      }, {
+        ...(await auth()),
+        // A photo on Indian mobile data is a slow request, not a failed one.
+        timeout: 60000,
+      });
+      if (!res?.data?.success) throw Object.assign(new Error('failed'), { code: res?.data?.code });
+      setEditorSource(null);
+      captureEvent('support_image_sent');
+      await loadThread(id);
+      maybeAskForSupportNotifications(id);
+    } catch (e) {
+      // The editor stays OPEN on failure, with the crop and drawing intact, so a
+      // dropped request does not mean starting again.
+      const code = e?.response?.data?.code || e?.code || 'failed';
+      showStatusPopup({ variant: 'error', title: t('chatImage.failedTitle'), message: t(imageErrorKey(code)) });
+    } finally {
+      setImageSending(false);
+    }
+  };
+
   const talkToPerson = async () => {
     // The bot failing to answer, measured. This is the single most useful support number.
     captureEvent('support_escalated_to_human');
@@ -308,15 +362,32 @@ export default function SupportChatScreen({ navigation, route }) {
             />
           </View>
         )}
-        <View style={{ maxWidth: '78%' }}>
+        <View style={item.imageUrl ? styles.imageCol : { maxWidth: '78%' }}>
           {isHuman && (
             <Text style={styles.senderLabel}>
               {item.agentName ? t('support.fromAgent', { name: item.agentName }) : t('support.fromTeam')}
             </Text>
           )}
-          <View style={[styles.bubble, mine ? styles.myBubble : isHuman ? styles.humanBubble : styles.agentBubble]}>
-            <Text style={[styles.bubbleText, mine && styles.myBubbleText]}>{item.body}</Text>
-          </View>
+          {item.imageUrl ? (
+            <ChatImageBubble
+              // ChatImageBubble reads a chat_messages-shaped row; the caption is
+              // parsed from the "📷 <caption>" body the server writes.
+              item={{
+                image_url: item.imageUrl,
+                image_width: item.imageWidth,
+                image_height: item.imageHeight,
+                message: item.body,
+              }}
+              isMine={mine}
+              time={item.created_at
+                ? new Date(item.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+                : ''}
+            />
+          ) : (
+            <View style={[styles.bubble, mine ? styles.myBubble : isHuman ? styles.humanBubble : styles.agentBubble]}>
+              <Text style={[styles.bubbleText, mine && styles.myBubbleText]}>{item.body}</Text>
+            </View>
+          )}
         </View>
       </View>
     );
@@ -397,6 +468,16 @@ export default function SupportChatScreen({ navigation, route }) {
       )}
 
       <View style={[styles.inputRow, { paddingBottom: insets.bottom + verticalScale(10) }]}>
+        <TouchableOpacity
+          style={[styles.attachBtn, (!canType || imageSending) && styles.sendBtnOff]}
+          onPress={() => setAttachOpen(true)}
+          disabled={!canType || imageSending}
+          accessibilityLabel={t('chatImage.sendPhoto')}
+          activeOpacity={0.85}>
+          {imageSending
+            ? <ActivityIndicator size="small" color={COLORS.AstroMaroon} />
+            : <Ionicons name="image-outline" size={moderateScale(21)} color={COLORS.AstroMaroon} />}
+        </TouchableOpacity>
         <TextInput
           style={styles.input}
           value={text}
@@ -414,6 +495,17 @@ export default function SupportChatScreen({ navigation, route }) {
           <Ionicons name="send" size={moderateScale(19)} color="#fff" />
         </TouchableOpacity>
       </View>
+
+      <AttachSourceSheet visible={attachOpen} onClose={() => setAttachOpen(false)} onPick={choosePhoto} />
+      <ImageEditorModal
+        visible={!!editorSource}
+        source={editorSource}
+        sending={imageSending}
+        // Blocked while an upload is in flight, so the photo cannot arrive into a
+        // thread whose editor was already thrown away.
+        onCancel={() => { if (!imageSending) setEditorSource(null); }}
+        onSend={submitPhoto}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -552,4 +644,13 @@ const styles = StyleSheet.create({
     marginLeft: scale(8),
   },
   sendBtnOff: { opacity: 0.45 },
+  attachBtn: {
+    width: scale(44), height: scale(44), borderRadius: scale(22),
+    backgroundColor: '#fff',
+    borderWidth: 1, borderColor: '#ecdfd8',
+    alignItems: 'center', justifyContent: 'center',
+    marginRight: scale(8),
+  },
+  // Wide enough for the photo bubble, which sizes itself from the screen width.
+  imageCol: { maxWidth: '85%' },
 });
