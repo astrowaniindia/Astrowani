@@ -64,6 +64,7 @@ const ALL_GROUPS = [
       { to: '/analytics', label: 'Analytics' },
       { to: '/reports', label: 'Financial Reports' },
       { to: '/admin-wallet', label: 'Platform Wallet' },
+      { to: '/security', label: 'Security (2FA)' },
     ],
   },
   {

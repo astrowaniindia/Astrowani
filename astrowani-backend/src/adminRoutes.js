@@ -59,6 +59,7 @@ const db = createClient(
 // Delegates to the single admin check (security audit 2026-11-13): a token is an
 // admin token only if its id is a row in `admins` — see src/adminAuth.js.
 const requireAdmin = require('./adminAuth').requireAdmin;
+const adminTotp = require('./adminTotp');
 
 // Small async wrapper so each handler can throw and we return 500 once.
 const h = (fn) => (req, res) => fn(req, res).catch((err) => {
@@ -83,26 +84,90 @@ module.exports = function registerAdminRoutes(app) {
     if (!email || !password) {
       return res.status(400).json({ success: false, message: 'Email and password required' });
     }
-    const { data: admins, error } = await db
+    let { data: admins, error } = await db
       .from('admins')
-      .select('id, email, name, password_hash')
+      .select('id, email, name, password_hash, totp_secret, totp_last_step')
       .eq('email', email.toLowerCase().trim())
       .limit(1);
+    if (error && /totp_/.test(error.message || '')) {
+      // sql/admin_totp.sql not applied: password-only, exactly as before.
+      ({ data: admins, error } = await db.from('admins')
+        .select('id, email, name, password_hash').eq('email', email.toLowerCase().trim()).limit(1));
+    }
     if (error) throw error;
     const admin = admins && admins[0];
     if (!admin || !bcrypt.compareSync(password, admin.password_hash)) {
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
+    // Two-factor (security audit 2026-11-13), once this admin has turned it on. The
+    // password is checked FIRST so this never reveals whether an email has 2FA.
+    if (admin.totp_secret) {
+      const code = req.body?.totp;
+      if (!code) {
+        return res.status(401).json({ success: false, code: 'TOTP_REQUIRED', message: 'Enter the 6-digit code from your authenticator app.' });
+      }
+      const step = adminTotp.verify(admin.totp_secret, code, { minStep: admin.totp_last_step ?? null });
+      if (step == null) {
+        return res.status(401).json({ success: false, code: 'TOTP_INVALID', message: 'That code is not valid. Check your authenticator app and try again.' });
+      }
+      // Burn the step atomically so the same code cannot be used twice, even by two
+      // requests racing each other.
+      const { data: burned } = await db.from('admins').update({ totp_last_step: step })
+        .eq('id', admin.id).or(`totp_last_step.is.null,totp_last_step.lt.${Number(step)}`).select('id');
+      if (!burned || !burned.length) {
+        return res.status(401).json({ success: false, code: 'TOTP_INVALID', message: 'That code was already used. Wait for the next one.' });
+      }
+    }
     const token = jwt.sign(
       { id: admin.id, email: admin.email, role: 'admin' },
       JWT_SECRET,
-      { expiresIn: '7d' }
+      // 24h, down from 7 days: an admin token in localStorage is the most valuable thing
+      // a browser holds in this system, and a stolen one should not last a week.
+      { expiresIn: '24h' }
     );
     return res.json({
       success: true,
       token,
       admin: { id: admin.id, email: admin.email, name: admin.name },
     });
+  }));
+
+  // ── Admin two-factor setup (security audit 2026-11-13) ─────────────────────
+  // setup -> shows a NEW secret (stored as pending), enable -> proves the app works and
+  // promotes it, disable -> needs a current code. A half-finished setup changes nothing.
+  app.get('/api/admin/2fa/status', requireAdmin, h(async (req, res) => {
+    const { data } = await db.from('admins').select('totp_secret').eq('id', req.admin.id).maybeSingle();
+    return res.json({ success: true, enabled: !!data?.totp_secret });
+  }));
+
+  app.post('/api/admin/2fa/setup', requireAdmin, h(async (req, res) => {
+    const secret = adminTotp.generateSecret();
+    const { error } = await db.from('admins').update({ totp_pending_secret: secret }).eq('id', req.admin.id);
+    if (error) throw error;
+    return res.json({ success: true, secret, otpauthUrl: adminTotp.otpauthUrl(secret, req.admin.email || 'admin') });
+  }));
+
+  app.post('/api/admin/2fa/enable', requireAdmin, h(async (req, res) => {
+    const { data: row } = await db.from('admins').select('totp_pending_secret').eq('id', req.admin.id).maybeSingle();
+    if (!row?.totp_pending_secret) return res.status(400).json({ success: false, message: 'Start setup first.' });
+    const step = adminTotp.verify(row.totp_pending_secret, req.body?.code);
+    if (step == null) return res.status(400).json({ success: false, message: 'That code is not valid. Make sure you scanned the new QR code.' });
+    const { error } = await db.from('admins').update({
+      totp_secret: row.totp_pending_secret, totp_pending_secret: null, totp_last_step: step,
+    }).eq('id', req.admin.id);
+    if (error) throw error;
+    return res.json({ success: true, enabled: true });
+  }));
+
+  app.post('/api/admin/2fa/disable', requireAdmin, h(async (req, res) => {
+    const { data: row } = await db.from('admins').select('totp_secret, totp_last_step').eq('id', req.admin.id).maybeSingle();
+    if (!row?.totp_secret) return res.json({ success: true, enabled: false });
+    if (adminTotp.verify(row.totp_secret, req.body?.code, { minStep: row.totp_last_step ?? null }) == null) {
+      return res.status(400).json({ success: false, message: 'Enter a current code from your authenticator app to turn this off.' });
+    }
+    const { error } = await db.from('admins').update({ totp_secret: null, totp_pending_secret: null, totp_last_step: null }).eq('id', req.admin.id);
+    if (error) throw error;
+    return res.json({ success: true, enabled: false });
   }));
 
   // ── Dashboard stats ─────────────────────────────────────────────────────--

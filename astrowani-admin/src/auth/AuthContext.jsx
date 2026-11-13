@@ -8,8 +8,9 @@ export function AuthProvider({ children }) {
     try { return JSON.parse(localStorage.getItem('admin_user')) || null; } catch { return null; }
   });
 
-  const login = async (email, password) => {
-    const { data } = await client.post('/api/admin/login', { email, password });
+  // `totp` is the authenticator-app code, sent only once the server has asked for it.
+  const login = async (email, password, totp) => {
+    const { data } = await client.post('/api/admin/login', totp ? { email, password, totp } : { email, password });
     if (!data?.success) throw new Error(data?.message || 'Login failed');
     localStorage.setItem('admin_token', data.token);
     localStorage.setItem('admin_user', JSON.stringify(data.admin));

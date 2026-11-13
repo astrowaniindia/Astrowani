@@ -43,6 +43,7 @@ import FreeCallBookings from './pages/FreeCallBookings';
 import FreeCallInstant from './pages/FreeCallInstant';
 import GuideAvatar from './pages/GuideAvatar';
 import QrCodes from './pages/QrCodes';
+import Security from './pages/Security';
 import Acquisition from './pages/Acquisition';
 import Audience from './pages/Audience';
 
@@ -97,6 +98,7 @@ export default function App() {
         <Route path="free-call-settings" element={<Navigate to="/free-call-bookings" replace />} />
         <Route path="guide-avatar" element={<GuideAvatar />} />
         <Route path="qr-codes" element={<QrCodes />} />
+        <Route path="security" element={<Security />} />
         <Route path="acquisition" element={<Acquisition />} />
         <Route path="audience" element={<Audience />} />
       </Route>
