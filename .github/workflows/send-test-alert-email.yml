@@ -1,0 +1,53 @@
+# Send one test email through the SAME Brevo account, sender and recipients the
+# backend's operational alerts use (src/mailer.js): support alerts, payment-failure
+# digests. Manual only. Use it to answer "are alert emails actually arriving?".
+#
+# It reads the same three GitHub secrets that set-backend-env.yml copies into the
+# VPS .env, so a pass here means the configuration is right; it does not prove the
+# VPS process has restarted with those values.
+name: Send test alert email
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Send through Brevo
+        env:
+          BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
+          ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}
+          ALERT_EMAIL_FROM: ${{ secrets.ALERT_EMAIL_FROM }}
+        run: |
+          node <<'JS'
+          const to = (process.env.ALERT_EMAIL_TO || '').split(',').map((s) => s.trim()).filter(Boolean);
+          const raw = (process.env.ALERT_EMAIL_FROM || '').trim();
+          const m = raw.match(/^\s*(.*?)\s*<([^>]+)>\s*$/);
+          const sender = m ? { name: m[1] || 'Astrowani Alerts', email: m[2].trim() } : { name: 'Astrowani Alerts', email: raw };
+          if (!process.env.BREVO_API_KEY || !sender.email || !to.length) {
+            console.log('::error::BREVO_API_KEY / ALERT_EMAIL_FROM / ALERT_EMAIL_TO not all set');
+            process.exit(1);
+          }
+          const when = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+          (async () => {
+            const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+              method: 'POST',
+              headers: { 'api-key': process.env.BREVO_API_KEY, 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                sender,
+                to: to.map((email) => ({ email })),
+                subject: '✅ Astrowani test email — alerts are working',
+                htmlContent: `<p>This is a test from the Astrowani backend alert system, sent ${when} IST.</p>
+                  <p>If you can read this, support alerts ("someone is waiting on support") and
+                  payment-failure emails will reach this inbox.</p>
+                  <p>If it landed in Spam, mark it "Not spam" so real alerts are not missed.</p>`,
+              }),
+            });
+            const body = await res.text();
+            console.log(`recipients: ${to.length}`);
+            console.log(`Brevo answered ${res.status}: ${body}`);
+            if (!res.ok) process.exit(1);
+          })().catch((e) => { console.log(`::error::${e.message}`); process.exit(1); });
+          JS
