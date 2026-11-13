@@ -31,6 +31,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Plays the real phone ringtone for an incoming call/chat request, and keeps doing so
@@ -78,6 +79,7 @@ class RingingCallService : Service() {
     const val EXTRA_TITLE = "title"
     const val EXTRA_BODY = "body"
     const val EXTRA_REQUEST_DATA = "requestData"
+    const val EXTRA_START_SEQ = "startSeq"
 
     private const val CHANNEL_ID = "astrowani-ringing-service"
     private const val NOTIFICATION_ID = 4518
@@ -89,6 +91,49 @@ class RingingCallService : Service() {
     // (sessionManager.markStaleRequestsMissed) — stop just after that, not before it, so a
     // slow-but-real accept is never cut off by this safety net first.
     private const val MAX_RING_MS = 80L * 1000
+
+    // ── The start/stop handshake, and the crash it exists for ────────────────
+    // Android does not merely time out a service that was started with
+    // startForegroundService() and then brought down before it called startForeground():
+    // it crashes the whole process there and then, with
+    // ForegroundServiceDidNotStartInTimeException. A customer who rings and gives up a
+    // fraction of a second later (the ordinary cancel path — see CLAUDE.md's "Call
+    // Cancellation Sync") produces an incoming-request push followed by a cancel push,
+    // and the cancel's stopService() lands inside exactly that window: the start has been
+    // issued but onStartCommand has not run yet. That is what killed build 6.6+35 on
+    // 2026-10-15, with the two pushes 0.6s and then 0.3s apart.
+    //
+    // Starts are numbered so a stop can say which of them it cancels: a stop that arrives
+    // while an earlier start is still queued has to cancel that queued start too, or the
+    // ring begins moments after the customer gave up and then runs to MAX_RING_MS.
+    private val startSeq = AtomicInteger(0)
+
+    @Volatile
+    private var promotedThroughSeq = 0
+
+    @Volatile
+    private var stoppedThroughSeq = 0
+
+    /** Stamps the next start. Called by RingingServiceModule before it starts the service. */
+    fun nextStartSeq(): Int = startSeq.incrementAndGet()
+
+    /**
+     * Stops the service without ever risking the crash described above. Until every start
+     * issued so far has actually arrived and promoted, the stop is only recorded — as a
+     * sequence number, which each start intent at or below honours the moment it is safely
+     * in the foreground. The ring therefore stops either way, a few hundred milliseconds
+     * later in the racing case.
+     *
+     * The test is "nothing still queued", NOT "the service is in the foreground": a
+     * service that is already ringing from one request still carries a fresh, unmet
+     * startForeground obligation for a second request issued behind it, and stopping it
+     * against that one crashes the process exactly the same way.
+     */
+    fun requestStop(context: Context) {
+      stoppedThroughSeq = startSeq.get()
+      if (promotedThroughSeq < startSeq.get()) return
+      context.stopService(Intent(context, RingingCallService::class.java))
+    }
   }
 
   private var mediaPlayer: MediaPlayer? = null
@@ -102,31 +147,34 @@ class RingingCallService : Service() {
   override fun onBind(intent: Intent?): IBinder? = null
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-    if (intent?.action == ACTION_STOP) {
-      stopSelfSafely()
-      return START_NOT_STICKY
-    }
-
     val title = intent?.getStringExtra(EXTRA_TITLE) ?: "Incoming request"
     val body = intent?.getStringExtra(EXTRA_BODY)
     val requestData = intent?.getStringExtra(EXTRA_REQUEST_DATA)
+    // An unstamped intent (a system-delivered restart) is never treated as cancelled.
+    val seq = intent?.getIntExtra(EXTRA_START_SEQ, Int.MAX_VALUE) ?: Int.MAX_VALUE
 
     createChannel()
 
     // startForeground MUST happen within ~5s of startForegroundService or Android kills
-    // the process, so it is the first thing done here — before touching the MediaPlayer.
-    val notification = buildNotification(title, body)
-    try {
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-        startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
-      } else {
-        startForeground(NOTIFICATION_ID, notification)
-      }
-    } catch (e: Throwable) {
-      // Better to end quietly (the Notifee notification is still up, still actionable —
-      // only the enhanced ringing is lost) than crash the process handling a push.
-      android.util.Log.w("RingingCallService", "startForeground failed: ${e.message}")
-      stopSelf()
+    // the process, so it is the first thing done here — before touching the MediaPlayer,
+    // and before either teardown branch below, because a service that dies without ever
+    // having promoted itself takes the whole process down with it (see requestStop).
+    if (!promoteToForeground(buildNotification(title, body))) {
+      // Deliberately NOT stopSelf(): stopping before promotion is itself what raises
+      // ForegroundServiceDidNotStartInTime, i.e. the very crash this branch used to cause
+      // while trying to avoid one. The Notifee notification is still up and still
+      // actionable — only the enhanced ringing is lost.
+      return START_NOT_STICKY
+    }
+
+    // Promoted — so a stop for this start may now be delivered straight to the service.
+    if (seq != Int.MAX_VALUE && seq > promotedThroughSeq) promotedThroughSeq = seq
+
+    // An explicit stop intent, or a stop that arrived while this start was still in flight
+    // (requestStop deferred it rather than crash the process), is honoured now that it is
+    // safe to act on.
+    if (intent?.action == ACTION_STOP || seq <= stoppedThroughSeq) {
+      stopSelfSafely()
       return START_NOT_STICKY
     }
 
@@ -144,6 +192,39 @@ class RingingCallService : Service() {
     // actionable from here anyway (Accept/Reject need a live JS bridge), so resurrecting
     // this service would just ring forever for a request nobody can act on.
     return START_NOT_STICKY
+  }
+
+  /**
+   * Makes this a real foreground service — what the startForegroundService() contract
+   * requires, and what stops Android reclaiming the process mid-ring. Returns false only
+   * if even the untyped call was refused.
+   *
+   * Called on EVERY start intent, never skipped because the service already happens to be
+   * in the foreground: each startForegroundService() carries its own obligation to call
+   * startForeground(), and an already-ringing service that quietly ignores the second one
+   * is crashed for it just the same. This is also what refreshes the notification text
+   * when a second request arrives behind the first.
+   */
+  private fun promoteToForeground(notification: Notification): Boolean {
+    try {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
+      } else {
+        startForeground(NOTIFICATION_ID, notification)
+      }
+    } catch (e: Throwable) {
+      // A refused phoneCall type is still worth one untyped retry: that overload falls back
+      // to the type declared in the manifest, and satisfying the contract at all is what
+      // keeps the process alive.
+      android.util.Log.w("RingingCallService", "startForeground(phoneCall) failed: ${e.message}")
+      try {
+        startForeground(NOTIFICATION_ID, notification)
+      } catch (e2: Throwable) {
+        android.util.Log.w("RingingCallService", "startForeground failed: ${e2.message}")
+        return false
+      }
+    }
+    return true
   }
 
   // ── Ringtone ───────────────────────────────────────────────────────────────
@@ -477,6 +558,9 @@ class RingingCallService : Service() {
     } catch (_: Throwable) {
     }
     mediaPlayer = null
+    // The sequence counters deliberately survive a teardown: they describe starts that may
+    // still be queued behind it, and resetting them here would either let a withdrawn
+    // request ring anyway or let the next stop race into the crash above.
     super.onDestroy()
     stopForegroundCompat()
   }

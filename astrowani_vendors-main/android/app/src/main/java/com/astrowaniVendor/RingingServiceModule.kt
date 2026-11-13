@@ -41,6 +41,10 @@ class RingingServiceModule(private val reactContext: ReactApplicationContext) :
         putExtra(RingingCallService.EXTRA_TITLE, title ?: "Incoming request")
         if (!body.isNullOrEmpty()) putExtra(RingingCallService.EXTRA_BODY, body)
         if (!requestDataJson.isNullOrEmpty()) putExtra(RingingCallService.EXTRA_REQUEST_DATA, requestDataJson)
+        // Stamped BEFORE the service is started, so a stop() racing in behind it (a
+        // customer who cancels a moment after ringing) is recorded against this start
+        // rather than slipping past it. See RingingCallService.requestStop.
+        putExtra(RingingCallService.EXTRA_START_SEQ, RingingCallService.nextStartSeq())
       }
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
         reactContext.startForegroundService(intent)
@@ -58,7 +62,11 @@ class RingingServiceModule(private val reactContext: ReactApplicationContext) :
   fun stop(promise: Promise) {
     try {
       // stopService only — never start-to-stop. Same reasoning as CallServiceModule.
-      reactContext.stopService(Intent(reactContext, RingingCallService::class.java))
+      // Routed through the service's own guard rather than calling stopService directly:
+      // a stop landing before the service has called startForeground is what Android
+      // crashes the whole process for, and a cancel arriving a few hundred milliseconds
+      // behind the ring does exactly that. See RingingCallService.requestStop.
+      RingingCallService.requestStop(reactContext)
       promise.resolve(true)
     } catch (e: Throwable) {
       promise.resolve(false)
