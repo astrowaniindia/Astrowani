@@ -19,6 +19,7 @@ import {
   mediaDevices,
 } from 'react-native-webrtc';
 import InCallManager from 'react-native-incall-manager';
+import {awaitRingtoneTeardown} from './incomingRingtone';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import io from 'socket.io-client';
@@ -304,6 +305,12 @@ const EnxScreenVoice: React.FC<Props> = ({route, navigation}) => {
       if (await awaitCallKitAudioSession()) {
         console.log('[Vendor/Voice] CallKit owns the audio session; not starting InCallManager');
       } else {
+        // The incoming ringtone was stopped a moment ago when this call was answered, and
+        // its native teardown races start() — see awaitRingtoneTeardown() in
+        // incomingRingtone.js. The try/catch below cannot cover that; the throw is on the
+        // native module thread.
+        await awaitRingtoneTeardown();
+        if (cancelled) return;
         try { InCallManager.start({media: 'audio'}); } catch (_) {}
       }
       if (cancelled) return;
