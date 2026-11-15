@@ -881,6 +881,24 @@ async function findLiveBooking(customerId) {
 }
 
 /**
+ * An instant attempt still under way: the booking exists but no call has CONNECTED on it
+ * (yet, or any more). That covers the customer ringing round the pool AND a call that was
+ * released by closeFreeCallBooking because it died before it was a conversation (under
+ * MIN_REAL_CALL_SECONDS, or the astrologer bailed). Neither has spent the free call.
+ *
+ * Module scope because BOTH /api/free-call/offer and instantGate must apply it. Until
+ * 2026-11-15 only instantGate did: /offer treated this row as "already booked", answered
+ * eligible:false, and Home hid the gift bubble from every customer whose free call had
+ * dropped after a few seconds -- the offer was still theirs, with no way back to it.
+ */
+function resumableInstantAttempt(booking) {
+  return !!booking
+    && booking.kind === 'instant'
+    && booking.status === 'booked'
+    && !booking.call_session_id;
+}
+
+/**
  * The customer's unexpired admin invite, or null. An invite (sent from the admin
  * Free Call Bookings page with a push) opens the offer to this one customer even
  * while the public offer is switched off, and drops the brand-new-customer rule
@@ -1030,7 +1048,14 @@ async function isNewCustomer(customerId) {
     const { count, error } = await db
       .from('chat_sessions')
       .select('id', { count: 'exact', head: true })
-      .eq('caller_id', customerId);
+      .eq('caller_id', customerId)
+      // A FREE intro-call session is not "having been a customer". A free call that
+      // completed is already refused by its completed booking (findLiveBooking); one that
+      // dropped after seconds is released so it can be retried -- and counting its
+      // session here made that release meaningless the moment the 30-minute stale sweep
+      // cancelled the row: the customer was then "not new" forever. Constant filter, no
+      // request value interpolated (see src/pgrstFilter.js).
+      .or('is_free.is.null,is_free.eq.false');
     if (error) return false;
     return (count || 0) === 0;
   } catch (_) {
@@ -1246,15 +1271,26 @@ module.exports = function registerFreeCallRoutes(app) {
     // The same local-test bypass instantGate applies. This endpoint computes eligibility
     // independently of that gate, so without this line the card never appears on Home and
     // there is no way into the flow — the gate further in would have allowed it.
+    //
+    // A RESUMABLE instant attempt does not block, exactly as in instantGate below: a call
+    // that dropped before it was a conversation is released, not spent. Without this the
+    // gift bubble vanished for every such customer (2026-11-15: 449 in 30 days, 62 of whom
+    // ever got a full free call). Out of ring attempts it does block, because the ring
+    // endpoint would refuse them and a bubble that leads to a refusal is worse than none.
+    const resumable = resumableInstantAttempt(booking)
+      && (booking.call_attempts || 0) < offer.maxRingAttempts;
+    const blockingBooking = booking && !resumable;
     const eligible = localTest.bypassEligibility()
       ? true
-      : (!booking && audienceOk && !usedBefore && (!!invite || (await isNewCustomer(customer.id))));
+      : (!blockingBooking && audienceOk && !usedBefore
+        && (!!invite || !!booking || (await isNewCustomer(customer.id))));
     return res.status(200).json({
       success: true,
       enabled: true,
       eligible,
       invited: !!invite,
-      booking: publicBooking(booking),
+      // A resumable attempt is not a booking the customer has to be told about.
+      booking: blockingBooking ? publicBooking(booking) : null,
       offer: shown,
     });
   }));
@@ -1302,11 +1338,6 @@ module.exports = function registerFreeCallRoutes(app) {
     && a.is_suspended !== true
     && a.approval_status !== 'rejected'
     && a.is_call_enabled !== false;
-
-  const resumableInstantAttempt = (booking) => !!booking
-    && booking.kind === 'instant'
-    && booking.status === 'booked'
-    && !booking.call_session_id;
 
   /**
    * Everything the instant screen needs to decide what to show, in one place, so the
