@@ -168,6 +168,11 @@ for (const cp of require('./calculator-pages-content.js').PAGES) {
   PAGES[cp.file] = { title: cp.title, desc: cp.desc };
 }
 
+// The twelve sign horoscope pages: aw/horoscope-pages-content.js.
+for (const hp of require('./horoscope-pages-content.js').SIGNS) {
+  PAGES[hp.file] = { title: hp.title, desc: hp.desc };
+}
+
 // ── The Hindi pages ─────────────────────────────────────────────────────────
 //
 // Every file under hi/ gets an entry mirroring its English one, so it is never

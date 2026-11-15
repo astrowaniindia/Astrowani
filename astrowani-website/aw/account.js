@@ -1,7 +1,7 @@
-import { isSignedIn, getUser, onAuthChange } from './session.js?v=61';
-import { requireSignIn } from './auth.js?v=61';
-import { fetchBalance, cachedBalance, onWalletChange } from './wallet.js?v=61';
-import { esc } from './ui.js?v=61';
+import { isSignedIn, getUser, onAuthChange } from './session.js?v=62';
+import { requireSignIn } from './auth.js?v=62';
+import { fetchBalance, cachedBalance, onWalletChange } from './wallet.js?v=62';
+import { esc } from './ui.js?v=62';
 
 /**
  * The nav. "Login / Sign up" becomes the live wallet balance and an account

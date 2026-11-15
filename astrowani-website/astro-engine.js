@@ -419,17 +419,35 @@ function astroDayKey(date, period) {
   }
   return `${y}-${date.getMonth() + 1}-${date.getDate()}`;
 }
-function astroHoroscopeReading(signName, date, period) {
+// The same phrases in Hindi, INDEX FOR INDEX with the English above: the
+// reading picks an index once and reads both lists with it, so a sign on a
+// given date says the same thing in both languages. Keep the two in step.
+const ASTRO_HOROSCOPE_FRAGMENTS_HI = {
+  love: ['कोई बातचीत आपको किसी ख़ास व्यक्ति के करीब लाती है', 'किसी प्रियजन के साथ धैर्य चुपचाप फल देता है', 'अकेले हैं? कोई नया रिश्ता आपकी राह में आ सकता है', 'किसी पुराने रिश्ते को आज एक प्यार भरे शब्द की ज़रूरत है', 'रोमांस से अधिक अपनी देखभाल ज़रूरी है, और यह ठीक है'],
+  career: ['कोई अटका हुआ काम आख़िरकार आगे बढ़ता है', 'कोई सहकर्मी आपकी मेहनत पर ध्यान देता है — इसका लाभ उठाएं', 'नया विचार रखने का यह अच्छा समय है', 'आज काम से जुड़ा कोई निर्णय जल्दबाज़ी में न लें', 'अभी लगातार, बिना दिखावे की मेहनत ही फल देती है'],
+  money: ['कोई अचानक खर्च अनुशासन की मांग करता है', 'अपनी बचत योजना की समीक्षा के लिए अच्छा दिन है', 'आवेश में आकर पैसे उधार न दें', 'किसी पुराने स्रोत से छोटा लाभ मिलता है', 'कोई बड़ा खर्च करने से पहले बजट बना लें'],
+  health: ['आपकी ऊर्जा सामान्य से अधिक है — इसका अच्छा उपयोग करें', 'आज खुद पर ज़ोर डालने से अधिक आराम ज़रूरी है', 'स्क्रीन से अधिक एक छोटी सैर आपका मन साफ़ करती है', 'पर्याप्त पानी पिएं और भोजन सादा रखें', 'तनाव शरीर पर दिखता है — इसे जल्दी पहचानें'],
+  general: ['सितारे धीमी और सोची-समझी गति के पक्ष में हैं', 'आज दूसरों की राय से अधिक अपने अंतर्मन पर भरोसा करें', 'जिस काम को आप टाल रहे थे, वह दिखने से आसान है', 'दिनचर्या में छोटा-सा बदलाव अप्रत्याशित स्पष्टता लाता है', 'आज महत्वाकांक्षा से अधिक धैर्य का फल मिलता है'],
+};
+function astroHoroscopeReading(signName, date, period, lang) {
   const key = `${signName}|${astroDayKey(date, period)}|${period}`;
   const rnd = astroSeededRandom(key);
-  const pick = (arr) => arr[Math.floor(rnd() * arr.length)];
+  // The draw order (meters, then general, love, career, money, health) is what
+  // makes a reading stable for a sign and date — do not reorder it.
   const meters = {
     love: Math.floor(40 + rnd() * 55),
     career: Math.floor(40 + rnd() * 55),
     health: Math.floor(40 + rnd() * 55),
     money: Math.floor(40 + rnd() * 55),
   };
-  const sentence = `${pick(ASTRO_HOROSCOPE_FRAGMENTS.general).replace(/^./, (c) => c.toUpperCase())}. In love, ${pick(ASTRO_HOROSCOPE_FRAGMENTS.love)}. At work, ${pick(ASTRO_HOROSCOPE_FRAGMENTS.career)}. On money, ${pick(ASTRO_HOROSCOPE_FRAGMENTS.money)}. For health, ${pick(ASTRO_HOROSCOPE_FRAGMENTS.health)}.`;
+  const idx = {};
+  for (const k of ['general', 'love', 'career', 'money', 'health']) idx[k] = Math.floor(rnd() * ASTRO_HOROSCOPE_FRAGMENTS[k].length);
+  if (lang === 'hi') {
+    const f = (k) => ASTRO_HOROSCOPE_FRAGMENTS_HI[k][idx[k]];
+    return { sentence: `${f('general')}। प्रेम में, ${f('love')}। काम में, ${f('career')}। धन के मामले में, ${f('money')}। स्वास्थ्य के लिए, ${f('health')}।`, meters };
+  }
+  const f = (k) => ASTRO_HOROSCOPE_FRAGMENTS[k][idx[k]];
+  const sentence = `${f('general').replace(/^./, (c) => c.toUpperCase())}. In love, ${f('love')}. At work, ${f('career')}. On money, ${f('money')}. For health, ${f('health')}.`;
   return { sentence, meters };
 }
 

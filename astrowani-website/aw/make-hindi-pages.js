@@ -58,6 +58,20 @@ const PAGES = [
   'privacy-policy.html', 'terms-and-conditions.html', 'refund-cancellation.html',
   'safety-guidelines.html', 'child-safety.html', 'delete-account.html',
   'report-vulnerability.html', '404.html',
+  // The twelve sign horoscope pages (aw/horoscope-pages.js) — the Hindi
+  // versions are the "rashifal" pages.
+  'aries-horoscope.html',
+  'taurus-horoscope.html',
+  'gemini-horoscope.html',
+  'cancer-horoscope.html',
+  'leo-horoscope.html',
+  'virgo-horoscope.html',
+  'libra-horoscope.html',
+  'scorpio-horoscope.html',
+  'sagittarius-horoscope.html',
+  'capricorn-horoscope.html',
+  'aquarius-horoscope.html',
+  'pisces-horoscope.html',
   // The twelve calculator pages (aw/calculator-pages.js).
   'love-calculator.html',
   'flames-calculator.html',
