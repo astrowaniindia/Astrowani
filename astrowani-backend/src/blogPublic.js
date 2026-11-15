@@ -160,7 +160,10 @@ ${tags.join('\n')}</head>`);
         .replace(/href="#/g, () => `href="${escape(url)}#`)}</div>
       <div id="blog-related-root" data-post-id="${escape(post._id)}"></div>`
     : `<h1>${escape(title)}</h1><p>${status === 503 ? 'Please try again shortly.' : 'This article may have been removed or the link is incorrect.'}</p><a href="${back}">Back to all articles</a>`;
-  return html.replace(/<div id="blog-post-root"[^>]*>[\s\S]*?<\/div>/, () => `<div id="blog-post-root" class="blog-article-wrap" data-server-rendered="true">${body}</div>`);
+  // <article> marks the primary content block for crawlers (SEO audit 2026-10-29 §5).
+  // The match also accepts the older <div> shell so a backend deployed ahead of the
+  // website still finds the slot.
+  return html.replace(/<(div|article) id="blog-post-root"[^>]*>[\s\S]*?<\/\1>/, () => `<article id="blog-post-root" class="blog-article-wrap" data-server-rendered="true">${body}</article>`);
 }
 
 function register(app, db, { siteBase = SITE_BASE, websiteRoot = path.resolve(__dirname, '../../astrowani-website') } = {}) {

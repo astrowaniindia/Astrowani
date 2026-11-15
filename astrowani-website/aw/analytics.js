@@ -1,5 +1,5 @@
-import { getUser, onAuthChange } from './session.js?v=64';
-import { sanitiseProps, scrubEvent } from './analytics-scrub.js?v=64';
+import { getUser, onAuthChange } from './session.js?v=65';
+import { sanitiseProps, scrubEvent } from './analytics-scrub.js?v=65';
 
 /**
  * Product analytics for the website — PostHog, the SAME PROJECT as both apps.

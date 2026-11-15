@@ -22,8 +22,19 @@ const db = { from(table) {
     async maybeSingle() { return fail ? { error: new Error('test outage') } : { data: rows.find(r => filters.every(([k,v]) => r[k] === v)) || null }; } };
 } };
 const app = express();
-// Match the two Nginx article routes in a self-contained local test server.
+// Match the Nginx article routes (vps-deployment/nginx/blog-locations.conf) in a
+// self-contained local test server: the legacy query-string shells, and the clean
+// /blog/<slug> and /hi/blog/<slug> addresses, which nginx marks with route=clean.
 app.use((req, res, next) => {
+  const clean = req.path.match(/^\/(hi\/)?blog\/([a-z0-9-]+)\/?$/);
+  if (clean) {
+    const q = new URLSearchParams({ slug: clean[2], route: 'clean' });
+    if (clean[1]) q.set('lang', 'hi');
+    req.url = `/api/blogs/article-page?${q}`;
+    // Express parsed the query before this ran; rewriting the URL does not re-parse it.
+    Object.assign(req.query, Object.fromEntries(q));
+    return next();
+  }
   if (['/blog-post.html', '/hi/blog-post.html'].includes(req.path)) {
     const q = new URL(req.url, 'http://localhost').searchParams;
     q.set('lang', req.path.startsWith('/hi/') ? 'hi' : 'en');
@@ -57,26 +68,28 @@ test('unknown, unpublished and invalid identifiers return 404', async () => {
   }
 });
 test('article source HTML has one description, article social tags and readable content', async () => {
-  const r = await fetch(`${base}/blog-post.html?slug=article-60`); const html = await r.text();
+  const r = await fetch(`${base}/blog/article-60`); const html = await r.text();
   assert.equal(r.status, 200);
   assert.equal((html.match(/name="description"/g) || []).length, 1);
   assert.match(html, /name="twitter:title" content="Article 60 &amp; guidance"/);
   assert.match(html, /property="og:title" content="Article 60 &amp; guidance"/);
-  assert.match(html, /rel="canonical" href="http:\/\/localhost:4611\/blog-post.html\?slug=article-60"/);
+  assert.match(html, /rel="canonical" href="http:\/\/localhost:4611\/blog\/article-60"/);
   assert.match(html, /<h1[^>]*>Article 60 &amp; guidance<\/h1>/);
   assert.match(html, /Useful article content/);
-  assert.match(html, /hi\/blog-post.html\?slug=article-60/);
+  assert.match(html, /hi\/blog\/article-60/);
+  // The article is the page's primary content landmark (SEO audit 2026-10-29, section 5).
+  assert.match(html, /<article id="blog-post-root"[^>]*data-server-rendered="true"/);
   assert.match(html, /"dateModified":"2026-10-29/);
 });
 test('Hindi article content, metadata and route language agree without stored preferences', async () => {
-  const r = await fetch(`${base}/hi/blog-post.html?slug=article-60`); const html = await r.text();
+  const r = await fetch(`${base}/hi/blog/article-60`); const html = await r.text();
   assert.equal(r.status, 200); assert.match(html, /lang="hi" data-lang="hi"/);
   assert.match(html, /name="twitter:title" content="लेख 60"/);
   assert.match(html, /यह लेख हिंदी में है/); assert.doesNotMatch(html, /Useful article content/);
   assert.doesNotMatch(html, /localStorage.getItem\('astro-lang'\)/);
 });
 test('stored scripts and event handlers cannot execute in server-rendered content', async () => {
-  const html = await (await fetch(`${base}/blog-post.html?slug=article-62`)).text();
+  const html = await (await fetch(`${base}/blog/article-62`)).text();
   assert.doesNotMatch(html, /alert\(|onerror=|javascript:/);
   assert.match(html, /<details><summary>A question\?<\/summary>/);
   assert.match(html, /href="consult.html"/);
@@ -93,9 +106,9 @@ test('Hindi requests without a translation redirect to the existing English arti
   const old = rows[61].content_hi;
   rows[61].content_hi = '';
   try {
-    const r = await fetch(`${base}/hi/blog-post.html?slug=article-61`, { redirect: 'manual' });
+    const r = await fetch(`${base}/hi/blog/article-61`, { redirect: 'manual' });
     assert.equal(r.status, 302);
-    assert.equal(r.headers.get('location'), 'http://localhost:4611/blog-post.html?slug=article-61');
+    assert.equal(r.headers.get('location'), 'http://localhost:4611/blog/article-61');
   } finally { rows[61].content_hi = old; }
 });
 test('static blog metadata and Hindi navigation stay valid', () => {

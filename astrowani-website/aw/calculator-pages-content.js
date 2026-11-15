@@ -211,7 +211,7 @@ const PAGES = [
   {
     file: 'lo-shu-grid-calculator.html',
     id: 'lo-shu-grid',
-    title: 'Lo Shu Grid Calculator — Free Numerology Grid by Date of Birth | Astrowani',
+    title: 'Lo Shu Grid Calculator — Free Grid by Date of Birth | Astrowani',
     desc: 'Build your Lo Shu Grid free from your date of birth. See which numbers repeat, which are missing, and what the 3×3 grid is used for in numerology.',
     h1: ['Lo Shu Grid calculator', 'लो शू ग्रिड कैलकुलेटर'],
     lead: ['Place the digits of your date of birth on the 3×3 Lo Shu square and see which numbers are strong and which are missing.',
@@ -244,7 +244,7 @@ const PAGES = [
   {
     file: 'sun-sign-calculator.html',
     id: 'sun-sign',
-    title: 'Sun Sign Calculator — Find Your Zodiac Sign by Date of Birth | Astrowani',
+    title: 'Sun Sign Calculator — Zodiac Sign by Date of Birth | Astrowani',
     desc: 'Find your sun sign instantly from your date of birth, with its element and ruling planet. Free zodiac sign calculator, plus how it differs from your Vedic Rashi.',
     h1: ['Sun sign calculator', 'सूर्य राशि कैलकुलेटर'],
     lead: ['Your zodiac sign from your date of birth, with its element and ruling planet.',

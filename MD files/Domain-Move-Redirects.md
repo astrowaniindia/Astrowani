@@ -82,7 +82,15 @@ That keeps more of their search value.
 4. Change `SITE_BASE` in `astrowani-website/aw/apply-seo.js` and `BLOG_SITE_BASE_URL` on the
    backend, re-run apply-seo, and rewrite the absolute links in `blogs.content_en/content_hi`
    (CLAUDE.md, EN1 and EB).
-5. Submit the new sitemap in Google Search Console. Ideally verify the domain there **before** the
+5. **Proxy `/api/` on the astrowani.com server block**, copied from the `location /api/` block in
+   `vps-deployment/nginx/astrowani-shop.conf`, plus the blog/astrologer routes in
+   `vps-deployment/nginx/blog-locations.conf` with `/test-site` removed from their paths.
+   `aw/config.js` already treats astrowani.com as same-origin, so without the proxy every
+   API call (blog list, astrologer roster, login, wallet) fails on the new domain.
+   Check: `curl https://astrowani.com/api/blogs` answers JSON, not an HTML page.
+6. **One homepage address:** 301 `/index.html` to `/` in the same server block
+   (`location = /index.html { return 301 /; }`). The canonical already names `/`.
+7. Submit the new sitemap in Google Search Console. Ideally verify the domain there **before** the
    move, to keep a baseline of the old site's search traffic.
 
 ## What redirects cannot save — decide before the move

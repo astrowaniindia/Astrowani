@@ -29,6 +29,13 @@ const SAME_ORIGIN_API_HOSTS = [
   '127.0.0.1',
   '[::1]',
   'shop.astrowani.com',
+  // The site's final home (CLAUDE.md "the domain move"). Listed ahead of the move
+  // so the blog, roster and wallet keep working the moment it lands — which REQUIRES
+  // astrowani.com's nginx to proxy /api/ to the backend exactly as the shop's does
+  // (see MD files/Domain-Move-Redirects.md). Harmless before then: astrowani.com is
+  // still WordPress and never loads this file.
+  'astrowani.com',
+  'www.astrowani.com',
 ];
 
 const host = typeof location !== 'undefined' ? location.hostname : '';

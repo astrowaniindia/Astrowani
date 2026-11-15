@@ -154,7 +154,7 @@ function derived(s) {
   const datesEn = `${s.dates[0]} – ${s.dates[1]}`;
   const datesHi = `${hiDate(s.dates[0])} – ${hiDate(s.dates[1])}`;
   return {
-    title: `${s.name} Horoscope Today — Daily ${s.name} (${s.vedic}) Horoscope | Astrowani`,
+    title: `${s.name} Horoscope Today (${s.vedic} Rashifal) | Astrowani`,
     titleHi: `आज का ${s.hi} राशिफल — दैनिक ${s.hi} राशिफल | Astrowani`,
     desc: `Today's ${s.name} horoscope, plus tomorrow, this week, this month and this year — with what ${s.name} (${s.vedic} rashi) is traditionally said to be like in love and work.`,
     crumb: [s.name, s.hi],

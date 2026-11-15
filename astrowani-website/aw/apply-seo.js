@@ -138,6 +138,7 @@ const PAGES = {
     desc: 'Safety guidelines for everyone on Astrowani — what is expected, what is not allowed, and how to report a problem with a consultation.',
   },
   'child-safety.html': {
+    title: 'Child Safety Standards and Reporting | Astrowani',
     desc: "Astrowani's child safety standards and zero-tolerance policy on child sexual abuse and exploitation, with reporting contacts.",
   },
   'report-vulnerability.html': {
