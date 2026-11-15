@@ -1096,6 +1096,11 @@ if (!JWT_SECRET || JWT_SECRET.length < 32 || WEAK_SECRETS.has(JWT_SECRET)) {
 
 // Admin dashboard routes (auth + content/management CRUD under /api/admin)
 require('./src/adminRoutes')(app);
+// Read-only "Live right now" card on the admin dashboard. Guarded so a load failure
+// can only cost that card, never the backend's boot.
+try { require('./src/adminLiveStatusRoutes')(app); } catch (err) {
+  console.error('[startup] admin live-status route not registered:', err.message);
+}
 contactLeak(app); // off-platform contact flags: admin review queue
 require('./src/offerGuardRoutes')(app); // offer abuse guard: admin view
 require('./src/callRecordingRoutes')(app); // call audio: upload authorisation, transcription, flags

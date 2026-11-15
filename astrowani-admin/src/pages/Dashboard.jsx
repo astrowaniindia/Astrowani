@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import client from '../api/client';
+import LiveStatusCard from '../components/LiveStatusCard';
 
 export default function Dashboard() {
   const [stats, setStats] = useState(null);
@@ -51,6 +52,9 @@ export default function Dashboard() {
       </div>
 
       {error && <div className="error-text" style={{ marginBottom: 20 }}>{error}</div>}
+
+      {/* ── Live right now: online / talking / live / free-call pool, auto-refreshing ── */}
+      <LiveStatusCard />
 
       {/* ── 1. Smart "Needs Attention Today" Bar ── */}
       <div className="attention-banner">
