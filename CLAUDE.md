@@ -5158,3 +5158,13 @@ Verified: all 12 calculators driven in a real browser (EN and HI), 24 pages with
 JSON-LD (FAQPage ×3, 3-level BreadcrumbList, one H1, canonical, hreflang), 0 untranslated
 strings, `testBlogAgent.js` 286/286 (sitemap entries all exist as files). **Not deployed.**
 Noticed, not fixed: at 1024 px the nav's Login/Sign up overflow every page by ~110 px.
+
+### ET2. Old WordPress addresses need redirects ON THE DAY of the domain move
+
+**Read [`MD files/Domain-Move-Redirects.md`](MD%20files/Domain-Move-Redirects.md) before
+astrowani.com is switched over.** WordPress used `/privacy-policy/`, and the new site is
+`/privacy-policy.html`. Both apps, App Store Connect, Play Console and the Meta app link to
+the old form, so every one would 404 without the 301 map in
+`vps-deployment/nginx/wordpress-redirects.conf`. That map covers all 83 addresses from the
+WordPress sitemap plus `/about-us/`. `vps-deployment/scripts/check-wordpress-redirects.js`
+checks it offline, and with `--live` after the move. `nginx -t` has not been run on it yet.
