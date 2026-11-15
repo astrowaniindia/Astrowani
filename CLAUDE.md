@@ -5348,3 +5348,22 @@ Two notes on the deploy notifier:
 **`service-pages.js --check` no longer says "would write 7 pages" forever.** It now writes
 each page's own `<title>`, and compares ignoring the SEO block, line endings and blank lines.
 It still catches a real edit (checked).
+
+### ET9. Zodiac compatibility pages: 78 pairs + compatibility.html, EN + HI
+
+`aw/compatibility-pages.js` generates one page per UNORDERED pair of signs
+(`aries-and-leo-compatibility.html`, zodiac order) plus the `compatibility.html` hub, from
+`aw/compatibility-pages-content.js`. The reverse order is the same pair, so it gets no page.
+- **Each page's substance is four classical factors, not sign text pasted twice:** element
+  relation, mode relation, the naisargika maitri of the two lords (= Guna Milan's Graha Maitri,
+  real points /5) and the sign distance (= Bhakoot, 7 or 0 /7, with the classical cancellation
+  when the lords are the same or mutual friends). Plus per-sign brings/needs, and a hand-written
+  paragraph for each of the 12 same-sign pairs (without it those pages overlapped up to 69%).
+  Measured: 5-gram overlap between pair pages averages 30%, max 59%.
+- No percentages, no promises; every page says Graha Maitri and Bhakoot use the MOON signs and
+  that real matching is the full kundli.
+- Every visible string goes through `t([en, hi])`, so the Hindi build cannot miss one.
+- Wired into: apply-seo (titles/descs), make-hindi-pages (PAGES), the Horoscope menu
+  ("Zodiac Compatibility"), each sign horoscope page (its 12 pairings), and the backend sitemap,
+  which lists the pair pages by reading the files (`blogSitemap.js`, fails closed).
+- Order: compatibility-pages → horoscope-pages → … → bump-version → make-hindi-pages → apply-seo.

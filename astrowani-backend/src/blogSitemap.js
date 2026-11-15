@@ -89,6 +89,9 @@ const STATIC_PAGES = [
   ['rising-sign-calculator.html', '0.7', 'monthly'],
   ['rashi-calculator.html', '0.7', 'monthly'],
   ['nakshatra-calculator.html', '0.7', 'monthly'],
+  // The zodiac compatibility hub (astrowani-website/aw/compatibility-pages.js);
+  // its 78 pair pages are appended below, read from the files themselves.
+  ['compatibility.html', '0.7', 'monthly'],
   // The six service landing pages (astrowani-website/aw/service-pages.js).
   // Each one targets a supplied keyword that previously had no URL to land on,
   // because the mega menu pointed at hash fragments and Google strips those.
@@ -117,6 +120,15 @@ const STATIC_PAGES = [
   ['child-safety.html', '0.2', 'yearly'],
   ['delete-account.html', '0.2', 'yearly'],
 ];
+
+// The 78 pair pages, one per pair of signs. Listed from the files on disk so a
+// regenerated set can never disagree with the sitemap; if the directory cannot be
+// read, none are listed and every other entry is served exactly as before.
+try {
+  const pairFiles = fs.readdirSync(WEBSITE_ROOT).filter((f) => /^[a-z]+-and-[a-z]+-compatibility\.html$/.test(f)).sort();
+  for (const f of pairFiles) STATIC_PAGES.push([f, '0.6', 'monthly']);
+} catch (_) { /* fails closed */ }
+
 
 function xmlEscape(s) {
   return String(s == null ? '' : s)

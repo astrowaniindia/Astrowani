@@ -26,6 +26,11 @@
 const fs = require('fs');
 const path = require('path');
 const { SHARED, SIGNS } = require('./horoscope-pages-content.js');
+// Each sign page links its 12 pairings (aw/compatibility-pages.js).
+const COMPAT = require('./compatibility-pages-content.js');
+const compatOf = (s) => COMPAT.pairsOf(COMPAT.SIGNS.find((c) => c.name === s.name));
+const COMPAT_TITLE = (s) => [`${s.name} compatibility`, `${s.hi} राशि की अनुकूलता`];
+const COMPAT_ALL = ['All sign pairings', 'सभी राशि जोड़ियां'];
 
 const ROOT = path.join(__dirname, '..');
 const SOURCE = path.join(ROOT, 'horoscope.html');
@@ -113,6 +118,16 @@ ${fact(SHARED.facts.partners, en(s.partners))}
   </div>
 </div>
 
+<div class="band">
+  <div class="block">
+    <h2 class="serif section-title" style="margin-bottom:24px;">${en(COMPAT_TITLE(s))}</h2>
+    <div class="tool-index-grid">
+${compatOf(s).map((p) => `      <a class="tool-index-chip" href="${p.file}">${en(p.label)}</a>`).join('\n')}
+    </div>
+    <p style="margin:0;"><a href="compatibility.html" style="color:var(--maroon); font-weight:700;">${en(COMPAT_ALL)}</a></p>
+  </div>
+</div>
+
 <div class="band band-tint">
   <div class="block">
     <h2 class="serif section-title" style="margin-bottom:24px;">${en(SHARED.otherTitle)}</h2>
@@ -152,11 +167,12 @@ function pairs(dict) {
   const out = [SHARED.crumbParent, ...Object.values(SHARED.periods), ...Object.values(SHARED.meters),
     SHARED.readingNote, SHARED.factsTitle, ...Object.values(SHARED.facts), SHARED.whichSignTitle,
     SHARED.whichSignText, SHARED.rashiLink, SHARED.sunLink, SHARED.faqEyebrow, SHARED.faqTitle,
-    SHARED.otherTitle, SHARED.allLink, SHARED.ctaTitle, SHARED.ctaText, SHARED.ctaButton, SHARED.bySignTitle];
+    SHARED.otherTitle, SHARED.allLink, COMPAT_ALL, SHARED.ctaTitle, SHARED.ctaText, SHARED.ctaButton, SHARED.bySignTitle];
   for (const s of SIGNS) {
     out.push([s.title, s.titleHi], s.crumb, [`· ${en(s.crumb)}`, `· ${s.crumb[1]}`], s.h1, s.lead,
       s.natureTitle, s.nature, s.lifeTitle, s.life, s.linkLabel, s.element, s.lord, s.day, s.dates, s.partners);
     for (const [q, a] of s.faqs) out.push(q, a);
+    out.push(COMPAT_TITLE(s), ...compatOf(s).map((p) => p.label));
   }
   return out;
 }

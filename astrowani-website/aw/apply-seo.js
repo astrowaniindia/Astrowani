@@ -169,6 +169,13 @@ for (const cp of require('./calculator-pages-content.js').PAGES) {
   PAGES[cp.file] = { title: cp.title, desc: cp.desc };
 }
 
+// The 78 zodiac compatibility pages and their hub: aw/compatibility-pages-content.js.
+{
+  const cp = require('./compatibility-pages-content.js');
+  for (const p of cp.PAIRS) PAGES[p.file] = { title: p.title, desc: p.desc };
+  PAGES['compatibility.html'] = { title: cp.SHARED.hub.title, desc: cp.SHARED.hub.desc };
+}
+
 // The twelve sign horoscope pages: aw/horoscope-pages-content.js.
 for (const hp of require('./horoscope-pages-content.js').SIGNS) {
   PAGES[hp.file] = { title: hp.title, desc: hp.desc };

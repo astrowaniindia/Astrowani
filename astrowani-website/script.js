@@ -94,6 +94,7 @@ const ASTROWANI_NAV_MENUS = [
       ['Weekly Horoscope', 'horoscope.html?period=weekly'],
       ['Monthly Horoscope', 'horoscope.html?period=monthly'],
       ['Yearly Horoscope', 'horoscope.html?period=yearly'],
+      ['Zodiac Compatibility', 'compatibility.html'],
     ],
   },
   {
@@ -234,7 +235,7 @@ const ASTROWANI_I18N_DICT = {
   'Video Call with Astrologer': 'ज्योतिषी से वीडियो कॉल करें',
   'Daily Horoscope': 'दैनिक राशिफल', "Tomorrow's Horoscope": 'कल का राशिफल',
   "Yesterday's Horoscope": 'बीते कल का राशिफल', 'Weekly Horoscope': 'साप्ताहिक राशिफल',
-  'Monthly Horoscope': 'मासिक राशिफल', 'Yearly Horoscope': 'वार्षिक राशिफल',
+  'Monthly Horoscope': 'मासिक राशिफल', 'Yearly Horoscope': 'वार्षिक राशिफल', 'Zodiac Compatibility': 'राशि अनुकूलता',
   'Free Kundli': 'मुफ़्त कुंडली', 'Free Horoscope Matching': 'मुफ़्त कुंडली मिलान',
   'Free Daily Horoscope': 'मुफ़्त दैनिक राशिफल', 'Free Numerology Report': 'मुफ़्त अंक ज्योतिष रिपोर्ट',
   'Free Palmistry Reading': 'मुफ़्त हस्तरेखा पठन',

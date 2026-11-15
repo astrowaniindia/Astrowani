@@ -72,6 +72,9 @@ const PAGES = [
   'capricorn-horoscope.html',
   'aquarius-horoscope.html',
   'pisces-horoscope.html',
+  // The 78 zodiac compatibility pages and their hub (aw/compatibility-pages.js).
+  'compatibility.html',
+  ...require('./compatibility-pages-content.js').PAIRS.map((p) => p.file),
   // The twelve calculator pages (aw/calculator-pages.js).
   'love-calculator.html',
   'flames-calculator.html',

@@ -1,7 +1,7 @@
-import { api, ApiError } from './api.js?v=65';
-import { signIn, isSignedIn, getUser, getToken } from './session.js?v=65';
-import { createOverlay, toast, esc } from './ui.js?v=65';
-import { track } from './analytics.js?v=65';
+import { api, ApiError } from './api.js?v=66';
+import { signIn, isSignedIn, getUser, getToken } from './session.js?v=66';
+import { createOverlay, toast, esc } from './ui.js?v=66';
+import { track } from './analytics.js?v=66';
 
 /**
  * Sign-in / sign-up in one popup: phone -> OTP -> (name, only for a brand new
