@@ -7,8 +7,22 @@ import BlogAgentCard from '../components/BlogAgentCard';
 
 const EMPTY = {
   title: '', excerpt: '', excerpt_hi: '', meta_description: '', meta_description_hi: '', thumbnail: '', category_id: '',
-  title_en: '', content_en: '', title_hi: '', content_hi: '', is_published: true,
+  title_en: '', content_en: '', title_hi: '', content_hi: '', is_published: true, slug: '',
 };
+
+/**
+ * Preview of the address the server will generate. The SERVER decides
+ * (src/blogSlugs.js, using the blog agent's slugify); this only mirrors it so the
+ * admin can see the address before saving. Devanagari is dropped, as there.
+ */
+function previewSlug(text) {
+  return String(text || '')
+    .normalize('NFKD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^\x20-\x7E]/g, ' ').toLowerCase()
+    .replace(/['’`]/g, '').replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+    .slice(0, 72).replace(/-+$/, '');
+}
 
 export default function Blogs() {
   const [blogs, setBlogs] = useState([]);
@@ -30,7 +44,10 @@ export default function Blogs() {
   useEffect(() => { load(); }, []);
 
   const openNew = () => setEditing({ ...EMPTY });
-  const openEdit = (b) => setEditing({ ...EMPTY, ...b, category_id: b.category_id || '' });
+  // A published article that already has an address keeps it: the server refuses
+  // a change (links to it would 404), so the field is shown read-only. `_slugLocked`
+  // travels in the payload too, and the server ignores it (not in `allowed`).
+  const openEdit = (b) => setEditing({ ...EMPTY, ...b, slug: b.slug || '', category_id: b.category_id || '', _slugLocked: !!(b.slug && b.is_published) });
 
   const save = async () => {
     setBusy(true);
@@ -126,6 +143,26 @@ export default function Blogs() {
           <div className="field">
             <label>English — title</label>
             <input type="text" value={editing.title_en} onChange={(e) => set('title_en', e.target.value)} />
+          </div>
+          <div className="field">
+            <label>Article address</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ color: '#888', whiteSpace: 'nowrap' }}>/blog/</span>
+              <input
+                type="text"
+                value={editing.slug || ''}
+                disabled={editing._slugLocked}
+                placeholder={previewSlug(editing.title_en || editing.title) || 'made-from-the-english-title'}
+                onChange={(e) => set('slug', e.target.value)}
+              />
+            </div>
+            <div style={{ fontSize: 12, color: '#888', marginTop: 4 }}>
+              {editing._slugLocked
+                ? 'This article is published, so its address is fixed — changing it would break every link to it.'
+                : editing.slug
+                  ? `Will be saved as /blog/${previewSlug(editing.slug) || '…'}`
+                  : 'Leave empty to make it from the English title. Letters, numbers and hyphens only.'}
+            </div>
           </div>
           <div className="field">
             <label>English — content</label>

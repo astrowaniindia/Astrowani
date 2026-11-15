@@ -351,13 +351,20 @@ module.exports = function registerAdminRoutes(app) {
   // afterWrite(row): optional side effect run once a create/update has succeeded.
   // Deliberately NOT awaited — it is for work that must not delay the admin's
   // save response or make a save look failed if the side effect fails.
-  function crud(resource, table, { orderBy = 'created_at', ascending = false, allowed, afterWrite } = {}) {
+  // `prepare(body, existingRow|null)` may rewrite the body or refuse the write by
+  // returning { error: { status, code, message } }. `uniqueMessage` turns a
+  // unique-index clash (Postgres 23505, e.g. two saves racing for one slug) into
+  // a 409 the admin can read instead of a generic 500.
+  function crud(resource, table, { orderBy = 'created_at', ascending = false, allowed, afterWrite, prepare, uniqueMessage } = {}) {
     const pick = (body) => {
       if (!allowed) return body;
       const out = {};
       for (const k of allowed) if (k in body) out[k] = body[k];
       return out;
     };
+    const refuse = (res, e) => res.status(e.status).json({ success: false, code: e.code, message: e.message });
+    const clash = (res, error) => (error && error.code === '23505' && uniqueMessage
+      ? res.status(409).json({ success: false, code: 'DUPLICATE', message: uniqueMessage }) : null);
 
     app.get(`/api/admin/${resource}`, requireAdmin, h(async (req, res) => {
       const { data, error } = await db.from(table).select('*').order(orderBy, { ascending });
@@ -366,7 +373,14 @@ module.exports = function registerAdminRoutes(app) {
     }));
 
     app.post(`/api/admin/${resource}`, requireAdmin, h(async (req, res) => {
-      const { data, error } = await db.from(table).insert([pick(req.body || {})]).select().single();
+      let body = pick(req.body || {});
+      if (prepare) {
+        const p = await prepare(body, null);
+        if (p.error) return refuse(res, p.error);
+        body = p.body;
+      }
+      const { data, error } = await db.from(table).insert([body]).select().single();
+      if (clash(res, error)) return undefined;
       if (error) throw error;
       // No-op for resources the customer-facing routes don't cache (e.g. blogs,
       // support-tickets) — invalidate() on a prefix with no matching keys is safe.
@@ -376,10 +390,19 @@ module.exports = function registerAdminRoutes(app) {
     }));
 
     app.put(`/api/admin/${resource}/:id`, requireAdmin, h(async (req, res) => {
-      const body = pick(req.body || {});
+      let body = pick(req.body || {});
+      if (prepare) {
+        const { data: existing, error: readErr } = await db.from(table).select('*').eq('id', req.params.id).maybeSingle();
+        if (readErr) throw readErr;
+        if (!existing) return res.status(404).json({ success: false, message: 'Not found' });
+        const p = await prepare(body, existing);
+        if (p.error) return refuse(res, p.error);
+        body = p.body;
+      }
       if (table === 'blogs') body.updated_at = new Date().toISOString();
       if (table === 'support_tickets' && body.status === 'resolved') body.resolved_at = new Date().toISOString();
       const { data, error } = await db.from(table).update(body).eq('id', req.params.id).select().single();
+      if (clash(res, error)) return undefined;
       if (error) throw error;
       contentCache.invalidate(`${resource}:`);
       if (afterWrite) afterWrite(data);
@@ -400,8 +423,12 @@ module.exports = function registerAdminRoutes(app) {
   // Hindi is never overwritten. See src/autoTranslate.js.
   crud('blogs', 'blogs', {
     allowed: ['title', 'excerpt', 'excerpt_hi', 'meta_description', 'meta_description_hi', 'thumbnail', 'category_id',
-      'title_en', 'content_en', 'title_hi', 'content_hi', 'is_published'],
+      'title_en', 'content_en', 'title_hi', 'content_hi', 'is_published', 'slug'],
     afterWrite: (row) => queueBlogTranslation(db, row),
+    // The article's address, /blog/<slug> — generated, validated and locked once
+    // published by src/blogSlugs.js. See that file's header.
+    prepare: (body, existing) => require('./blogSlugs').prepareBlogSlug(db, body, existing),
+    uniqueMessage: 'That article address is already in use. Choose a different one.',
   });
   crud('banners', 'banners', {
     orderBy: 'sort_order', ascending: true,

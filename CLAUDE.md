@@ -5282,3 +5282,25 @@ for it. This was checked with an RFC 9309 parse.
 > Until "Block AI bots" and the managed robots.txt are switched off, the training half of the
 > policy does nothing. astrowani.com (WordPress, LiteSpeed, DNS-only) is not behind
 > Cloudflare today; if the new site goes behind Cloudflare at the move, check the same settings.
+
+### ET7. Admin blog posts get a clean address too (`src/blogSlugs.js`)
+
+The admin blog editor now has an "Article address" field (`/blog/<slug>`), and
+`crud('blogs')` takes a `prepare` hook that runs `prepareBlogSlug`:
+- **Empty field:** generated from the English title with the blog agent's own `slugify`.
+  An auto slug that collides gets `-2`, `-3`…
+- **Typed slug:** cleaned to letters/numbers/hyphens. One that is already in use is **refused
+  (409 SLUG_TAKEN)**, not silently renamed; one with no letters or numbers is a 400.
+- **A post without a slug gets one on its next save**, so old admin posts pick up clean
+  addresses as they're edited.
+- **A PUBLISHED post's slug is locked (409 SLUG_LOCKED).** There is no redirect table from an
+  old slug to a new one, so a change would 404 every existing link. The form shows the field
+  read-only. A draft can change freely, and an empty value never removes a slug.
+- `crud()` now also maps a Postgres unique-index clash (23505, e.g. two saves racing) to a
+  readable 409 when given `uniqueMessage`. Other resources pass neither option and behave
+  as before.
+
+Verified by `scripts/testBlogAdminSlugs.js` (17 checks over real HTTP, bare Express, admin
+token signed locally). It writes DRAFT rows only, and teardown is asserted. It was confirmed
+to fail with the lock removed. The admin form builds; it was not clicked through, because the
+dashboard login needs a real admin password.
