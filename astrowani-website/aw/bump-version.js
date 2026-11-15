@@ -41,6 +41,11 @@ for (const file of fs.readdirSync(SITE).filter((f) => f.endsWith('.html'))) {
     .replace(/style\.css\?v=\d+/g, `style.css?v=${V}`)
     .replace(/script\.js\?v=\d+/g, `script.js?v=${V}`)
     .replace(/aw\/aw\.css\?v=\d+/g, `aw/aw.css?v=${V}`)
+    // The two root data scripts. nginx serves every .js as immutable for a
+    // year, so an UNVERSIONED one is never refetched: a fix to astro-engine.js
+    // or a new astrologers-data.js roster would not reach a returning visitor.
+    // The (\?v=\d+)? also adds a version the first time.
+    .replace(/(["'])(astro-engine|astrologers-data)\.js(\?v=\d+)?(["'])/g, `$1$2.js?v=${V}$4`)
     // Any aw/*.js reference, whether it is a <script src> or an inline
     // `import ... from './aw/chat-page.js?v=N'` on the screen pages. Matching
     // only boot.js here is how the screens' own controllers got left behind on

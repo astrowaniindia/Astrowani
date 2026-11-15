@@ -162,6 +162,12 @@ for (const sp of require('./service-pages.js').PAGES) {
   PAGES[sp.file] = { title: sp.title, desc: sp.desc };
 }
 
+// The twelve calculator pages, same reasoning: their copy lives in
+// aw/calculator-pages-content.js.
+for (const cp of require('./calculator-pages-content.js').PAGES) {
+  PAGES[cp.file] = { title: cp.title, desc: cp.desc };
+}
+
 // ── The Hindi pages ─────────────────────────────────────────────────────────
 //
 // Every file under hi/ gets an entry mirroring its English one, so it is never

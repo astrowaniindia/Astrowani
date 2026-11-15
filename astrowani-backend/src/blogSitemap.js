@@ -61,6 +61,20 @@ const STATIC_PAGES = [
   ['panchang.html', '0.7', 'daily'],
   ['calculators.html', '0.7', 'monthly'],
   ['free-services.html', '0.7', 'weekly'],
+  // One page per instant calculator (astrowani-website/aw/calculator-pages.js).
+  // They used to be fragments of calculators.html, which Google treats as one URL.
+  ['love-calculator.html', '0.7', 'monthly'],
+  ['flames-calculator.html', '0.7', 'monthly'],
+  ['friendship-calculator.html', '0.7', 'monthly'],
+  ['name-compatibility-calculator.html', '0.7', 'monthly'],
+  ['numerology-calculator.html', '0.7', 'monthly'],
+  ['lo-shu-grid-calculator.html', '0.7', 'monthly'],
+  ['sun-sign-calculator.html', '0.7', 'monthly'],
+  ['moon-phase-calculator.html', '0.7', 'monthly'],
+  ['lucky-vehicle-number-calculator.html', '0.7', 'monthly'],
+  ['rising-sign-calculator.html', '0.7', 'monthly'],
+  ['rashi-calculator.html', '0.7', 'monthly'],
+  ['nakshatra-calculator.html', '0.7', 'monthly'],
   // The six service landing pages (astrowani-website/aw/service-pages.js).
   // Each one targets a supplied keyword that previously had no URL to land on,
   // because the mega menu pointed at hash fragments and Google strips those.

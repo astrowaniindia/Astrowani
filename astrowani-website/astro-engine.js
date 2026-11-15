@@ -361,8 +361,12 @@ function astroShubhMuhurat(sunrise, sunset) {
 // ---------- Ascendant / Rising sign — real spherical-trig formula (no planetary ephemeris needed) ----------
 function astroAscendant(date, timeStr, lat, lon, tzOffsetHours) {
   const [hh, mm] = (timeStr || '12:00').split(':').map(Number);
-  const localDate = new Date(date.getFullYear(), date.getMonth(), date.getDate(), hh || 0, mm || 0, 0);
-  const utcMs = localDate.getTime() - tzOffsetHours * 3600000;
+  // The birth time is a wall-clock time in `tzOffsetHours`, so build it with
+  // Date.UTC and THEN apply the offset. This used `new Date(y, m, d, hh, mm)`,
+  // which reads the time in the BROWSER's zone and is already UTC-adjusted —
+  // subtracting the offset again put every Indian visitor's chart 5.5 hours
+  // early (fixed 2026-11-16; it was only right for a browser set to UTC).
+  const utcMs = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate(), hh || 0, mm || 0, 0) - tzOffsetHours * 3600000;
   const utcDate = new Date(utcMs);
   const jd = astroJulianDay(utcDate);
   const T = astroCenturiesSinceJ2000(jd);
@@ -373,8 +377,12 @@ function astroAscendant(date, timeStr, lat, lon, tzOffsetHours) {
   const epsilon = (23.4393 - 0.0130 * T) * D2R;
   const ramc = lst * D2R;
   const latR = lat * D2R;
-  const y = -Math.cos(ramc);
-  const x = Math.sin(ramc) * Math.cos(epsilon) + Math.tan(latR) * Math.sin(epsilon);
+  // ASC = atan2(cos RAMC, -(sin RAMC cos ε + tan φ sin ε)). Both signs were
+  // flipped here, which is the same angle plus 180° — the DESCENDANT. Checked
+  // after the fix: at sunrise and sunset in Delhi the result sits within ~1° of
+  // the Sun and of the point opposite it, as it must.
+  const y = Math.cos(ramc);
+  const x = -(Math.sin(ramc) * Math.cos(epsilon) + Math.tan(latR) * Math.sin(epsilon));
   let asc = Math.atan2(y, x) * R2D;
   asc = ((asc % 360) + 360) % 360;
   const sidereal = astroSiderealLongitude(asc, date.getFullYear());

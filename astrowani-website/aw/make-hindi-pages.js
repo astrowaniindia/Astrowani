@@ -58,6 +58,19 @@ const PAGES = [
   'privacy-policy.html', 'terms-and-conditions.html', 'refund-cancellation.html',
   'safety-guidelines.html', 'child-safety.html', 'delete-account.html',
   'report-vulnerability.html', '404.html',
+  // The twelve calculator pages (aw/calculator-pages.js).
+  'love-calculator.html',
+  'flames-calculator.html',
+  'friendship-calculator.html',
+  'name-compatibility-calculator.html',
+  'numerology-calculator.html',
+  'lo-shu-grid-calculator.html',
+  'sun-sign-calculator.html',
+  'moon-phase-calculator.html',
+  'lucky-vehicle-number-calculator.html',
+  'rising-sign-calculator.html',
+  'rashi-calculator.html',
+  'nakshatra-calculator.html',
 ];
 
 /**
