@@ -148,7 +148,7 @@ function altLinks(enLoc, hiLoc) {
     .join('\n');
 }
 
-function buildSitemap(posts, hindi = hindiPages()) {
+function buildSitemap(posts, hindi = hindiPages(), profiles = []) {
   const entries = [];
   for (const [page, priority, changefreq] of STATIC_PAGES) {
     const enLoc = `${SITE_BASE}/${page}`;
@@ -192,6 +192,9 @@ function buildSitemap(posts, hindi = hindiPages()) {
     entries.push(urlEntry({ loc: enLoc, lastmod, priority: '0.7', changefreq: 'monthly', alternates: alts }));
     entries.push(urlEntry({ loc: hiLoc, lastmod, priority: '0.7', changefreq: 'monthly', alternates: alts }));
   }
+
+  // Astrologer profile pages (src/astrologerProfilePages.js). English only.
+  for (const p of profiles) entries.push(urlEntry({ loc: p.loc, priority: '0.6', changefreq: 'weekly' }));
 
   return `<?xml version="1.0" encoding="UTF-8"?>\n`
     + `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"`
@@ -241,7 +244,14 @@ module.exports = function registerBlogSitemap(app, supabase) {
       // An hour of caching. Crawlers fetch this far more often than it changes,
       // and the backend is a single Node process on one core (CLAUDE.md DN).
       res.set('Cache-Control', 'public, max-age=3600');
-      return res.status(200).send(buildSitemap(data || []));
+      // A failure here costs the profile entries, not the sitemap.
+      let profiles = [];
+      try {
+        profiles = await require('./astrologerProfilePages').listProfiles(supabase);
+      } catch (pErr) {
+        console.error('[blog-sitemap] astrologer profiles:', pErr.message);
+      }
+      return res.status(200).send(buildSitemap(data || [], undefined, profiles));
     } catch (err) {
       console.error('[blog-sitemap]', err.message);
       // Still answer with a VALID sitemap of the static pages rather than a 500.

@@ -2932,38 +2932,9 @@ function customerProfileComplete(row) {
   return !!(s(row.name) && s(row.gender) && s(row.marital_status) && s(row.dob) && s(row.place_of_birth));
 }
 
-// Whether an astrologer's core profile is complete: full name, valid email, gender,
-// experience, profile photo, at least one language, and at least one per-minute charge.
-function astrologerProfileComplete(row) {
-  if (!row) return false;
-  const s = (v) => (v == null ? '' : String(v)).trim();
-  const name = (s(row.first_name) + ' ' + s(row.last_name)).trim();
-  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s(row.email));
-  const hasPhoto = !!(s(row.profile_image) || s(row.profile_pic_url));
-  const langs = row.languages || row.language;
-  const hasLang = Array.isArray(langs) ? langs.length > 0 : !!s(langs);
-  const expOk = Number(row.experience) > 0;
-  const hasCharge =
-    Number(row.chat_charge_per_minute) > 0 ||
-    Number(row.call_charge_per_minute) > 0 ||
-    Number(row.video_charge_per_minute) > 0;
-  return !!(name && emailOk && s(row.gender) && expOk && hasPhoto && hasLang && hasCharge);
-}
-
-// An astrologer shows in the customer app only when admin-approved, not suspended,
-// AND profile-complete. New signups (approval_status='pending') and half-filled
-// profiles therefore stay hidden until both gates pass.
-function astrologerVisibleToCustomers(row) {
-  return (
-    row &&
-    row.approval_status === 'approved' &&
-    row.is_suspended !== true &&
-    // App Store / Play Store reviewer and other test accounts can use the astrologer
-    // app but must never be offered to real, paying customers.
-    row.hidden_from_customers !== true &&
-    astrologerProfileComplete(row)
-  );
-}
+// astrologerProfileComplete + astrologerVisibleToCustomers live in
+// src/astrologerVisibility.js (shared with the website profile pages).
+const { astrologerProfileComplete, astrologerVisibleToCustomers } = require('./src/astrologerVisibility');
 
 // Maps a customers row to the profile shape the app consumes.
 //
@@ -3417,6 +3388,8 @@ app.get('/api/categories', async (req, res) => {
 
 require('./src/blogPublic').register(app, supabase);
 require('./src/blogArchive').register(app, supabase);
+// Website astrologer profile pages, /astrologers/<slug> (via nginx).
+require('./src/astrologerProfilePages').register(app, supabase);
 
 // Blogs — admin-authored & published (table `blogs`), mapped to the shape that
 // BlogList.js / BlogScreen.js / Home.js already consume.

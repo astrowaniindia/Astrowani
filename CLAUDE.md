@@ -5219,3 +5219,34 @@ own `slugify` on 2026-11-16, applied directly in production.
 - Verified by `scripts/testBlogCleanUrls.js` (30 checks, read-only, live DB, bare Express).
   It was confirmed to fail on a removed `<base>` and a removed redirect.
   `testBlogAgent.js` is 286/286 after updating 3 assertions that checked for the old format.
+
+### ET5. Astrologer profile pages: /astrologers/<slug>
+
+One server-rendered page per customer-visible astrologer (`src/astrologerProfilePages.js`,
+route `/api/web/astrologer-page`, nginx regex `^/test-site/astrologers/<slug>`). It's built on
+`astrologers.html` as the shell, with a `<base href>` (the same trick as the blog, ET4).
+The website's listing cards link photo and name to it.
+
+- **Visibility is the app's own rule.** `astrologerProfileComplete` and
+  `astrologerVisibleToCustomers` were moved VERBATIM from `index.js` into
+  `src/astrologerVisibility.js`, which both now use. A pending, suspended, test/reviewer or
+  incomplete astrologer is a 404 with noindex, never a page.
+- **Privacy:** no email, phone, UPI, bank, earnings or admin notes (email is selected only
+  because the visibility rule checks it). **Reviews carry no customer name.** Bio and review
+  text go through `maskContacts`, the same as chat.
+- **Structured data is ProfilePage + Person, deliberately WITHOUT aggregateRating.** Google
+  doesn't show review stars for a Person, and marking a profile up as a Product to get them
+  would be markup abuse. The rating is shown on the page.
+- **All profiles are indexed and in the sitemap** (owner's decision, 2026-11-16), even though
+  the typical bio is ~100 characters and only 16 of 58 astrologers have written reviews.
+  Empty bios get a factual line built from the profile. If Search Console later flags thin or
+  duplicate content, the fix is noindexing profiles below a content threshold.
+- **Slug = name + first 6 id characters** (`astro-soni-30e6ae`). The id part keeps it unique
+  and lets a renamed astrologer's old address 301 to the new one. `astroProfileSlug()` in
+  `script.js` must equal `profileSlug()`, and the test checks this for every live name.
+- English only: bios and reviews are in whatever the person typed, so `/hi/` cards link out
+  of `/hi/`.
+- **Deploy order: nginx routes, then backend, then website** (same as ET4).
+- Verified by `scripts/testAstrologerProfiles.js` (18 checks over all 58 visible and 77
+  non-visible astrologers, read-only). It was confirmed to fail on a leaked email and on a
+  removed visibility filter. The site is at `?v=63`.

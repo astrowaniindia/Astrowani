@@ -12,6 +12,20 @@ function astroPageHref(href) {
   return hi.includes(match[1]) ? href : `../${href}`;
 }
 
+// The address of an astrologer's profile page, /astrologers/<slug>. MUST match
+// profileSlug() in astrowani-backend/src/astrologerProfilePages.js, which serves
+// it — scripts/testAstrologerProfiles.js checks the two against every live name.
+// On a /hi/ page the link climbs out of /hi/: profiles are English-only.
+function astroProfileSlug(a) {
+  const name = String(a.name || '')
+    .normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/, '');
+  return `${name || 'astrologer'}-${String(a.id).slice(0, 6).toLowerCase()}`;
+}
+function astroProfileHref(a) {
+  return `${document.documentElement.lang === 'hi' ? '../' : ''}astrologers/${astroProfileSlug(a)}`;
+}
+
 // ---------- shared astrologer card renderer (real data, used on every page) ----------
 const ASTROWANI_APP_LINK = 'https://play.google.com/store/apps/details?id=com.astrowanicustomer&hl=en_IN';
 const ASTROWANI_STAR_SVG = '<svg width="15" height="15" viewBox="0 0 24 24" fill="var(--gold-deep)"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.7 7-6.3-3.9-6.3 3.9 1.7-7L2 9.2l7.1-.6z"/></svg>';
@@ -508,8 +522,8 @@ function astroCardHtml(a, idx) {
     <div class="astro-card tilt-card" data-cats="${astroEsc(a.cats.join('|'))}" data-astro-id="${astroEsc(a.id)}">
       ${astroBadgeChip(a)}
       <div class="astro-status" data-aw-status></div>
-      <div class="astro-avatar" style="background:${ring};"><img src="${astroImgSrc(a)}" alt="${astroEsc(a.name)}" loading="lazy" style="width:100%; height:100%; border-radius:50%; object-fit:cover;"></div>
-      <div class="astro-name">${astroEsc(a.name)}</div>
+      <a href="${astroEsc(astroProfileHref(a))}" class="astro-avatar" aria-label="${astroEsc(a.name)} — profile" style="display:block; background:${ring};"><img src="${astroImgSrc(a)}" alt="${astroEsc(a.name)}" loading="lazy" style="width:100%; height:100%; border-radius:50%; object-fit:cover;"></a>
+      <a href="${astroEsc(astroProfileHref(a))}" class="astro-name" style="display:block; text-decoration:none;">${astroEsc(a.name)}</a>
       <div class="astro-meta">${catLabel} &middot; ${astroEsc(a.exp)} yrs exp</div>
       <div class="astro-rating-row">${ratingHtml}</div>
       <div style="font-size:12px; color:var(--ink-soft);">${astroEsc(a.lang)}</div>
@@ -538,8 +552,8 @@ function astroCardHtmlSingle(a, idx, mode) {
     <div class="astro-card tilt-card" data-cats="${astroEsc(a.cats.join('|'))}" data-enabled="${enabled ? '1' : '0'}" data-astro-id="${astroEsc(a.id)}">
       ${astroBadgeChip(a)}
       <div class="astro-status" data-aw-status></div>
-      <div class="astro-avatar" style="background:${ring};"><img src="${astroImgSrc(a)}" alt="${astroEsc(a.name)}" loading="lazy" style="width:100%; height:100%; border-radius:50%; object-fit:cover;"></div>
-      <div class="astro-name">${astroEsc(a.name)}</div>
+      <a href="${astroEsc(astroProfileHref(a))}" class="astro-avatar" aria-label="${astroEsc(a.name)} — profile" style="display:block; background:${ring};"><img src="${astroImgSrc(a)}" alt="${astroEsc(a.name)}" loading="lazy" style="width:100%; height:100%; border-radius:50%; object-fit:cover;"></a>
+      <a href="${astroEsc(astroProfileHref(a))}" class="astro-name" style="display:block; text-decoration:none;">${astroEsc(a.name)}</a>
       <div class="astro-meta">${catLabel} &middot; ${astroEsc(a.exp)} yrs exp</div>
       <div class="astro-rating-row">${ratingHtml}</div>
       <div style="font-size:12px; color:var(--ink-soft);">${astroEsc(a.lang)}</div>

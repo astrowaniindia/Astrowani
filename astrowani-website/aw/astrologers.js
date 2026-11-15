@@ -1,5 +1,5 @@
-import { api } from './api.js?v=62';
-import { getSocket } from './socket.js?v=62';
+import { api } from './api.js?v=63';
+import { getSocket } from './socket.js?v=63';
 
 /**
  * The live astrologer roster.

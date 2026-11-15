@@ -136,7 +136,8 @@ function relativeRefsResolve(html, label) {
 
     // ── the nginx patterns ──
     const conf = fs.readFileSync(path.resolve(__dirname, '../../vps-deployment/nginx/blog-locations.conf'), 'utf8');
-    const res = [...conf.matchAll(/location ~ (\^\S+\$) \{/g)].map((m) => new RegExp(m[1]));
+    // Only the blog routes — the file also carries the astrologer profile route.
+    const res = [...conf.matchAll(/location ~ (\^\S+\$) \{/g)].map((m) => m[1]).filter((p) => p.includes('blog')).map((p) => new RegExp(p));
     ok(res.length === 2, 'two clean-route regex locations in blog-locations.conf');
     const hits = (p) => res.some((r) => r.test(p));
     ok(hits(`/test-site/blog/${a.slug}`) && hits(`/test-site/hi/blog/${a.slug}`) && hits(`/test-site/blog/${a.slug}/`), 'nginx patterns match the clean paths');
