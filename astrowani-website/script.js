@@ -444,7 +444,8 @@ function injectMobileNav() {
 
   // Rotating back to a wide screen must not leave a drawer covering the page.
   window.addEventListener('resize', () => {
-    if (window.innerWidth > 900 && panel.classList.contains('is-open')) close();
+    // Same width as the phone-menu switch in style.css (MOBILE NAV block).
+    if (window.innerWidth > 960 && panel.classList.contains('is-open')) close();
   });
 }
 

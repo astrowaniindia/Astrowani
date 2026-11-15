@@ -193,12 +193,19 @@ a.ch-cta {
 
    The desktop bar is six dropdowns plus Blog, Wani Shop, the theme/language
    buttons and the account area. That cannot shrink gracefully: on a phone it
-   simply overflowed off the right edge. Below 900px the bar keeps only the
+   simply overflowed off the right edge. Below 960px the bar keeps only the
    Astrowani mark and a hamburger, and the full menu opens as a panel.
+
+   960, not 900 (changed 2026-11-16): the full bar needs ~1160px at its normal
+   spacing, so between 900 and ~1160 the Login/Sign-up end was cut off. The two
+   steps below tighten it to fit down to 961px; under that, with a desktop
+   scrollbar taking ~15px, no honest amount of squeezing fits, so the drawer
+   takes over. script.js closes the drawer above this same width — keep the two
+   numbers equal.
    ============================================================ */
 .m-nav-toggle { display: none; }
 
-@media (max-width: 900px) {
+@media (max-width: 960px) {
   /* Hide the desktop menu rows and the account area on BOTH nav variants —
      the floating homepage pill and the ordinary sticky nav. */
   /* .ch-nav-auth is the homepage pill's Login/Sign-up group. It carried an inline
@@ -387,6 +394,28 @@ section.block, .block { max-width: 1280px; margin: 0 auto; padding: 0 24px; }
 #site-nav-floating .nav-inner > a:first-child { flex: 0 0 auto; }
 #site-nav-floating .logo-mark { width: 36px; height: 36px; border-radius: 50%; }
 @media (prefers-reduced-motion: reduce) { #site-nav-floating { transition: none; } }
+/* Desktop bar between 961 and 1199px — see the MOBILE NAV block for why. These
+   must stay AFTER the base #site-nav / .nav-links rules above: same specificity,
+   so whichever comes later in the file wins. */
+@media (min-width: 960.02px) and (max-width: 1199px) {
+  #site-nav .nav-inner, #site-nav-floating .nav-inner { gap: 12px; padding-left: 16px; padding-right: 16px; }
+  .nav-links { gap: 10px; font-size: 12.5px; }
+  .nav-right { gap: 8px; }
+  /* The round mark stays; the 'Astrowani' wordmark beside it is the cheapest
+     ~110px in the bar. */
+  #site-nav .nav-inner > a:first-child > span,
+  #site-nav-floating .nav-inner > a:first-child > span { display: none !important; }
+  .ch-nav-pill { gap: 10px; padding-left: 14px; padding-right: 14px; }
+  .ch-nav-links { gap: 10px; font-size: 12.5px; }
+  .ch-nav-brand > span { display: none; }
+  /* !important: both Sign-up buttons carry inline padding. */
+  .nav-right .btn-gold, .ch-nav-auth .btn-gold { padding: 9px 16px !important; font-size: 13px !important; }
+}
+@media (min-width: 960.02px) and (max-width: 1040px) {
+  .nav-links, .ch-nav-links { gap: 7px; font-size: 12px; }
+  #site-nav .nav-inner, #site-nav-floating .nav-inner { gap: 10px; padding-left: 12px; padding-right: 12px; }
+  .ch-nav-pill { gap: 8px; padding-left: 12px; padding-right: 12px; }
+}
 
 /* nav underline */
 .nav-link { position: relative; padding-bottom: 3px; }

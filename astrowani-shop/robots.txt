@@ -39,7 +39,41 @@
 # astrowani-website/robots.txt served from that host's root, and the Sitemap
 # line below points at the production domain.
 
+# AI CRAWLERS — ALL ALLOWED, search AND training (owner's decision, 2026-11-16).
+#
+# They are named in the SAME group as `*`, on purpose. A crawler that finds a
+# group naming it IGNORES the `*` group completely, so a separate
+# "User-agent: GPTBot / Allow: /" block would have silently dropped the
+# Disallow lines below for that bot. One group = one policy for everyone.
+#
+#   AI search / answers (how the site gets quoted and linked in AI answers):
+#     OAI-SearchBot, ChatGPT-User, PerplexityBot, Perplexity-User,
+#     Claude-SearchBot, Claude-User
+#   AI training (how the brand ends up in what models know):
+#     GPTBot, ClaudeBot, Google-Extended, Applebot-Extended, CCBot,
+#     meta-externalagent, Amazonbot, Bytespider
+#
+# CLOUDFLARE OVERRIDES THIS ON shop.astrowani.com. Measured 2026-11-16: its
+# "Block AI bots" setting answers GPTBot, ClaudeBot and CCBot with 403, and its
+# managed robots.txt prepends "Content-Signal: ai-train=no" plus a
+# "Disallow: /" group for each training bot. Until those two switches are off
+# in the Cloudflare dashboard, the training half of this policy does nothing.
 User-agent: *
+User-agent: OAI-SearchBot
+User-agent: ChatGPT-User
+User-agent: PerplexityBot
+User-agent: Perplexity-User
+User-agent: Claude-SearchBot
+User-agent: Claude-User
+User-agent: GPTBot
+User-agent: ClaudeBot
+User-agent: Google-Extended
+User-agent: Applebot-Extended
+User-agent: CCBot
+User-agent: meta-externalagent
+User-agent: Amazonbot
+User-agent: Bytespider
+Content-Signal: search=yes, ai-input=yes, ai-train=yes
 Allow: /
 
 # Live consultation screens. These are per-session views of a chat or call in

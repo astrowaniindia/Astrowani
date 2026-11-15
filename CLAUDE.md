@@ -5250,3 +5250,35 @@ The website's listing cards link photo and name to it.
 - Verified by `scripts/testAstrologerProfiles.js` (18 checks over all 58 visible and 77
   non-visible astrologers, read-only). It was confirmed to fail on a leaked email and on a
   removed visibility filter. The site is at `?v=63`.
+
+### ET6. The nav cut off "Sign up" between 900 and ~1160px; AI crawler policy
+
+**Nav.** The full desktop bar needs ~1160px at normal spacing, so between the 900px phone-menu
+switch and that width the Login/Sign-up end was clipped. (The body has `overflow-x: hidden`,
+so it was hidden rather than scrollable.) Fixed in `style.css`:
+- The phone-menu switch moved **900 → 960px**. `script.js` closes the drawer above the same
+  width; keep the two numbers equal.
+- Two tightening steps between 960 and 1199px: smaller gaps and font, a slimmer Sign-up
+  button, and the round logo without its "Astrowani" wordmark.
+- **These blocks must sit AFTER the base `#site-nav` / `.nav-links` rules.** Same
+  specificity, so whichever comes later in the file wins. The first version sat above them,
+  and only its `!important` lines applied. An injected-CSS test passed because injected CSS is
+  appended at the end, which is exactly the trap.
+- **`min-width: 960.02px`, not `961px`.** A scaled or zoomed viewport can be fractionally
+  between 960 and 961, where neither query matches.
+- Verified: on `marriage.html`, `index.html` and both Hindi versions, the last button fits
+  inside the bar at every tested width from 1280 to 961, and the drawer opens and closes
+  at 940. Site is at `?v=64`.
+
+**AI crawlers.** Owner's decision, 2026-11-16: **allow all, search AND training.** Both
+`robots.txt` files name the AI bots in the SAME group as `*`. A bot named in its own group
+ignores `*` entirely, so a separate block would have dropped the chat/call/wallet Disallows
+for it. This was checked with an RFC 9309 parse.
+
+> **CLOUDFLARE OVERRIDES THIS on shop.astrowani.com, and it is a dashboard switch, not
+> code.** Measured 2026-11-16: GPTBot, ClaudeBot and CCBot get **403**, while
+> OAI-SearchBot, PerplexityBot and browsers get 200. Cloudflare's managed robots.txt also
+> prepends `Content-Signal: ai-train=no` and a `Disallow: /` group per training bot.
+> Until "Block AI bots" and the managed robots.txt are switched off, the training half of the
+> policy does nothing. astrowani.com (WordPress, LiteSpeed, DNS-only) is not behind
+> Cloudflare today; if the new site goes behind Cloudflare at the move, check the same settings.
