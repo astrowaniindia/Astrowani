@@ -176,6 +176,26 @@ async function buildStatus() {
       switchedOn: poolRows.length,
       online: poolOnline.length,
       freeNow: poolOnline.filter((a) => statusOf(a) === 'free').length,
+      // Every astrologer who has the free call switched on, by name, online ones first,
+      // so the admin can see exactly WHO a customer will find on the free-call screen.
+      astrologers: poolRows
+        .map((a) => {
+          const visible = a.hidden_from_customers !== true;
+          // statusOf already answers 'offline' for someone switched off and idle, and
+          // still reports a call in progress even if their toggle says offline.
+          const st = statusOf(a);
+          return {
+            id: a.id,
+            name: nameOf(a),
+            image: avatarUrl(a.profile_pic_url) || '',
+            status: st,
+            visible,
+          };
+        })
+        .sort((x, y) => {
+          const rank = (r) => (r.status === 'free' ? 0 : r.status === 'offline' ? 2 : 1);
+          return rank(x) - rank(y) || x.name.localeCompare(y.name);
+        }),
     },
     talking,
     live,
