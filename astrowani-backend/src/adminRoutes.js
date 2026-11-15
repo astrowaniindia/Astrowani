@@ -424,7 +424,16 @@ module.exports = function registerAdminRoutes(app) {
   crud('blogs', 'blogs', {
     allowed: ['title', 'excerpt', 'excerpt_hi', 'meta_description', 'meta_description_hi', 'thumbnail', 'category_id',
       'title_en', 'content_en', 'title_hi', 'content_hi', 'is_published', 'slug'],
-    afterWrite: (row) => queueBlogTranslation(db, row),
+    afterWrite: (row) => {
+      queueBlogTranslation(db, row);
+      // A published post with an address: tell Bing/Copilot now (src/indexNow.js).
+      // Fire-and-forget; skips itself outside production.
+      if (row && row.is_published && row.slug) {
+        const { postUrl, SITE_BASE } = require('./blogAgent/seo');
+        const hi = row.title_hi && row.content_hi ? `${SITE_BASE}/hi/blog/${encodeURIComponent(row.slug)}` : null;
+        require('./indexNow').notify([postUrl(row.slug), hi, `${SITE_BASE}/blog.html`].filter(Boolean));
+      }
+    },
     // The article's address, /blog/<slug> — generated, validated and locked once
     // published by src/blogSlugs.js. See that file's header.
     prepare: (body, existing) => require('./blogSlugs').prepareBlogSlug(db, body, existing),

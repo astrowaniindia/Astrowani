@@ -18,6 +18,7 @@ const images = require('./images');
 const store = require('./publish');
 const seo = require('./seo');
 const kw = require('./keywords');
+const indexNow = require('../indexNow');
 
 function makeClient() {
   const url = process.env.SUPABASE_URL;
@@ -237,6 +238,15 @@ async function runOnce({ db, cfg, log, dryRun = false, forcedTopic = null, state
 
     log(`PUBLISHED ${cfg.publish ? '(live)' : '(draft)'}: ${assembled.titleEn}`);
     log(`  ${seo.postUrl(slug)}`);
+
+    // Tell Bing/Copilot now rather than waiting for a crawl (src/indexNow.js).
+    // Awaited because this process exits when the run ends; submit() never
+    // throws and gives up after 10s, so it cannot fail or stall a publish.
+    if (cfg.publish) {
+      const hiUrl = assembled.contentHi ? seo.postUrl(slug).replace(`${seo.SITE_BASE}/blog/`, `${seo.SITE_BASE}/hi/blog/`) : null;
+      const pinged = await indexNow.submit([seo.postUrl(slug), hiUrl, `${seo.SITE_BASE}/blog.html`].filter(Boolean));
+      log(`  indexnow: ${pinged.skipped || pinged.status || pinged.error}`);
+    }
 
     return {
       status: 'published', topic, slug, blogId: inserted.id,

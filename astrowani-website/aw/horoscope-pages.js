@@ -65,8 +65,8 @@ function body(s) {
       <div class="horoscope-sign">${s.symbol}</div>
       <div style="flex:1 1 260px; min-width:220px;">
         <div class="serif" style="font-size:24px; color:var(--cream); margin-bottom:4px;">${en(s.crumb)}</div>
-        <div style="font-size:13px; color:var(--gold); margin-bottom:8px;" id="sign-date"></div>
-        <div style="font-size:14px; line-height:1.75; color:var(--cream-muted);" id="sign-sentence"></div>
+        <div style="font-size:13px; color:var(--gold); margin-bottom:8px;" id="sign-date"><!-- BAKED:START --><!-- BAKED:END --></div>
+        <div style="font-size:14px; line-height:1.75; color:var(--cream-muted);" id="sign-sentence"><!-- BAKED:START --><!-- BAKED:END --></div>
       </div>
       <div class="horoscope-meters">
         ${['love', 'career', 'money', 'health'].map(meter).join('\n        ')}

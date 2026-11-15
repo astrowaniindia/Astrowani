@@ -85,6 +85,11 @@ jobs:
             --exclude 'aw/sync-chat-image-geometry.js' \
             --exclude 'aw/test-analytics-scrub.mjs' \
             astrowani-website/. /var/www/astrowani/shop/test-site/
+          # Today's horoscope reading into the 24 sign pages (aw/bake-horoscopes.js).
+          # The repo holds empty BAKED slots, so without this a deploy would serve
+          # pages with no reading in the HTML until the next daily run. A failed
+          # bake must not fail the deploy: the pages still work, the script fills them.
+          node astrowani-website/aw/bake-horoscopes.js --root /var/www/astrowani/shop/test-site || echo "horoscope bake failed (pages still render by script)"
           chown -R www-data:www-data /var/www/astrowani/shop/test-site
           echo "test-site deployed: $(find /var/www/astrowani/shop/test-site -type f | wc -l) files"
           REMOTE_SCRIPT
@@ -101,3 +106,19 @@ jobs:
             attempt=$((attempt + 1))
             sleep 20
           done
+
+      # ---- IndexNow: tell Bing/Copilot which website pages this push changed ----
+      # Runs on the runner, after the files are live. Only indexable pages, and a
+      # push that only bumped ?v= asset versions announces nothing — see
+      # vps-deployment/scripts/indexnow-submit.js. Pushes only (a manual run has no
+      # "before" commit), and it can never fail the deploy.
+      - name: Checkout (for the IndexNow diff)
+        if: github.event_name == 'push'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          filter: blob:none
+      - name: Notify IndexNow of changed website pages
+        if: github.event_name == 'push'
+        continue-on-error: true
+        run: node vps-deployment/scripts/indexnow-submit.js "${{ github.event.before }}" "${{ github.sha }}"

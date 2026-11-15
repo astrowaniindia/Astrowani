@@ -5304,3 +5304,47 @@ Verified by `scripts/testBlogAdminSlugs.js` (17 checks over real HTTP, bare Expr
 token signed locally). It writes DRAFT rows only, and teardown is asserted. It was confirmed
 to fail with the lock removed. The admin form builds; it was not clicked through, because the
 dashboard login needs a real admin password.
+
+### ET8. IndexNow, daily-baked horoscopes, non-blocking fonts, service-pages check
+
+**IndexNow** (`src/indexNow.js`, key file `astrowani-website/<KEY>.txt`; the key is public by
+design). It notifies Bing/Copilot, Yandex and others at three moments:
+- the blog agent after a live publish (awaited, because that process exits);
+- an admin save of a published post with a slug (fire-and-forget);
+- `deploy-shop.yml` after each website deploy, via `vps-deployment/scripts/indexnow-submit.js`.
+  That sends changed *indexable* pages only, skipping noindex pages and `blog-post.html`.
+
+Two notes on the deploy notifier:
+- **A push that only bumps `?v=` announces nothing.** It uses `git diff -I`. Gotchas, both
+  measured: `-I` is NOT applied to `--name-only`/`--stat` (names are read from the patch
+  headers instead), and the regex is POSIX basic, where `+` is a literal.
+- It only sends from production: `ENABLE_SESSION_MANAGER=true` (NODE_ENV is not set there),
+  or `INDEXNOW_FORCE=1` on the runner. `INDEXNOW_DISABLED=1` turns it off.
+
+`scripts/testIndexNow.js`: 12 checks, offline, HTTP stubbed.
+
+**Daily horoscope bake** (`aw/bake-horoscopes.js`). The 24 sign pages carry empty
+`<!-- BAKED:START/END -->` slots in the repo.
+- The bake fills today's (IST) reading, date and bars **into the DEPLOYED copy**
+  (`--root /var/www/astrowani/shop/test-site`), never the repo, so git doesn't churn.
+- It runs after every website deploy (`deploy-shop.yml`) and at 00:01 IST
+  (`daily-horoscope.yml`, which then sends the 24 URLs to IndexNow).
+- `make-hindi-pages.js` empties BAKED blocks before building, so baked English can't leak into
+  `/hi/`; the bake writes Hindi there itself.
+- Verified: a second bake is a no-op, and the browser's re-render produces byte-identical
+  text in both languages.
+
+**Homepage speed.**
+- The Google Fonts stylesheet now loads with `media="print" onload` plus `<noscript>` on all
+  108 pages. The URL already had `display=swap`, so text paints at once in a fallback font.
+- The hero zodiac wheel has `fetchpriority="high"`.
+- The remaining render-blocking files are the site's own `style.css` and `aw.css`.
+- **Not measured after the change:** Lighthouse can't run on this machine. Re-run the
+  `lighthouse.yml` workflow after deploying.
+- **The larger part of the 3.9s is server response time** (TTFB 640–1630ms, the
+  Cloudflare→Malaysia origin leg). HTML isn't cached at Cloudflare; a Cache Rule for
+  `shop.astrowani.com/test-site/*.html` (short edge TTL) is an owner dashboard change.
+
+**`service-pages.js --check` no longer says "would write 7 pages" forever.** It now writes
+each page's own `<title>`, and compares ignoring the SEO block, line endings and blank lines.
+It still catches a real edit (checked).

@@ -254,7 +254,10 @@ const translated = new Set();
 for (const page of PAGES) {
   const src = path.join(ROOT, page);
   if (!fs.existsSync(src)) { console.log(`  (no ${page})`); continue; }
-  const html = fs.readFileSync(src, 'utf8');
+  // BAKED blocks (aw/bake-horoscopes.js) hold today's generated reading. They are
+  // emptied here so a baked ENGLISH sentence is never copied into a Hindi page or
+  // counted as untranslated; the bake step fills the Hindi pages in Hindi itself.
+  const html = fs.readFileSync(src, 'utf8').replace(/(<!-- BAKED:START -->)[\s\S]*?(<!-- BAKED:END -->)/g, '$1$2');
   const strings = collect(html);
   const missing = strings.filter((s) => !dict[s]);
   const coverage = strings.length ? (strings.length - missing.length) / strings.length : 1;
