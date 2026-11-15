@@ -302,9 +302,13 @@ function linksForCategory(category, count = 4, seed = '') {
   return out;
 }
 
-/** The canonical public URL of a post, by slug. */
+/**
+ * The canonical public URL of a post, by slug: /blog/<slug> since 2026-11-16.
+ * The old blog-post.html?slug= form 301s here (src/blogPublic.js), so links
+ * already written into published articles keep working.
+ */
 function postUrl(slug) {
-  return `${SITE_BASE}/blog-post.html?slug=${encodeURIComponent(slug)}`;
+  return `${SITE_BASE}/blog/${encodeURIComponent(slug)}`;
 }
 
 /**

@@ -97,8 +97,10 @@ async function fetchPage(page) {
  * forever, so no existing link anywhere can break.
  */
 function href(post) {
+  // /blog/<slug> since 2026-11-16 — relative, so it resolves under / or /hi/
+  // alike (and under the article page's <base>, which points at the same place).
   return post.slug
-    ? `blog-post.html?slug=${encodeURIComponent(post.slug)}`
+    ? `blog/${encodeURIComponent(post.slug)}`
     : `blog-post.html?id=${encodeURIComponent(post.id)}`;
 }
 
@@ -316,8 +318,11 @@ function initBlogPost() {
       // reachable at ?slug=… and ?id=…, and a crawler that finds both treats them
       // as two pages with identical content — which splits whatever ranking the
       // article earns between them. The canonical names one winner.
+      // Since 2026-11-16 that winner is /blog/<slug> (the server-rendered route
+      // 301s every older form there). This client branch only runs where the
+      // nginx route is absent, e.g. local dev — it must still name the same URL.
       const canonical = post.slug
-        ? `${location.origin}${location.pathname}?slug=${encodeURIComponent(post.slug)}`
+        ? new URL(`blog/${encodeURIComponent(post.slug)}`, location.href).href
         : `${location.origin}${location.pathname}?id=${encodeURIComponent(post.id)}`;
       setMeta('link[rel="canonical"]', { rel: 'canonical', href: canonical });
 

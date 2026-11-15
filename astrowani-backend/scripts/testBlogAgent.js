@@ -515,7 +515,7 @@ ok('  wrapped in .aw-faq-list', /<div class="aw-faq-list">/.test(assembled.conte
 ok('  answers are present in the HTML, not loaded on click',
   assembled.contentEn.includes('It usually delays rather than denies'));
 ok('related posts are linked by slug',
-  assembled.contentEn.includes('blog-post.html?slug=kundali-milan'), 'no related link');
+  assembled.contentEn.includes('/blog/kundali-milan'), 'no related link');
 ok('the CTA is appended', keywords.CTA_EN.some((c) => assembled.contentEn.includes(c.heading)),
   'no known CTA heading found');
 // THE FAQ MUST BE LAST — the owner's requirement, and it previously sat between
@@ -777,7 +777,7 @@ ok('the sitemap declares the XML prolog and namespace',
   sm.startsWith('<?xml version="1.0" encoding="UTF-8"?>') && sm.includes('sitemaps.org/schemas/sitemap/0.9'));
 const smLocs = [...sm.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
 ok('every <loc> is absolute', smLocs.every((l) => /^https?:\/\//.test(l)), smLocs.find((l) => !/^https?:\/\//.test(l)));
-ok('the slugged post is listed', smLocs.some((l) => l.includes('slug=mangal-dosh-in-the-kundali')));
+ok('the slugged post is listed', smLocs.some((l) => l.includes('/blog/mangal-dosh-in-the-kundali')));
 // A post with no slug has only a ?id=<uuid> URL. Submitting that invites Google
 // to index an address that changes the moment the row gets a slug — a duplicate
 // and a redirect to maintain later.
@@ -791,7 +791,7 @@ eq('<url> and </url> are balanced',
 // matters is that no raw metacharacter survives and the document still parses.
 ok('a hostile slug cannot break out of <loc>', (() => {
   const x = buildSitemap([{ slug: 'a&b<c>', created_at: '2026-10-13T00:00:00Z' }]);
-  const loc = /<loc>([^<]*blog-post[^<]*)<\/loc>/.exec(x);
+  const loc = /<loc>([^<]*\/blog\/[^<]*)<\/loc>/.exec(x);
   if (!loc) return false;
   const noRawMeta = !/[<&]/.test(loc[1]);
   const tagsBalanced = (x.match(/<loc>/g) || []).length === (x.match(/<\/loc>/g) || []).length;

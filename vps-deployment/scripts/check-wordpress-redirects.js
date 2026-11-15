@@ -66,6 +66,8 @@ function resolve(rules, uri) {
 /** Does a same-site target exist as a file in the new site? */
 function targetExists(target) {
   if (/^https?:\/\//.test(target)) return true; // cross-site: checked in --live
+  // A clean article address is rendered by the backend, not a file; --live checks it.
+  if (/^\/(hi\/)?blog\/[a-z0-9-]+$/.test(target)) return true;
   const p = target.split('?')[0].split('#')[0];
   if (p === '/') return fs.existsSync(path.join(SITE_DIR, 'index.html'));
   return fs.existsSync(path.join(SITE_DIR, p.replace(/^\//, '')));

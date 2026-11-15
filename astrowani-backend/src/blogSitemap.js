@@ -187,7 +187,7 @@ function buildSitemap(posts, hindi = hindiPages()) {
       entries.push(urlEntry({ loc: enLoc, lastmod, priority: '0.7', changefreq: 'monthly' }));
       continue;
     }
-    const hiLoc = `${SITE_BASE}/hi/blog-post.html?slug=${encodeURIComponent(p.slug)}`;
+    const hiLoc = `${SITE_BASE}/hi/blog/${encodeURIComponent(p.slug)}`;
     const alts = altLinks(enLoc, hiLoc);
     entries.push(urlEntry({ loc: enLoc, lastmod, priority: '0.7', changefreq: 'monthly', alternates: alts }));
     entries.push(urlEntry({ loc: hiLoc, lastmod, priority: '0.7', changefreq: 'monthly', alternates: alts }));

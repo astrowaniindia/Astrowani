@@ -65,9 +65,19 @@ function description(post, hi) {
   return plain(hi ? post.hindi.excerpt || post.hindi.content : post.excerpt || post.english.content).slice(0, 160);
 }
 
+/**
+ * THE canonical address of an article: /blog/<slug>, and /hi/blog/<slug> for
+ * the Hindi version (added 2026-11-16). nginx maps those paths to this file's
+ * article-page route with route=clean. The older blog-post.html?slug= and ?id=
+ * forms still resolve and 301 here, so no existing link breaks — that is what
+ * the redirect in register() is for.
+ *
+ * A post with no slug has no clean address and keeps ?id=. Every published
+ * post has one today; the fallback is for a row saved from the admin without.
+ */
 function articleUrl(post, base, hi = false) {
-  const key = post.slug ? `slug=${encodeURIComponent(post.slug)}` : `id=${encodeURIComponent(post._id)}`;
-  return `${base}/${hi ? 'hi/' : ''}blog-post.html?${key}`;
+  if (post.slug) return `${base}/${hi ? 'hi/' : ''}blog/${encodeURIComponent(post.slug)}`;
+  return `${base}/${hi ? 'hi/' : ''}blog-post.html?id=${encodeURIComponent(post._id)}`;
 }
 
 /**
@@ -121,8 +131,15 @@ function renderArticle(shell, post, { base = SITE_BASE, hi = false, status = 200
     tags.push(`<script type="application/ld+json">${JSON.stringify(graph).replace(/</g, '\\u003c')}</script>`);
   } else if (status === 404) tags.push('<meta name="robots" content="noindex, follow">');
 
+  // <base> FIRST in <head>: the shell is blog-post.html, whose stylesheets,
+  // scripts and links are all relative to the site root (or to /hi/). Served at
+  // /blog/<slug> they would resolve one folder too deep and the page would load
+  // unstyled. The base points them back where they were written for — which is
+  // also what script.js's /hi/ path fixing (`../assets/...`) assumes.
+  const baseTag = `<base href="${escape(`${base}/${hi ? 'hi/' : ''}`)}">`;
   // Remove all conflicting template metadata, including legacy duplicates outside SEO:START.
-  let html = shell.replace(/<head>([\s\S]*?)<\/head>/i, (_, head) => `<head>${head
+  let html = shell.replace(/<head>([\s\S]*?)<\/head>/i, (_, head) => `<head>\n${baseTag}${head
+    .replace(/<base\b[^>]*>\s*/gi, '')
     .replace(/<title[^>]*>[\s\S]*?<\/title>/gi, () => `<title>${escape(title)} — Astrowani Blog</title>`)
     .replace(/<meta\b[^>]*(?:name="(?:description|robots|twitter:[^"]+)"|property="og:[^"]+")[^>]*>\s*/gi, '')
     .replace(/<link\b[^>]*(?:rel="canonical"|hreflang="[^"]+")[^>]*>\s*/gi, '')
@@ -137,7 +154,10 @@ ${tags.join('\n')}</head>`);
       ${post.thumbnail ? `<img class="blog-hero-image" src="${escape(image)}" alt="">` : ''}
       <div class="blog-meta">${escape(hi ? 'Astrowani' : 'By Astrowani')}<span class="dot-sep">·</span><time datetime="${escape(post.createdAt)}">${escape(fmtDate(post.createdAt, hi))}</time>${post.updatedAt && post.updatedAt !== post.createdAt ? `<span class="dot-sep">·</span>${escape(hi ? 'अद्यतन' : 'Updated')} <time datetime="${escape(post.updatedAt)}">${escape(fmtDate(post.updatedAt, hi))}</time>` : ''}</div>
       <h1 class="serif blog-article-title">${escape(title)}</h1>
-      <div class="legal-content" style="max-width:none;padding:0">${hi ? post.hindi.content : post.english.content}</div>
+      <div class="legal-content" style="max-width:none;padding:0">${(hi ? post.hindi.content : post.english.content)
+        // With a <base> tag a bare "#section" link resolves against the base —
+        // the site root — and would leave the article. Anchor it to this page.
+        .replace(/href="#/g, () => `href="${escape(url)}#`)}</div>
       <div id="blog-related-root" data-post-id="${escape(post._id)}"></div>`
     : `<h1>${escape(title)}</h1><p>${status === 503 ? 'Please try again shortly.' : 'This article may have been removed or the link is incorrect.'}</p><a href="${back}">Back to all articles</a>`;
   return html.replace(/<div id="blog-post-root"[^>]*>[\s\S]*?<\/div>/, () => `<div id="blog-post-root" class="blog-article-wrap" data-server-rendered="true">${body}</div>`);
@@ -162,6 +182,14 @@ function register(app, db, { siteBase = SITE_BASE, websiteRoot = path.resolve(__
       shell = fs.readFileSync(path.join(websiteRoot, hi ? 'hi/blog-post.html' : 'blog-post.html'), 'utf8');
       const post = await findArticle(db, req.query);
       if (post && hi && !(post.hindi.title && post.hindi.content)) return res.redirect(302, articleUrl(post, siteBase));
+      // An article reached by anything other than its clean address — the old
+      // blog-post.html?slug= / ?id= forms, or a clean path spelled differently
+      // from the stored slug — is sent there PERMANENTLY, so links shared before
+      // 2026-11-16 keep working and Google moves their ranking onto one URL.
+      // nginx marks the clean path with route=clean; nothing else sets it.
+      if (post && post.slug && (req.query.route !== 'clean' || req.query.slug !== post.slug)) {
+        return res.redirect(301, articleUrl(post, siteBase, hi));
+      }
       const status = post ? 200 : 404;
       return res.status(status).type('html').send(renderArticle(shell, post, { base: siteBase, hi, status }));
     } catch (err) {

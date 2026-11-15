@@ -5190,3 +5190,32 @@ markers. Sitemap entries are daily, at priority 0.8.
   They point to the Rashi and sun sign calculators, because in India "your rashi" usually means
   the Vedic Moon sign, not the Western sun-sign dates.
 - `bump-version` is at `?v=62`.
+
+### ET4. Clean article addresses: /blog/<slug> and /hi/blog/<slug>
+
+An article's canonical address is now `/blog/<slug>`, or `/hi/blog/<slug>` for Hindi
+(`blogPublic.articleUrl`). It used to be `blog-post.html?slug=`. The old `?slug=` and `?id=`
+forms still resolve and are **301**ed to the clean one, so no shared link breaks.
+The archive, the sitemap, `aw/blog.js` and the agent's `seo.postUrl` all hand out clean URLs.
+All 8 published articles have slugs: the 5 pre-agent rows were given slugs from the agent's
+own `slugify` on 2026-11-16, applied directly in production.
+
+- **`<base href>` is the first thing in the rendered `<head>`.** The shell is `blog-post.html`,
+  whose CSS, scripts and links are all relative. Served one folder deeper, they would load an
+  unstyled page. The base points them back to the site root (or `/hi/`), which is also what
+  `script.js`'s `/hi/` path fixing assumes. In-article `#anchor` links are rewritten to the
+  page URL, because under a base tag a bare `#x` would leave the article.
+- **nginx marks the clean path with `route=clean`** (two regex locations in
+  `vps-deployment/nginx/blog-locations.conf`). The backend 301s anything without it.
+- **`apply-blog-locations.sh` is now per-location.** It used to exit "already applied" once
+  the first three routes existed, which would have silently skipped these new ones.
+  It was dry-run against a copy of the live config: it adds exactly the 2 new stanzas, and a
+  second run is a no-op.
+- **DEPLOY ORDER IS LOAD-BEARING: nginx routes FIRST** (the `Apply nginx blog routes`
+  workflow), **then the backend, then the website.** A backend that 301s to `/blog/<slug>`
+  before nginx serves that path sends every old article link into a 404.
+- **Admin-created posts get no slug** (`Blogs.jsx` has no slug field). They keep a
+  `?id=` address and stay out of the sitemap until one is added.
+- Verified by `scripts/testBlogCleanUrls.js` (30 checks, read-only, live DB, bare Express).
+  It was confirmed to fail on a removed `<base>` and a removed redirect.
+  `testBlogAgent.js` is 286/286 after updating 3 assertions that checked for the old format.

@@ -81,10 +81,10 @@ async function archive(db, query) {
   const grid = `<div class="blog-grid">${(result.data || [])
     .map((row) => {
       const p = mapBlog(row);
-      return `<a class="blog-card" href="blog-post.html?${
+      return `<a class="blog-card" href="${
         p.slug
-          ? 'slug=' + encodeURIComponent(p.slug)
-          : 'id=' + encodeURIComponent(p._id)
+          ? 'blog/' + encodeURIComponent(p.slug)
+          : 'blog-post.html?id=' + encodeURIComponent(p._id)
       }">${
         p.thumbnail
           ? `<img class="blog-card-img" src="${e(
