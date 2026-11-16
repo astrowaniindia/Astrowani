@@ -205,6 +205,10 @@ export default function SupportInbox() {
   const [showReplies, setShowReplies] = useState(false);
   const [editingReplies, setEditingReplies] = useState(false);
   const [lightbox, setLightbox] = useState(null);
+  // The AI-suggested reply. It only ever fills the box; a person sends it.
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestNote, setSuggestNote] = useState(null);
+  const suggestedFor = useRef(null);
   const threadEndRef = useRef(null);
   const fileRef = useRef(null);
   const textRef = useRef(null);
@@ -255,6 +259,7 @@ export default function SupportInbox() {
     setThread(null);
     setDraft('');
     setAttachment(null);
+    setSuggestNote(null);
     lastMsgCount.current = 0;
     const url = new URL(window.location.href);
     url.searchParams.set('c', id);
@@ -284,6 +289,32 @@ export default function SupportInbox() {
     setTimeout(() => textRef.current?.focus(), 0);
   };
 
+  // `auto` = called on opening a waiting conversation: never overwrite what
+  // somebody has started typing, and stay quiet if nothing comes back.
+  const suggest = useCallback(async (id, auto = false) => {
+    if (!id) return;
+    setSuggesting(true);
+    if (!auto) setSuggestNote(null);
+    try {
+      const { data } = await client.post(`/api/admin/support/conversations/${id}/draft`);
+      const out = data.data;
+      if (!out?.draft) { if (!auto) setSuggestNote(data.message || 'No suggestion available.'); return; }
+      setDraft((d) => (auto && d.trim() ? d : out.draft));
+      setSuggestNote(out.summary ? `Suggested reply — check it before sending. ${out.summary}` : 'Suggested reply — check it before sending.');
+      setTimeout(() => textRef.current?.focus(), 0);
+    } catch (e) {
+      if (!auto) setSuggestNote(e.response?.data?.message || 'Could not get a suggestion.');
+    } finally { setSuggesting(false); }
+  }, []);
+
+  // Someone is waiting on a person: have a draft ready when the thread opens.
+  useEffect(() => {
+    if (!thread || thread.id !== selected || !thread.aiDrafts) return;
+    if (thread.status !== 'awaiting_human' || suggestedFor.current === thread.id) return;
+    suggestedFor.current = thread.id;
+    suggest(thread.id, true);
+  }, [thread, selected, suggest]);
+
   const pickFile = async (file) => {
     try { setAttachment(await fileToDataUri(file)); } catch (e) { alert(e.message); }
   };
@@ -301,6 +332,7 @@ export default function SupportInbox() {
       await client.post(`/api/admin/support/conversations/${selected}/reply`, { body, image: attachment || undefined });
       setDraft('');
       setAttachment(null);
+      setSuggestNote(null);
       await fetchThread(selected);
       await load();
     } catch (e) { alert(e.response?.data?.message || e.message); }
@@ -455,6 +487,7 @@ export default function SupportInbox() {
                     <button className="btn ghost sm" onClick={() => setAttachment(null)}>Remove</button>
                   </div>
                 )}
+                {suggestNote && <div className="si-suggest-note">{suggestNote}</div>}
                 <textarea
                   ref={textRef}
                   value={draft}
@@ -479,6 +512,11 @@ export default function SupportInbox() {
                       </div>
                     )}
                   </div>
+                  {thread.aiDrafts && (
+                    <button className="si-tool" onClick={() => suggest(selected)} disabled={suggesting}>
+                      {suggesting ? 'Thinking…' : '✨ Suggest reply'}
+                    </button>
+                  )}
                   <button className="si-tool" onClick={() => fileRef.current?.click()}>📎 Photo</button>
                   <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }}
                     onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) pickFile(f); }} />

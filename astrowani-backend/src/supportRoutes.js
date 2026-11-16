@@ -21,7 +21,8 @@
 const jwt = require('jsonwebtoken');
 const { createClient } = require('@supabase/supabase-js');
 const { findCustomerByPhone, findAstrologerByPhone } = require('./customerLookup');
-const { generateReply } = require('./supportBot');
+const { generateReply, factsFor } = require('./supportBot');
+const supportAi = require('./supportAi');
 const { sendPush } = require('./push');
 const { recordInAppAsync } = require('./notifications/inApp');
 const supportAlerts = require('./supportAlerts');
@@ -117,6 +118,12 @@ const requireAdminToken = require('./adminAuth').requireAdmin;
 
 const ownerFilter = (q, party) =>
   party.kind === 'customer' ? q.eq('customer_id', party.id) : q.eq('astrologer_id', party.id);
+
+// Until 2026-11-17 the bot marked "I asked once already" by appending a literal
+// __CLARIFY__ line to the message body, and nothing stripped it, so 54 customers
+// were shown it. New messages carry the mark in tool_trace; this hides it on the
+// old rows wherever a body is served.
+const cleanBody = (b) => (typeof b === 'string' ? b.replace(/\s*__CLARIFY__\s*/g, '').trim() : b);
 
 async function addMessage(conversationId, sender, body, extra = {}) {
   const row = {
@@ -366,7 +373,7 @@ module.exports = function registerSupportRoutes(app) {
         messages: (messages || []).map((m) => ({
           id: m.id,
           sender: m.sender,
-          body: m.body,
+          body: cleanBody(m.body),
           agentName: m.admin_id ? adminNames[m.admin_id] || 'Support' : null,
           created_at: m.created_at,
           imageUrl: m.image_url || null,
@@ -478,7 +485,7 @@ module.exports = function registerSupportRoutes(app) {
     const enabled = String(await getSetting('support_agent_enabled', 'true')) !== 'false';
 
     const { data: history } = await db.from('support_messages')
-      .select('sender, body').eq('conversation_id', conv.id)
+      .select('sender, body, tool_trace').eq('conversation_id', conv.id)
       .neq('sender', 'note') // internal notes are never the bot's input
       .order('created_at', { ascending: true }).limit(60);
 
@@ -831,12 +838,47 @@ module.exports = function registerSupportRoutes(app) {
         assignedName: conv.assigned_admin_id ? adminNames[conv.assigned_admin_id] || 'Admin' : null,
         party,
         context,
-        messages: (messages || []).map((m) => ({ ...m, adminName: m.admin_id ? adminNames[m.admin_id] || 'Admin' : null })),
+        aiDrafts: supportAi.available(),
+        messages: (messages || []).map((m) => ({ ...m, body: cleanBody(m.body), adminName: m.admin_id ? adminNames[m.admin_id] || 'Admin' : null })),
       },
     });
   }));
 
   // Reply as a human — text, a photo, or both. This is the moment the agent stops.
+  // A suggested reply for the team member to edit and send. Nothing is sent or
+  // stored here: the draft only ever reaches the customer through the ordinary
+  // reply route below, after a person has read it. See src/supportAi.js.
+  app.post('/api/admin/support/conversations/:id/draft', requireAdminToken, h(async (req, res) => {
+    if (!isUuid(req.params.id)) return res.status(404).json({ success: false, message: 'Not found' });
+    const { data: conv } = await db.from('support_conversations').select('*').eq('id', req.params.id).maybeSingle();
+    if (!conv) return res.status(404).json({ success: false, message: 'Not found' });
+
+    const { data: messages } = await db.from('support_messages')
+      .select('sender, body').eq('conversation_id', conv.id)
+      .neq('sender', 'note')
+      .order('created_at', { ascending: true }).limit(60);
+    if (!(messages || []).some((m) => m.sender === 'user')) {
+      return res.json({ success: true, data: null, message: 'Nothing to reply to yet.' });
+    }
+
+    const party = conv.customer_id
+      ? { kind: 'customer', id: conv.customer_id }
+      : conv.astrologer_id ? { kind: 'vendor', id: conv.astrologer_id } : null;
+    let facts = '';
+    if (party) { try { facts = await factsFor(party); } catch (_) { facts = ''; } }
+
+    const out = await supportAi.draftReply({
+      app: conv.app,
+      messages: messages || [],
+      facts,
+      reason: conv.escalation_reason || '',
+    });
+    if (!out) {
+      return res.json({ success: true, data: null, message: 'No suggestion available right now. Write the reply yourself.' });
+    }
+    return res.json({ success: true, data: { draft: out.draft, summary: out.summary } });
+  }));
+
   app.post('/api/admin/support/conversations/:id/reply', requireAdminToken, h(async (req, res) => {
     const text = typeof req.body?.body === 'string' ? req.body.body.trim() : '';
     const image = req.body?.image || null;

@@ -5423,3 +5423,45 @@ Two kinds of AMP Web Story, sharing one renderer, `astrowani-backend/src/webStor
   - `.ch-wrap ~ .band { content-visibility: auto }` applies to the homepage only.
   - The roster socket connects 4s after load.
   - **Live result:** score 77–87 (was 55–67). The English homepage keeps a CLS of 0.078 with no cause attributed, while the Hindi homepage is 0, cause still unknown. **It is NOT the fonts**: self-hosted fonts with preloads (branch `self-host-fonts` / `perf-fonts`, not merged) left CLS at 0.078 and made LCP worse in an A/B on the runner. To find the real cause, run Lighthouse with `--save-assets` and read the trace's layout-shift events, which give the impacted nodes' old and new rects.
+
+---
+
+## Subsystem added 2026-11-17: the support bot reads with a model, and three things it had been getting wrong (EV)
+
+Measured first (read-only, `support_conversations` since 2026-09-03): 188 conversations (~2.5/day),
+101 handed to a person, **72 of those closed with no human reply ever**, median first human reply
+~23 h, 29% of conversations got "I didn't quite follow that", 0 ratings. At least 22% of messages are
+Hinglish. Research and the decision page: https://claude.ai/artifact/3RT8knQjvTcNDUSTNJdmjz
+(no new help desk; Chatwoot CE only if WhatsApp/email become real channels).
+
+**`src/supportAi.js`** sits behind `supportBot.generateReply`, and only where the rules found nothing:
+- `route()` returns `intent` (one of supportBot's own intents, so the customer still reads the
+  hand-written words with their real data), `answer` (a how-to from `KNOWLEDGE` in that file, plus
+  `app_settings.support_ai_knowledge`), `clarify`, or `handover`. **`null` means "behave as before"**:
+  no key, switched off, timeout, bad JSON.
+- **The gate is code, not a prompt** (`passesGate`): an answer mentioning refunds, credits, "will be
+  credited", a time promise, a phone number or a link is thrown away and becomes a handover.
+- Kill switch: `app_settings.support_ai_config` = `{"enabled": false}` (customer side) and/or
+  `{"drafts": false}`. Only a literal `false` switches anything off.
+- Keys: `SUPPORT_GEMINI_API_KEY` first, then the card-linked keys, the free key LAST; contact details
+  are starred out (`maskContacts`) before anything is sent, and no name is sent.
+- `POST /api/admin/support/conversations/:id/draft` + "Suggest reply" in the Support Inbox: a draft
+  from the conversation and `supportBot.factsFor()`. It only fills the box; money decisions come back
+  as `[DECIDE: ...]` for the person. Auto-requested once when a waiting conversation is opened.
+
+**Three existing defects fixed on the way, all invisible until checked against the schema:**
+1. `lookups.lastSessions` selected `duration_minutes` and `total_charged`, which **do not exist** on
+   `chat_sessions`. The query errored, the error was ignored, and "why was I charged" answered
+   **"I can't see any consultation on your account"** to people with a real charge. The amount now
+   comes from the ledger (`wallet_transactions` debit / `vendor_wallet_transactions` credit by
+   `session_id`), and a failed read THROWS so the bot hands over instead of stating something false.
+2. `lookups.lastWithdrawal` ordered by `created_at`; the column is `requested_at`. Every astrologer
+   was told "there is no withdrawal request recorded".
+3. The "asked once already" marker `__CLARIFY__` was appended to the message BODY and never
+   stripped: 54 customers were shown it. It lives in `tool_trace` now; `cleanBody()` hides it on old rows.
+
+Verified: `node --env-file=.env scripts/supportAiCheck.js --live` — 43/43 (gate with positive
+controls, no-key behaviour unchanged, lookups against real production rows read-only, and the real
+model on Hinglish messages the rules miss). Confirmed to fail when the old column list is put back.
+`index.js` never booted. Admin builds. **Not deployed, not exercised in the admin UI or on a device.**
+Still not software: somebody has to own the inbox 9am-11pm IST.

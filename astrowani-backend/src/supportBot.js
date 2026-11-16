@@ -30,6 +30,7 @@
 // the person wrote in Devanagari, otherwise English.
 
 const { createClient } = require('@supabase/supabase-js');
+const supportAi = require('./supportAi');
 
 const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
@@ -66,14 +67,28 @@ const lookups = {
 
   async lastSessions(party, limit = 3) {
     const col = party.kind === 'customer' ? 'caller_id' : 'vendor_id';
-    const { data } = await db
+    const { data, error } = await db
       .from('chat_sessions')
-      .select('id, started_at, ended_at, duration_minutes, total_charged, per_minute_charge, vendor_id, caller_id')
+      .select('id, started_at, ended_at, per_minute_charge, is_free, vendor_id, caller_id')
       .eq(col, party.id)
       .order('started_at', { ascending: false })
       .limit(limit);
+    // An error here must NOT read as "no consultations": that told people with
+    // a real charge that we could see nothing on their account. Throw, so the
+    // caller hands over (rule 4) instead of stating something false.
+    if (error) throw new Error(`sessions lookup failed: ${error.message}`);
     const rows = data || [];
     if (!rows.length) return [];
+
+    // chat_sessions carries no total: what was actually taken (customer) or
+    // earned (astrologer) for a session is the sum of its ledger rows.
+    const charged = {};
+    const ledger = party.kind === 'customer'
+      ? db.from('wallet_transactions').select('session_id, amount').eq('user_id', party.id).eq('type', 'debit')
+      : db.from('vendor_wallet_transactions').select('session_id, amount').eq('vendor_id', party.id).eq('type', 'credit');
+    const { data: tx } = await ledger.in('session_id', rows.map((r) => r.id));
+    (tx || []).forEach((t) => { charged[t.session_id] = (charged[t.session_id] || 0) + Number(t.amount || 0); });
+
     const otherIds = [...new Set(rows.map((r) => (party.kind === 'customer' ? r.vendor_id : r.caller_id)).filter(Boolean))];
     const names = {};
     if (otherIds.length) {
@@ -92,8 +107,10 @@ const lookups = {
         with: names[party.kind === 'customer' ? r.vendor_id : r.caller_id] || 'an astrologer',
         startedAt: r.started_at,
         seconds: startedMs && endedMs ? Math.round((endedMs - startedMs) / 1000) : null,
-        billedMinutes: r.duration_minutes,
-        charged: r.total_charged,
+        billedMinutes: null,
+        // null (unknown) only if the ledger read failed; a free call is a true 0.
+        charged: tx ? Math.round((charged[r.id] || 0) * 100) / 100 : null,
+        free: !!r.is_free,
         rate: r.per_minute_charge,
       };
     });
@@ -123,13 +140,15 @@ const lookups = {
 
   async lastWithdrawal(party) {
     if (party.kind !== 'vendor') return null;
-    const { data } = await db
+    const { data, error } = await db
       .from('withdrawal_requests')
-      .select('amount, status, created_at')
+      .select('amount, status, requested_at')
       .eq('astrologer_id', party.id)
-      .order('created_at', { ascending: false })
+      .order('requested_at', { ascending: false })
       .limit(1);
-    return (data || [])[0] || null;
+    if (error) throw new Error(`withdrawal lookup failed: ${error.message}`);
+    const w = (data || [])[0];
+    return w ? { ...w, created_at: w.requested_at } : null;
   },
 
   async vendorState(party) {
@@ -690,27 +709,65 @@ async function generateReply({ party, history = [], message }) {
     };
   }
 
+  // What was looked up or decided for this reply. Stored as tool_trace, which
+  // only the admin console ever reads.
+  let trace = null;
+
   if (!confident) {
-    // First miss: ask once, plainly, and show what it can actually do.
-    const missedBefore = history.some((m) => m.sender === 'agent' && m.body && m.body.includes('__CLARIFY__'));
-    if (!missedBefore) {
+    // The rules did not recognise it. Before telling the person "I didn't
+    // follow", let the model read it (src/supportAi.js): Hinglish and typos are
+    // most of what lands here. It can only pick one of the intents above, give
+    // a how-to answer that passed the gate, ask one question, or hand over.
+    // null = switched off, no key, timed out: carry on exactly as before.
+    const ai = await supportAi.route({ party, message: raw, history, intents: INTENTS });
+
+    if (ai && ai.kind === 'intent') {
+      best = INTENTS.find((i) => i.id === ai.id) || null;
+      trace = ai.trace;
+    } else if (ai && ai.kind === 'answer') {
+      return { reply: ai.reply, escalate: false, category: ai.category || null, toolTrace: ai.trace };
+    } else if (ai && ai.kind === 'handover') {
       return {
-        reply: (lang === 'hi'
-          ? 'मैं ठीक से समझ नहीं पाया। थोड़ा और बताइए — क्या यह पैसे/शुल्क, कॉल या चैट, ऑर्डर, या खाते से जुड़ा है? या "व्यक्ति से बात" लिखिए, मैं तुरंत टीम से जोड़ दूंगा।'
-          : 'I didn\'t quite follow that. Can you tell me a bit more — is it about a charge, a call or chat, an order, or your account? Or just say "talk to a person" and I\'ll connect you straight away.') + '\n__CLARIFY__',
-        escalate: false,
+        reply: lang === 'hi'
+          ? 'यह किसी व्यक्ति को देखना चाहिए। मैं आपको अभी टीम से जोड़ रहा हूं।'
+          : 'This needs a person rather than me. Connecting you to the team now.',
+        escalate: true,
+        reason: `Assistant handed over${ai.summary ? `: ${ai.summary}` : '.'} Message: ${raw.slice(0, 200)}`,
+        category: ai.category || 'other',
+        priority: ai.priority || 'normal',
+        toolTrace: ai.trace,
       };
     }
-    // Second miss: stop guessing.
-    return {
-      reply: lang === 'hi'
-        ? 'मैं इसे ठीक से नहीं समझ पा रहा, इसलिए अंदाज़ा लगाने के बजाय आपको टीम से जोड़ रहा हूं।'
-        : "I'm not understanding this well enough, and I'd rather not guess — I'm putting you through to a person.",
-      escalate: true,
-      reason: `Bot could not understand after two attempts. Last message: ${raw.slice(0, 200)}`,
-      category: 'other',
-      priority: 'normal',
-    };
+
+    if (!best || !ai || ai.kind !== 'intent') {
+      // First miss: ask once, plainly, and show what it can actually do.
+      // (Old rows carry a literal __CLARIFY__ marker in the body; new ones are
+      // marked in tool_trace so the customer never sees it.)
+      const missedBefore = history.some((m) => m.sender === 'agent' && (
+        (m.body && m.body.includes('__CLARIFY__')) || /"clarify":\s*true/.test(String(m.tool_trace || ''))
+      ));
+      if (!missedBefore) {
+        return {
+          reply: ai && ai.kind === 'clarify'
+            ? ai.reply
+            : (lang === 'hi'
+              ? 'मैं ठीक से समझ नहीं पाया। थोड़ा और बताइए — क्या यह पैसे/शुल्क, कॉल या चैट, ऑर्डर, या खाते से जुड़ा है? या "व्यक्ति से बात" लिखिए, मैं तुरंत टीम से जोड़ दूंगा।'
+              : "I didn't quite follow that. Can you tell me a bit more — is it about a charge, a call or chat, an order, or your account? Or just say \"talk to a person\" and I'll connect you straight away."),
+          escalate: false,
+          toolTrace: { ...(ai && ai.trace), clarify: true },
+        };
+      }
+      // Second miss: stop guessing.
+      return {
+        reply: lang === 'hi'
+          ? 'मैं इसे ठीक से नहीं समझ पा रहा, इसलिए अंदाज़ा लगाने के बजाय आपको टीम से जोड़ रहा हूं।'
+          : "I'm not understanding this well enough, and I'd rather not guess — I'm putting you through to a person.",
+        escalate: true,
+        reason: `Bot could not understand after two attempts. Last message: ${raw.slice(0, 200)}`,
+        category: 'other',
+        priority: 'normal',
+      };
+    }
   }
 
   // Intents that are never answered by the bot.
@@ -720,6 +777,7 @@ async function generateReply({ party, history = [], message }) {
         ? 'यह किसी व्यक्ति को देखना चाहिए। मैं आपको अभी टीम से जोड़ रहा हूं।'
         : 'This needs a person rather than me. Connecting you to the team now.',
       intent: best.id,
+      toolTrace: trace,
       escalate: true,
       reason: best.reason || `Intent: ${best.id}`,
       category: best.category || 'other',
@@ -762,6 +820,7 @@ async function generateReply({ party, history = [], message }) {
     return {
       reply: body,
       intent: best.id,
+      toolTrace: trace,
       escalate: true,
       reason: best.reason || `Intent: ${best.id} — answered with account data, needs a person to act.`,
       category: best.category || 'other',
@@ -772,6 +831,7 @@ async function generateReply({ party, history = [], message }) {
   return {
     reply: body,
     intent: best.id,
+    toolTrace: trace,
     escalate: false,
     resolve: !!best.resolve,
     summary: best.resolve ? `Resolved via bot (${best.id}).` : null,
@@ -779,7 +839,39 @@ async function generateReply({ party, history = [], message }) {
   };
 }
 
+/**
+ * The caller's own records as plain lines, for the AI-drafted reply the TEAM
+ * sees (never sent to the customer directly). No names, numbers or bank details.
+ */
+async function factsFor(party) {
+  const out = [];
+  const safe = async (fn) => { try { return await fn(); } catch (_) { return undefined; } };
+  const bal = await safe(() => lookups.balance(party));
+  if (bal != null) out.push(`${party.kind === 'customer' ? 'Wallet' : 'Payout'} balance now: ${rupees(bal)}.`);
+  const sessions = await safe(() => lookups.lastSessions(party, 3));
+  (sessions || []).forEach((s, i) => {
+    const who = party.kind === 'customer' ? `with ${s.with}` : 'with a customer';
+    out.push(`${i === 0 ? 'Most recent' : 'Earlier'} consultation: ${dateOf(s.startedAt)} ${timeOf(s.startedAt)} ${who}, ${s.seconds != null ? `${s.seconds} seconds long` : 'still open or length unknown'}, rate ${rupees(s.rate)}/min, ${s.free ? 'a free call' : `${party.kind === 'customer' ? 'charged' : 'earned'} ${s.charged != null ? rupees(s.charged) : 'unknown'}`}.`);
+  });
+  if (sessions && !sessions.length) out.push('No consultations on record.');
+  if (party.kind === 'customer') {
+    const r = await safe(() => lookups.lastRecharge(party));
+    if (r) out.push(`Last recharge: ${rupees(r.amount)} on ${dateOf(r.created_at)}, status "${r.status}".`);
+    const o = await safe(() => lookups.lastOrder(party));
+    if (o) out.push(`Last shop order: "${o.item_title}" on ${dateOf(o.created_at)}, ${rupees(o.grand_total ?? o.total)}, status "${o.status}", payment "${o.payment_status}".`);
+    const b = await safe(() => lookups.freeCallBooking(party));
+    if (b) out.push(`Free call: ${b.status} (${dateOf(b.slot_start)}).`);
+  } else {
+    const w = await safe(() => lookups.lastWithdrawal(party));
+    if (w) out.push(`Last withdrawal request: ${rupees(w.amount)} on ${dateOf(w.created_at)}, status "${w.status}".`);
+    const v = await safe(() => lookups.vendorState(party));
+    if (v) out.push(`Account: ${v.approval_status}${v.is_suspended ? ', SUSPENDED' : ''}; online ${!!v.is_online}; chat ${!!v.is_chat_enabled}, call ${!!v.is_call_enabled}, video ${!!v.is_video_call_enabled}.`);
+  }
+  return out.join('\n');
+}
+
 module.exports = {
   generateReply,
+  factsFor,
   _internals: { INTENTS, normalize, scoreIntent, lookups, DISTRESS },
 };
