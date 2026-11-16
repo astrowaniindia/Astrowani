@@ -11,6 +11,11 @@ function StatusBadge({ s, isSuspended }) {
   return <span className="badge amber"><span className="badge-dot" /> Pending Review</span>;
 }
 
+function HiddenBadge({ hidden }) {
+  if (hidden !== true) return null;
+  return <span className="badge" title="Hidden from customers (apps, free calls, website)">🙈 Hidden</span>;
+}
+
 function AstroBadge({ badge }) {
   if (!badge) return null;
   if (badge === 'celebrity') return <span className="badge amber">⭐ Celebrity</span>;
@@ -119,6 +124,28 @@ export default function Astrologers() {
     await client.patch(`/api/admin/astrologers/${id}`, body);
     await load();
   };
+
+  // Hide/Unhide = astrologers.hidden_from_customers. It takes the astrologer out of
+  // every customer list, the free-call pool, their public website profile and the
+  // sitemap, while they can still log in and use their own app. Used for test and
+  // App Review accounts. It does not suspend anyone.
+  const toggleHidden = async (r) => {
+    const hide = r.hidden_from_customers !== true;
+    const msg = hide
+      ? `Hide ${name(r)} from customers?\n\nThey disappear from the customer apps, the free-call list and their public website profile. They can still log in to the astrologer app.`
+      : `Show ${name(r)} to customers again?\n\nIf their profile is approved and complete, they will reappear in the customer apps and on the website.`;
+    if (!window.confirm(msg)) return;
+    try {
+      await patch(r.id, { hidden_from_customers: hide });
+    } catch (e) {
+      window.alert(e?.response?.data?.message || 'Could not update. Please try again.');
+    }
+  };
+
+  const hiddenItem = (r) => ({
+    label: r.hidden_from_customers ? 'Unhide (show to customers)' : 'Hide from customers',
+    onClick: () => toggleHidden(r),
+  });
 
   const saveEdit = async () => {
     setBusy(true);
@@ -341,7 +368,10 @@ export default function Astrologers() {
                   <div className="astro-card-info">
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
                       <div className="astro-card-name" style={{ cursor: 'pointer' }} onClick={() => setViewing(r)}>{name(r)}</div>
-                      <StatusBadge s={r.approval_status} isSuspended={r.is_suspended} />
+                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                        <StatusBadge s={r.approval_status} isSuspended={r.is_suspended} />
+                        <HiddenBadge hidden={r.hidden_from_customers} />
+                      </div>
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
                       {r.phone_number || 'No phone'} • {r.experience ? `${r.experience} yrs` : 'New'}
@@ -443,6 +473,7 @@ export default function Astrologers() {
                     r.approval_status !== 'rejected' &&
                       { label: 'Reject Profile', onClick: () => patch(r.id, { approval_status: 'rejected' }) },
                     { label: r.is_suspended ? 'Unsuspend Account' : 'Suspend Account', onClick: () => patch(r.id, { is_suspended: !r.is_suspended }) },
+                    hiddenItem(r),
                     { label: 'Adjust Wallet', onClick: () => { setTopup(r); setAmount(''); } },
                     { label: r.allow_reviews_without_session ? 'Limit reviews to consulted customers' : 'Let anyone review (before first paid call)', onClick: () => patch(r.id, { allow_reviews_without_session: !r.allow_reviews_without_session }) },
                     { label: 'Delete Profile', danger: true, onClick: () => remove(r) },
@@ -490,7 +521,10 @@ export default function Astrologers() {
                     <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{r.email || 'No email'}</div>
                   </td>
                   <td>
-                    <StatusBadge s={r.approval_status} isSuspended={r.is_suspended} />
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                      <StatusBadge s={r.approval_status} isSuspended={r.is_suspended} />
+                      <HiddenBadge hidden={r.hidden_from_customers} />
+                    </div>
                   </td>
                   <td>
                     <AstroBadge badge={r.badge} />
@@ -524,6 +558,7 @@ export default function Astrologers() {
                         r.approval_status !== 'approved' && { label: 'Approve Profile', onClick: () => patch(r.id, { approval_status: 'approved' }) },
                         r.approval_status !== 'rejected' && { label: 'Reject Profile', onClick: () => patch(r.id, { approval_status: 'rejected' }) },
                         { label: r.is_suspended ? 'Unsuspend Account' : 'Suspend Account', onClick: () => patch(r.id, { is_suspended: !r.is_suspended }) },
+                        hiddenItem(r),
                         { label: 'Adjust Wallet', onClick: () => { setTopup(r); setAmount(''); } },
                     { label: r.allow_reviews_without_session ? 'Limit reviews to consulted customers' : 'Let anyone review (before first paid call)', onClick: () => patch(r.id, { allow_reviews_without_session: !r.allow_reviews_without_session }) },
                         { label: 'Delete', danger: true, onClick: () => remove(r) },
