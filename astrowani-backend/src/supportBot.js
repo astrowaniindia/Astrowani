@@ -662,7 +662,10 @@ function scoreIntent(intent, text, party) {
   let score = 0;
   for (const phrase of intent.any) {
     const pw = phrase.split(' ');
-    const hit = pw.length === 1 ? words.includes(phrase) || text.includes(phrase)
+    // A short word must be a whole word. Matching "hi" anywhere made every message
+    // containing "this", "thing", "nahi" or "chahiye" a greeting, answered with
+    // "Hello! Tell me what went wrong" instead of being read.
+    const hit = pw.length === 1 ? words.includes(phrase) || (phrase.length >= 4 && text.includes(phrase))
                                 : containsOrdered(words, pw);
     if (!hit) continue;
     // A multi-word phrase is far stronger evidence than one common word.
@@ -679,10 +682,81 @@ function scoreIntent(intent, text, party) {
  * understand once — two unclear turns in a row is a handover, not a third
  * attempt at the same guess.
  */
+// ── Which language is this person writing in? ──────────────────────────────
+//
+// Three answers, and the reply mirrors it: 'hi' (Devanagari), 'hinglish' (Hindi
+// typed in Latin letters, at least a fifth of what arrives here) and 'en'.
+// Nobody has to ask for a language; it follows how they write.
+//
+// Words that only Hindi has are enough by themselves; words English shares
+// ("me", "to", "ho", "kar") need company, or "call me" would read as Hinglish.
+const HINGLISH_STRONG = new Set(('hai hain nahi nahin nhi kya kyu kyun kyon mera meri mere mujhe mujhko humko hume hamara aap aapka aapki aapke tum tumhara '
+  + 'kaise kaisa kab kaha kahan kidhar kaun kitna kitne karo kro kariye kijiye karna krna karni krni karta karti karte raha rahi rahe gaya gayi gaye '
+  + 'hua hui hoga hogi hota hoti chahiye chaiye batao bataiye bataye abhi liye thi hoon paise paisa rupaye mila mili milega milegi '
+  + 'wapas vapas kata kati dikha dikh bhai bhaiya haan accha achha theek thik lekin kyunki aur phir bahut bohot koi kuch '
+  + 'kra krdo kardo krna krwa karwa chalu shuru khatam samajh samjh baat jaldi kripya dhanyavad shukriya namaste maine humne unhone apna apni apne iska uska').split(' '));
+// Shared with English ("call me", "to do"), so they only count when nothing in
+// the message is plainly English.
+const HINGLISH_WEAK = new Set('h ka ki ke ko se me mein par pe ho hu de do le lo kar kr na ye yeh wo woh bhi to hi tha kat mat sab ji'.split(' '));
+const ENGLISH_ONLY = new Set(('the is are was were am be been my your you i we they it this that these those with for from and but not what why how when where who '
+  + 'can could would should will did does have has had want need please about there here any some very just also because of on at an a').split(' '));
+
+function languageOf(textRaw) {
+  const t = String(textRaw || '');
+  if (hasDevanagari(t)) return 'hi';
+  const words = t.toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(Boolean);
+  if (!words.length) return null;
+  let strong = 0; let weak = 0; let english = 0;
+  for (const w of words) {
+    if (HINGLISH_STRONG.has(w)) strong++;
+    else if (HINGLISH_WEAK.has(w)) weak++;
+    else if (ENGLISH_ONLY.has(w)) english++;
+  }
+  // "mera wallet is not working" is still a Hindi speaker: a Hindi-only word
+  // decides it unless English words clearly outnumber it.
+  if (strong >= 1 && strong * 3 >= english) return 'hinglish';
+  if (strong === 0 && weak >= 2 && english === 0) return 'hinglish';
+  // One or two plain words ("ok", "call", "hello") say nothing either way.
+  if (english === 0 && strong === 0 && words.length <= 2) return null;
+  return 'en';
+}
+
+/** This message's language, or, when it is too short to tell, the conversation's. */
+function pickLanguage(raw, history = []) {
+  const now = languageOf(raw);
+  if (now) return now;
+  const said = (history || []).filter((m) => m && m.sender === 'user' && m.body);
+  for (let i = said.length - 1; i >= 0; i--) {
+    const l = languageOf(said[i].body);
+    if (l) return l;
+  }
+  return 'en';
+}
+
+// The few sentences the bot says without looking anything up, in all three.
+const say = (want, en, hi, hing) => (want === 'hi' ? hi : want === 'hinglish' ? hing : en);
+
 async function generateReply({ party, history = [], message }) {
+  const want = pickLanguage(message, history);
+  const result = await decideReply({ party, history, message, want });
+  // The hand-written replies with account data exist in English and Hindi only.
+  // For someone writing Hinglish, reword the approved English sentence
+  // (supportAi.toHinglish checks every number survived). What the model wrote
+  // itself is already in the right language.
+  if (want === 'hinglish' && result && result.reply && !result.inLanguage) {
+    const h = await supportAi.toHinglish(result.reply);
+    if (h) result.reply = h;
+  }
+  if (result) delete result.inLanguage;
+  return result;
+}
+
+async function decideReply({ party, history = [], message, want = 'en' }) {
   const raw = String(message || '');
   const text = normalize(raw);
-  const lang = hasDevanagari(raw) ? 'hi' : 'en';
+  // The hand-written replies are picked with this: Hindi for Devanagari,
+  // otherwise English (Hinglish is handled by the caller above).
+  const lang = want === 'hi' ? 'hi' : 'en';
 
   const distressed = DISTRESS.some((w) => text.includes(w));
 
@@ -699,9 +773,11 @@ async function generateReply({ party, history = [], message }) {
   // topic itself was understood.
   if (distressed && (!best || !best.resolve)) {
     return {
-      reply: lang === 'hi'
-        ? 'यह ठीक नहीं हुआ, और मैं इसे यहीं टालना नहीं चाहता। मैं आपको हमारी टीम से जोड़ रहा हूं ताकि कोई व्यक्ति इसे देखे।'
-        : "That's not good enough, and I don't want to leave it to a script. I'm putting you through to a person now.",
+      reply: say(want,
+        "That's not good enough, and I don't want to leave it to a script. I'm putting you through to a person now.",
+        'यह ठीक नहीं हुआ, और मैं इसे यहीं टालना नहीं चाहता। मैं आपको हमारी टीम से जोड़ रहा हूं ताकि कोई व्यक्ति इसे देखे।',
+        'Yeh theek nahi hua, aur main ise yahin taalna nahi chahta. Main aapko abhi hamari team se jod raha hoon taaki koi vyakti ise dekhe.'),
+      inLanguage: true,
       escalate: true,
       reason: `Customer is upset${best ? ` (topic: ${best.id})` : ''}. Message: ${raw.slice(0, 200)}`,
       category: (best && best.category) || 'other',
@@ -719,19 +795,18 @@ async function generateReply({ party, history = [], message }) {
     // most of what lands here. It can only pick one of the intents above, give
     // a how-to answer that passed the gate, ask one question, or hand over.
     // null = switched off, no key, timed out: carry on exactly as before.
-    const ai = await supportAi.route({ party, message: raw, history, intents: INTENTS });
+    const ai = await supportAi.route({ party, message: raw, history, intents: INTENTS, language: want });
 
     if (ai && ai.kind === 'intent') {
       best = INTENTS.find((i) => i.id === ai.id) || null;
       trace = ai.trace;
     } else if (ai && ai.kind === 'answer') {
-      return { reply: ai.reply, escalate: false, category: ai.category || null, toolTrace: ai.trace };
+      return { reply: ai.reply, inLanguage: true, escalate: false, category: ai.category || null, toolTrace: ai.trace };
     } else if (ai && ai.kind === 'handover') {
       return {
         // The model's own words when they passed the gate; the fixed line otherwise.
-        reply: ai.reply || (lang === 'hi'
-          ? 'यह किसी व्यक्ति को देखना चाहिए। मैं आपको अभी टीम से जोड़ रहा हूं।'
-          : 'This needs a person rather than me. Connecting you to the team now.'),
+        reply: ai.reply || say(want, 'This needs a person rather than me. Connecting you to the team now.', 'यह किसी व्यक्ति को देखना चाहिए। मैं आपको अभी टीम से जोड़ रहा हूं।', 'Yeh kisi vyakti ko dekhna chahiye. Main aapko abhi team se jod raha hoon.'),
+        inLanguage: true,
         escalate: true,
         reason: `Assistant handed over${ai.summary ? `: ${ai.summary}` : '.'} Message: ${raw.slice(0, 200)}`,
         category: ai.category || 'other',
@@ -751,18 +826,22 @@ async function generateReply({ party, history = [], message }) {
         return {
           reply: ai && ai.kind === 'clarify'
             ? ai.reply
-            : (lang === 'hi'
-              ? 'मैं ठीक से समझ नहीं पाया। थोड़ा और बताइए — क्या यह पैसे/शुल्क, कॉल या चैट, ऑर्डर, या खाते से जुड़ा है? या "व्यक्ति से बात" लिखिए, मैं तुरंत टीम से जोड़ दूंगा।'
-              : "I didn't quite follow that. Can you tell me a bit more — is it about a charge, a call or chat, an order, or your account? Or just say \"talk to a person\" and I'll connect you straight away."),
+            : say(want,
+              "I didn't quite follow that. Can you tell me a bit more — is it about a charge, a call or chat, an order, or your account? Or just say \"talk to a person\" and I'll connect you straight away.",
+              'मैं ठीक से समझ नहीं पाया। थोड़ा और बताइए — क्या यह पैसे/शुल्क, कॉल या चैट, ऑर्डर, या खाते से जुड़ा है? या "व्यक्ति से बात" लिखिए, मैं तुरंत टीम से जोड़ दूंगा।',
+              'Main theek se samajh nahi paya. Thoda aur bataiye — kya yeh paise/charge, call ya chat, order, ya account se juda hai? Ya "talk to a person" likhiye, main turant team se jod dunga.'),
+          inLanguage: true,
           escalate: false,
           toolTrace: { ...(ai && ai.trace), clarify: true },
         };
       }
       // Second miss: stop guessing.
       return {
-        reply: lang === 'hi'
-          ? 'मैं इसे ठीक से नहीं समझ पा रहा, इसलिए अंदाज़ा लगाने के बजाय आपको टीम से जोड़ रहा हूं।'
-          : "I'm not understanding this well enough, and I'd rather not guess — I'm putting you through to a person.",
+        reply: say(want,
+          "I'm not understanding this well enough, and I'd rather not guess — I'm putting you through to a person.",
+          'मैं इसे ठीक से नहीं समझ पा रहा, इसलिए अंदाज़ा लगाने के बजाय आपको टीम से जोड़ रहा हूं।',
+          'Main ise theek se samajh nahi pa raha, isliye andaza lagane ke bajay aapko team se jod raha hoon.'),
+        inLanguage: true,
         escalate: true,
         reason: `Bot could not understand after two attempts. Last message: ${raw.slice(0, 200)}`,
         category: 'other',
@@ -786,12 +865,12 @@ async function generateReply({ party, history = [], message }) {
       written = await supportAi.compose({
         party, message: raw, history, facts,
         situation: best.reason || `Intent: ${best.id}`,
+        language: want,
       });
     }
     return {
-      reply: (written && written.reply) || (lang === 'hi'
-        ? 'यह किसी व्यक्ति को देखना चाहिए। मैं आपको अभी टीम से जोड़ रहा हूं।'
-        : 'This needs a person rather than me. Connecting you to the team now.'),
+      reply: (written && written.reply) || say(want, 'This needs a person rather than me. Connecting you to the team now.', 'यह किसी व्यक्ति को देखना चाहिए। मैं आपको अभी टीम से जोड़ रहा हूं।', 'Yeh kisi vyakti ko dekhna chahiye. Main aapko abhi team se jod raha hoon.'),
+      inLanguage: true,
       intent: best.id,
       toolTrace: (written && written.trace) || trace,
       escalate: true,
@@ -808,9 +887,11 @@ async function generateReply({ party, history = [], message }) {
     // Rule 4: a failed lookup is a handover, never silence.
     console.warn('[supportBot] intent failed', best.id, e?.message);
     return {
-      reply: lang === 'hi'
-        ? 'मैं अभी आपका विवरण नहीं पढ़ पाया। मैं इसे टीम को भेज रहा हूं ताकि कोई इसे देखे।'
-        : "I couldn't read your records just now. I'm passing this to a person so it doesn't get stuck.",
+      reply: say(want,
+        "I couldn't read your records just now. I'm passing this to a person so it doesn't get stuck.",
+        'मैं अभी आपका विवरण नहीं पढ़ पाया। मैं इसे टीम को भेज रहा हूं ताकि कोई इसे देखे।',
+        'Main abhi aapka record nahi padh paya. Main ise team ko bhej raha hoon taaki koi ise dekhe.'),
+      inLanguage: true,
       escalate: true,
       reason: `Lookup failed for intent ${best.id}: ${e?.message}`,
       category: best.category || 'other',
@@ -820,9 +901,11 @@ async function generateReply({ party, history = [], message }) {
 
   if (!body) {
     return {
-      reply: lang === 'hi'
-        ? 'मैं इसका उत्तर पक्के तौर पर नहीं दे सकता, इसलिए टीम से जोड़ रहा हूं।'
-        : "I can't answer that with certainty, so I'm bringing in a person.",
+      reply: say(want,
+        "I can't answer that with certainty, so I'm bringing in a person.",
+        'मैं इसका उत्तर पक्के तौर पर नहीं दे सकता, इसलिए टीम से जोड़ रहा हूं।',
+        'Main iska jawab pakke taur par nahi de sakta, isliye team se jod raha hoon.'),
+      inLanguage: true,
       escalate: true,
       reason: `No answer available for intent ${best.id}`,
       category: best.category || 'other',
@@ -889,5 +972,5 @@ async function factsFor(party) {
 module.exports = {
   generateReply,
   factsFor,
-  _internals: { INTENTS, normalize, scoreIntent, lookups, DISTRESS },
+  _internals: { INTENTS, normalize, scoreIntent, lookups, DISTRESS, languageOf, pickLanguage },
 };

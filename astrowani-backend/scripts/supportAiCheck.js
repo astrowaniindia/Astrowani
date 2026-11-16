@@ -74,13 +74,40 @@ const ok = (name, cond, extra = '') => {
   ok('the astrologer side has its own lessons', (await similarReplies('payout kab hota hai', 'vendor')).some((n) => /somvar/.test(n.answer)));
   _setLearned([]);
 
+  console.log('\n1c. Which language is the person writing in (no network)');
+  const { languageOf, pickLanguage } = bot._internals;
+  ok('Devanagari is Hindi', languageOf('मेरे पैसे कट गए') === 'hi');
+  ok('Hindi in Latin letters is Hinglish', languageOf('mere paise kat gaye') === 'hinglish');
+  ok('typo-heavy Hinglish is Hinglish', languageOf('mujhe free chatkrni h') === 'hinglish');
+  ok('short Hinglish is Hinglish', languageOf('kra do bhai') === 'hinglish');
+  ok('English is English', languageOf('Why was I charged for that call?') === 'en');
+  ok('"call me to talk" is English, not Hinglish', languageOf('please call me to talk about my order') === 'en');
+  ok('English mentioning one Hindi-looking word stays English', languageOf('I want to do a recharge on my wallet') === 'en');
+  ok('"ok" alone says nothing', languageOf('ok') === null);
+  ok('Hinglish with English words mixed in is still Hinglish', languageOf('mera wallet recharge nahi ho raha please help') === 'hinglish');
+  ok('a long English message with one Hindi word is English', languageOf('I have been trying to recharge my wallet since morning and it is not working bhai') === 'en');
+  const histOf = (b) => [{ sender: 'user', body: b }, { sender: 'agent', body: 'x' }];
+  ok('"ok" after Hinglish is still Hinglish', pickLanguage('ok', histOf('mera recharge nahi hua')) === 'hinglish');
+  ok('"ok" after Hindi is still Hindi', pickLanguage('ok', histOf('मेरा रिचार्ज नहीं हुआ')) === 'hi');
+  ok('"ok" after English is English', pickLanguage('ok', histOf('My recharge did not go through')) === 'en');
+  ok('"ok" with no history is English', pickLanguage('ok', []) === 'en');
+  ok('the newest message wins over the history', pickLanguage('My recharge did not go through', histOf('mera recharge nahi hua')) === 'en');
+
   console.log('\n2. With no key, the bot behaves exactly as before (no network)');
   const saved = {};
   for (const k of Object.keys(process.env)) if (/GEMINI/.test(k)) { saved[k] = process.env[k]; delete process.env[k]; }
   const nobody = { kind: 'customer', id: '00000000-0000-0000-0000-000000000000' };
   ok('supportAi reports unavailable', supportAi.available() === false);
   const r1 = await bot.generateReply({ party: nobody, history: [], message: 'mujhe free chatkrni h' });
-  ok('first miss asks once', r1.escalate === false && /didn't quite follow/.test(r1.reply));
+  ok('first miss asks once, in Hinglish because they wrote Hinglish', r1.escalate === false && /samajh nahi paya/.test(r1.reply));
+  const r1en = await bot.generateReply({ party: nobody, history: [], message: 'something is wrong with the thing' });
+  ok('an English writer is asked in English', /didn't quite follow/.test(r1en.reply));
+  const r1hi = await bot.generateReply({ party: nobody, history: [], message: 'कुछ गड़बड़ है' });
+  const g1 = await bot.generateReply({ party: nobody, history: [], message: 'hi' });
+  ok('"hi" is still a greeting (control)', g1.intent === 'greeting');
+  ok('but "this thing" is not', r1en.intent !== 'greeting');
+  ok('a Hindi writer is asked in Hindi', /समझ नहीं पाया/.test(r1hi.reply));
+  ok('no internal field leaks out', !('inLanguage' in r1) && !('inLanguage' in r1en));
   ok('the reply carries no __CLARIFY__ marker', !/__CLARIFY__/.test(r1.reply));
   ok('the miss is recorded in tool_trace instead', !!r1.toolTrace && r1.toolTrace.clarify === true);
   const hist = [{ sender: 'user', body: 'x' }, { sender: 'agent', body: r1.reply, tool_trace: JSON.stringify(r1.toolTrace) }];
@@ -91,6 +118,12 @@ const ok = (name, cond, extra = '') => {
   const r3 = await bot.generateReply({ party: nobody, history: [], message: 'I want a refund' });
   ok('a refund still goes to a person by rule', r3.escalate === true && r3.intent === 'refund');
   ok('and with the fixed line', /needs a person rather than me/.test(r3.reply));
+  const r3h = await bot.generateReply({ party: nobody, history: [], message: 'mujhe refund chahiye' });
+  ok('the fixed line is Hinglish for a Hinglish writer', r3h.escalate === true && /team se jod raha hoon/.test(r3h.reply));
+  const r3d = await bot.generateReply({ party: nobody, history: [], message: 'मुझे रिफंड चाहिए' });
+  ok('and Hindi for a Hindi writer', r3d.escalate === true && /टीम से जोड़/.test(r3d.reply));
+  const r4 = await bot.generateReply({ party: nobody, history: [], message: 'mera balance kitna hai' });
+  ok('with no key a hand-written reply stays as it was (English)', typeof r4.reply === 'string' && r4.reply.length > 5);
   Object.assign(process.env, saved);
 
   console.log('\n3. Lookups read real columns (read-only, production)');
@@ -140,7 +173,7 @@ const ok = (name, cond, extra = '') => {
       ];
       for (const [party, msg, check] of cases) {
         const t = Date.now();
-        const r = await supportAi.route({ party, message: msg, history: [], intents: I });
+        const r = await supportAi.route({ party, message: msg, history: [], intents: I, language: bot._internals.pickLanguage(msg, []) });
         const shown = r ? `${r.kind}${r.id ? `:${r.id}` : ''}${r.reply ? ` "${r.reply.slice(0, 120)}"` : ''}` : 'null';
         ok(`"${msg.slice(0, 46)}" -> ${shown} (${Date.now() - t}ms)`, check(r));
       }
@@ -164,8 +197,28 @@ const ok = (name, cond, extra = '') => {
       ok('with no money in it, though the facts had some', !!w && passesGate(w.reply));
 
       // Money: the model is asked nothing, the person gets the fixed line.
-      const money = await bot.generateReply({ party: c, history: [], message: 'mujhe refund chahiye' });
+      const money = await bot.generateReply({ party: c, history: [], message: 'I want a refund' });
       ok('a refund request gets the fixed line and a person', money.escalate === true && /needs a person rather than me/.test(money.reply));
+
+      // Language mirroring on the hand-written replies, with a real account.
+      if (cust) {
+        const real = { kind: 'customer', id: cust.user_id };
+        const digits = (t) => (String(t).match(/\d+/g) || []).sort().join(',');
+        const en = await bot.generateReply({ party: real, history: [], message: 'why was i charged' });
+        const hing = await bot.generateReply({ party: real, history: [], message: 'mere paise kyu kat gaye' });
+        const hi = await bot.generateReply({ party: real, history: [], message: 'मेरे पैसे क्यों कट गए' });
+        console.log(`       hinglish: ${String(hing.reply).replace(/\n+/g, ' ').replace(/\d/g, '#').slice(0, 230)}`);
+        ok('English question, English reply', /Your last consultation was with/.test(en.reply));
+        ok('Hinglish question, Hinglish reply', !/Your last consultation was with/.test(hing.reply) && !/[\u0900-\u097F]/.test(hing.reply) && bot._internals.languageOf(hing.reply) === 'hinglish');
+        ok('with exactly the same numbers as the approved English', digits(hing.reply) === digits(en.reply));
+        ok('Hindi question, Hindi reply', /[\u0900-\u097F]/.test(hi.reply));
+      }
+      const aHing = await supportAi.route({ party: c, message: 'purani chat kaha dikhegi', history: [], intents: I, language: 'hinglish' });
+      const aHi = await supportAi.route({ party: c, message: 'पुरानी चैट कहाँ दिखेगी', history: [], intents: I, language: 'hi' });
+      const aEn = await supportAi.route({ party: c, message: 'where can I see my old chats', history: [], intents: I, language: 'en' });
+      ok('the AI answers Hinglish in Hinglish', !!aHing && aHing.kind === 'answer' && !/[\u0900-\u097F]/.test(aHing.reply) && bot._internals.languageOf(aHing.reply) === 'hinglish');
+      ok('the AI answers Hindi in Hindi', !!aHi && aHi.kind === 'answer' && /[\u0900-\u097F]/.test(aHi.reply));
+      ok('the AI answers English in English', !!aEn && aEn.kind === 'answer' && bot._internals.languageOf(aEn.reply) === 'en');
       ok('and the model wrote none of it', !(money.toolTrace && money.toolTrace.action === 'compose'));
       const m2 = await supportAi.route({ party: c, message: 'recharge kiya tha 500 ka wallet me nahi aaya kya karu', history: [], intents: I });
       console.log(`       money route: ${m2 ? `${m2.kind}${m2.id ? ':' + m2.id : ''} "${m2.reply || ''}"` : 'null'}`);

@@ -5500,3 +5500,28 @@ Verified: `scripts/supportAiCheck.js --live`, 70/70 on a clean run (one earlier 
 timeout on the free local keys, which in production falls back to the rules). Includes a lesson
 taught through `_setLearned` being used by the real model, with a control that it does not invent
 the same answer without the lesson. **Not deployed; not exercised in the apps.**
+
+### EV3. Same day: replies mirror the customer's language, and "hi" inside "this" was a greeting
+
+Owner: Hindi gets Hindi, Hinglish gets Hinglish, English gets English, **by how the person writes,
+never by request**.
+
+- `supportBot.pickLanguage(raw, history)` returns `hi` (Devanagari), `hinglish` or `en`. A message
+  too short to tell ("ok", "call") inherits the conversation's language. Hindi-only words decide it;
+  words English shares ("me", "to", "do") count only when nothing in the message is plainly English.
+- The system decides the language and TELLS the model (`language` on `route` / `compose`), rather
+  than letting it guess per message: left to itself it answered a Latin-script Hinglish message in
+  Devanagari.
+- The six fixed lines (handover, clarify, upset, lookup failed...) are hand-written in all three.
+- **The hand-written data replies exist in English and Hindi only.** For a Hinglish writer the
+  approved English reply is reworded by `supportAi.toHinglish()`, which is a translation and nothing
+  else, checked in code: every number must equal the original's (sorted digit runs), no Devanagari,
+  length within 0.5x-2.2x. Any failure, or no key, sends the English as before. This is the one place
+  a model touches a sentence about money, and it can only reword one a person already approved.
+- **Existing bug fixed:** a single-word phrase matched as a SUBSTRING, so "hi" matched inside
+  "this", "thing", "nahi" and "chahiye" and the bot answered "Hello! Tell me what went wrong" to a
+  real question. Words under 4 letters must now be whole words.
+
+Verified: `scripts/supportAiCheck.js --live` 99/100, the one miss a timeout on the rate-limited
+local keys (that case passed twice when re-run alone). Run the live suite sparingly: two free keys
+are exhausted by a few runs in a row, after which every model call returns null by design.
