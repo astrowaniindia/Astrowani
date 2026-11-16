@@ -3387,6 +3387,8 @@ app.get('/api/categories', async (req, res) => {
 });
 
 require('./src/blogPublic').register(app, supabase);
+// Web Stories of blog articles, /stories/<slug> (via nginx). CLAUDE.md EU.
+require('./src/blogStories').register(app, supabase);
 require('./src/blogArchive').register(app, supabase);
 // Website astrologer profile pages, /astrologers/<slug> (via nginx).
 require('./src/astrologerProfilePages').register(app, supabase);

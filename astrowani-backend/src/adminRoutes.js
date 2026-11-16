@@ -431,7 +431,12 @@ module.exports = function registerAdminRoutes(app) {
       if (row && row.is_published && row.slug) {
         const { postUrl, SITE_BASE } = require('./blogAgent/seo');
         const hi = row.title_hi && row.content_hi ? `${SITE_BASE}/hi/blog/${encodeURIComponent(row.slug)}` : null;
-        require('./indexNow').notify([postUrl(row.slug), hi, `${SITE_BASE}/blog.html`].filter(Boolean));
+        // Its Web Story too, when the article has one (src/blogStories.js).
+        const stories = require('./blogStories');
+        const storyUrls = stories.hasStory(row.content_en)
+          ? [stories.storyUrl(row.slug), stories.hasHindi(row) ? stories.storyUrl(row.slug, SITE_BASE, true) : null]
+          : [];
+        require('./indexNow').notify([postUrl(row.slug), hi, `${SITE_BASE}/blog.html`, ...storyUrls].filter(Boolean));
       }
     },
     // The article's address, /blog/<slug> — generated, validated and locked once

@@ -97,6 +97,25 @@ function fmtDate(value, hi) {
   }
 }
 
+/**
+ * "Watch this as a story" — the link from an article to its Web Story
+ * (src/blogStories.js), when it has one. Linking it from the article is how
+ * Google finds a story besides the sitemap. Required lazily: blogStories
+ * requires nothing from here, but keeping the edge one-way and late means a
+ * fault in the story module can never stop an article rendering.
+ */
+function storyLink(post, base, hi) {
+  try {
+    const stories = require('./blogStories');
+    const html = hi ? post.hindi.content : post.english.content;
+    if (!post.slug || !stories.hasStory(html)) return '';
+    const label = hi ? '▶ यह लेख स्टोरी के रूप में देखें' : '▶ Watch this article as a story';
+    return `<p class="blog-story-link" style="margin:0 0 18px;"><a href="${escape(stories.storyUrl(post.slug, base, hi))}" style="color:var(--gold-deep, #b8860b); font-weight:700;">${label}</a></p>`;
+  } catch (_) {
+    return '';
+  }
+}
+
 function renderArticle(shell, post, { base = SITE_BASE, hi = false, status = 200 } = {}) {
   base = base.replace(/\/$/, '');
   const translated = !!(post?.hindi.title && post?.hindi.content);
@@ -154,6 +173,7 @@ ${tags.join('\n')}</head>`);
       ${post.thumbnail ? `<img class="blog-hero-image" src="${escape(image)}" alt="">` : ''}
       <div class="blog-meta">${escape(hi ? 'Astrowani' : 'By Astrowani')}<span class="dot-sep">·</span><time datetime="${escape(post.createdAt)}">${escape(fmtDate(post.createdAt, hi))}</time>${post.updatedAt && post.updatedAt !== post.createdAt ? `<span class="dot-sep">·</span>${escape(hi ? 'अद्यतन' : 'Updated')} <time datetime="${escape(post.updatedAt)}">${escape(fmtDate(post.updatedAt, hi))}</time>` : ''}</div>
       <h1 class="serif blog-article-title">${escape(title)}</h1>
+      ${storyLink(post, base, hi)}
       <div class="legal-content" style="max-width:none;padding:0">${(hi ? post.hindi.content : post.english.content)
         // With a <base> tag a bare "#section" link resolves against the base —
         // the site root — and would leave the article. Anchor it to this page.

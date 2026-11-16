@@ -24,6 +24,9 @@
  * reading into hi/ itself. The reading is astroHoroscopeReading() from
  * astro-engine.js, loaded as-is, so it is identical to what the browser shows.
  *
+ * It also writes the 24 daily Web Stories (aw/horoscope-stories.js) from the
+ * same reading.
+ *
  * Exits 0 even when a page is missing (a partial bake beats none) but reports it;
  * exits 1 only if astro-engine.js cannot be loaded at all.
  */
@@ -86,4 +89,15 @@ for (const sign of SIGNS) {
   }
 }
 console.log(`${check ? 'would bake' : 'baked'} ${changed} page(s) for ${dateStr} in ${ROOT}`);
+
+// The 24 daily Web Stories (aw/horoscope-stories.js, CLAUDE.md EU), from the
+// same reading. Guarded on its own: a story failure must never cost the pages
+// their bake, which has already happened above.
+try {
+  const stories = require('./horoscope-stories.js');
+  const r = stories.writeStories(ROOT, dateStr, date, (sign, lang) => ctx.reading(sign, date, 'daily', lang), { check });
+  console.log(`${check ? 'would write' : 'wrote'} ${r.changed} of ${r.files.length} web stories`);
+} catch (e) {
+  console.error(`web stories NOT written: ${e.message}`);
+}
 if (missing.length) console.log(`skipped: ${missing.join(', ')}`);

@@ -810,7 +810,10 @@ eq('xmlEscape handles an ampersand', require('../src/blogAgent/seo').escAttr('a 
 ok('the degraded sitemap (no posts) is still valid', (() => {
   const hindi = hindiPages();
   const expected = STATIC_PAGES.length
-    + STATIC_PAGES.filter(([page]) => hindi.has(page || 'index.html')).length;
+    + STATIC_PAGES.filter(([page]) => hindi.has(page || 'index.html')).length
+    // The 24 daily horoscope Web Stories (12 signs x en/hi) are listed even with
+    // no posts: they are written nightly on the VPS, not read from the database.
+    + require('../src/blogSitemap').STORY_SIGNS.length * 2;
   const x = buildSitemap([]);
   return x.includes('<urlset') && x.includes('</urlset>')
     && (x.match(/<url>/g) || []).length === expected;

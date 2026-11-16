@@ -31,6 +31,11 @@ const COMPAT = require('./compatibility-pages-content.js');
 const compatOf = (s) => COMPAT.pairsOf(COMPAT.SIGNS.find((c) => c.name === s.name));
 const COMPAT_TITLE = (s) => [`${s.name} compatibility`, `${s.hi} राशि की अनुकूलता`];
 const COMPAT_ALL = ['All sign pairings', 'सभी राशि जोड़ियां'];
+// Today's reading as a Web Story (aw/horoscope-stories.js). The story file is
+// written by the nightly bake on the VPS only, so this link 404s on a local
+// checkout — it is not a broken link. Relative, so on /hi/ it reaches the
+// Hindi story at hi/stories/.
+const STORY_LINK = (s) => [`▶ Watch today’s ${s.name} horoscope as a story`, `▶ आज का ${s.hi} राशिफल स्टोरी में देखें`];
 
 const ROOT = path.join(__dirname, '..');
 const SOURCE = path.join(ROOT, 'horoscope.html');
@@ -78,6 +83,7 @@ function body(s) {
       </div>
     </div>
     <div class="calc-disclaimer" style="text-align:center; margin-top:20px;">${en(SHARED.readingNote)}</div>
+    <p style="text-align:center; margin:16px 0 0;"><a href="stories/${s.name.toLowerCase()}-horoscope.html" style="color:var(--gold); font-weight:700;">${en(STORY_LINK(s))}</a></p>
   </div>
 </div>
 
@@ -172,7 +178,7 @@ function pairs(dict) {
     out.push([s.title, s.titleHi], s.crumb, [`· ${en(s.crumb)}`, `· ${s.crumb[1]}`], s.h1, s.lead,
       s.natureTitle, s.nature, s.lifeTitle, s.life, s.linkLabel, s.element, s.lord, s.day, s.dates, s.partners);
     for (const [q, a] of s.faqs) out.push(q, a);
-    out.push(COMPAT_TITLE(s), ...compatOf(s).map((p) => p.label));
+    out.push(COMPAT_TITLE(s), ...compatOf(s).map((p) => p.label), STORY_LINK(s));
   }
   return out;
 }

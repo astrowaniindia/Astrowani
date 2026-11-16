@@ -5367,3 +5367,25 @@ It still catches a real edit (checked).
   ("Zodiac Compatibility"), each sign horoscope page (its 12 pairings), and the backend sitemap,
   which lists the pair pages by reading the files (`blogSitemap.js`, fails closed).
 - Order: compatibility-pages → horoscope-pages → … → bump-version → make-hindi-pages → apply-seo.
+
+---
+
+## Subsystem added 2026-11-16: Web Stories for Google Discover (EU)
+
+Two kinds of AMP Web Story, sharing one renderer, `astrowani-backend/src/webStory.js`:
+
+| | Where | Made by |
+|---|---|---|
+| 24 daily horoscope stories | `stories/<sign>-horoscope.html`, `hi/stories/<sign>-horoscope.html` | `aw/horoscope-stories.js`, called by `aw/bake-horoscopes.js` |
+| one story per blog article | `/stories/<slug>`, `/hi/stories/<slug>` | `src/blogStories.js`, rendered on request (nginx regex route) |
+
+- **The horoscope stories keep ONE fixed address per sign, rewritten every night.** They are not new pages each day: 12 new pages a day of generated text would be ~4,400 near-identical pages a year, which is Google's "scaled content" and would hurt the whole site. `dateModified` moves daily.
+- **They exist only on the VPS.** The nightly bake (`daily-horoscope.yml`, and after every website deploy) writes them into the deployed copy, the same as the baked sign pages. A local checkout has none, so the sign pages' "Watch today's … as a story" link 404s locally. That is expected, not a broken link. Deploy's `rsync --delete` removes them and the bake that follows rewrites them.
+- **A blog story is the article's own `<h2>` sections**, each with the opening of its first paragraph. A section counts only if it has **at least two paragraphs**. That rule is what excludes the blocks the blog agent adds after the body ("read next" has no paragraph, the CTA has one); the FAQ and the known headings from `blogAgent/keywords.js` are skipped as well. **An article with fewer than 3 sections gets no story** (404, noindex). Today that leaves out the 5 pre-agent posts, which are undivided text. The article page, the sitemap and IndexNow all use `hasStory()`, so nothing ever links to a story that 404s.
+- Story Hindi with no Hindi article → 302 to the English story, the same rule as the article page.
+- **Every story must pass the official AMP validator.** An invalid story is silently never shown in Discover. `scripts/testWebStories.js` runs Google's validator over every kind of page. It needs `amphtml-validator` installed OUTSIDE the repo, with `AMP_VALIDATOR_DIR` pointing at that folder. It also checks that a deliberately broken page FAILS. It has 12 tests and was verified to fail on three deliberate regressions: the two-paragraph rule removed, the article page linking a story it lacks, and `!important` in the CSS.
+- **The sitemap reads an article body only when the article is new or changed** (`listStories` memo, keyed by `updated_at`). Re-reading every body on each refresh would grow egress without limit, which is the EC problem.
+- `astroHoroscopeReading()` now also returns `parts` (the five fragments). This is additive, and `sentence` is unchanged.
+- Covers: `aw/make-story-posters.js` makes `assets/stories/<sign>.jpg`, with the zodiac wheel turned so that sign sits at the top, plus `blog.jpg` as the fallback. They are 960x1280 with no text, because Discover lays its own title over the image. A blog story's cover is the article photo, cropped to 3:4 by the storage render endpoint.
+- **DEPLOY ORDER, as for ET4/ET5: nginx routes first** (`Apply nginx blog routes`, which now adds the two `/stories/` locations), **then the backend, then the website.**
+- Not yet seen on the live site, and Discover pickup cannot be tested before it is live. Check it in Search Console → Enhancements once deployed.

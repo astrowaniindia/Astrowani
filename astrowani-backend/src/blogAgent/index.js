@@ -244,7 +244,12 @@ async function runOnce({ db, cfg, log, dryRun = false, forcedTopic = null, state
     // throws and gives up after 10s, so it cannot fail or stall a publish.
     if (cfg.publish) {
       const hiUrl = assembled.contentHi ? seo.postUrl(slug).replace(`${seo.SITE_BASE}/blog/`, `${seo.SITE_BASE}/hi/blog/`) : null;
-      const pinged = await indexNow.submit([seo.postUrl(slug), hiUrl, `${seo.SITE_BASE}/blog.html`].filter(Boolean));
+      // Its Web Story too (src/blogStories.js), which exists from this moment.
+      const stories = require('../blogStories');
+      const storyUrls = stories.hasStory(assembled.contentEn)
+        ? [stories.storyUrl(slug), assembled.contentHi && stories.hasStory(assembled.contentHi) ? stories.storyUrl(slug, seo.SITE_BASE, true) : null]
+        : [];
+      const pinged = await indexNow.submit([seo.postUrl(slug), hiUrl, `${seo.SITE_BASE}/blog.html`, ...storyUrls].filter(Boolean));
       log(`  indexnow: ${pinged.skipped || pinged.status || pinged.error}`);
     }
 

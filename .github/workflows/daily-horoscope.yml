@@ -1,4 +1,5 @@
-# Bake TODAY's reading into the 24 sign horoscope pages, just after midnight IST,
+# Bake TODAY's reading into the 24 sign horoscope pages and the 24 daily Web
+# Stories (aw/horoscope-stories.js), just after midnight IST,
 # then tell IndexNow those pages changed.
 #
 # The reading changes every day, and it used to exist only after JavaScript ran
@@ -52,6 +53,6 @@ jobs:
             vps-deployment/scripts
             astrowani-website
             astrowani-backend/src
-      - name: Tell IndexNow the 24 pages changed
+      - name: Tell IndexNow the 24 pages and their 24 Web Stories changed
         continue-on-error: true
         run: node vps-deployment/scripts/indexnow-submit.js --horoscopes

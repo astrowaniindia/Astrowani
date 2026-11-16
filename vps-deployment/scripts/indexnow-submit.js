@@ -4,7 +4,7 @@
  *
  *   node vps-deployment/scripts/indexnow-submit.js <before-sha> <after-sha>   # from a deploy
  *   node vps-deployment/scripts/indexnow-submit.js --urls <url> [<url> …]     # explicit
- *   node vps-deployment/scripts/indexnow-submit.js --horoscopes                # the 24 sign pages
+ *   node vps-deployment/scripts/indexnow-submit.js --horoscopes                # the 24 sign pages + 24 Web Stories
  *   … add --dry-run to print what would be sent and send nothing.
  *
  * Run by .github/workflows/deploy-shop.yml after the website is copied, and by
@@ -50,6 +50,10 @@ if (args[0] === '--horoscopes') {
   // The 24 sign pages whose reading the daily bake just changed (daily-horoscope.yml).
   const signs = ['aries', 'taurus', 'gemini', 'cancer', 'leo', 'virgo', 'libra', 'scorpio', 'sagittarius', 'capricorn', 'aquarius', 'pisces'];
   urls = signs.flatMap((s) => [`${s}-horoscope.html`, `hi/${s}-horoscope.html`]).map(urlFor).filter(Boolean);
+  // And their 24 Web Stories (aw/horoscope-stories.js), rewritten by the same
+  // bake. Listed directly, not through urlFor(): they exist only on the VPS, so
+  // the file check urlFor makes against this checkout would drop every one.
+  urls.push(...signs.flatMap((s) => [`stories/${s}-horoscope.html`, `hi/stories/${s}-horoscope.html`]).map((rel) => `${siteBase}/${rel}`));
 } else if (args[0] === '--urls') {
   urls = args.slice(1).filter((a) => !a.startsWith('--'));
 } else {

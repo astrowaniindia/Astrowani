@@ -444,11 +444,15 @@ function astroHoroscopeReading(signName, date, period, lang) {
   for (const k of ['general', 'love', 'career', 'money', 'health']) idx[k] = Math.floor(rnd() * ASTRO_HOROSCOPE_FRAGMENTS[k].length);
   if (lang === 'hi') {
     const f = (k) => ASTRO_HOROSCOPE_FRAGMENTS_HI[k][idx[k]];
-    return { sentence: `${f('general')}। प्रेम में, ${f('love')}। काम में, ${f('career')}। धन के मामले में, ${f('money')}। स्वास्थ्य के लिए, ${f('health')}।`, meters };
+    // `parts` is each fragment on its own, for the Web Stories (one slide each;
+    // aw/horoscope-stories.js). `sentence` is unchanged.
+    const parts = { general: f('general'), love: f('love'), career: f('career'), money: f('money'), health: f('health') };
+    return { parts, sentence: `${f('general')}। प्रेम में, ${f('love')}। काम में, ${f('career')}। धन के मामले में, ${f('money')}। स्वास्थ्य के लिए, ${f('health')}।`, meters };
   }
   const f = (k) => ASTRO_HOROSCOPE_FRAGMENTS[k][idx[k]];
   const sentence = `${f('general').replace(/^./, (c) => c.toUpperCase())}. In love, ${f('love')}. At work, ${f('career')}. On money, ${f('money')}. For health, ${f('health')}.`;
-  return { sentence, meters };
+  const parts = { general: f('general'), love: f('love'), career: f('career'), money: f('money'), health: f('health') };
+  return { sentence, meters, parts };
 }
 
 const ASTRO_CITIES = [

@@ -160,7 +160,13 @@ function altLinks(enLoc, hiLoc) {
     .join('\n');
 }
 
-function buildSitemap(posts, hindi = hindiPages(), profiles = []) {
+// The 24 daily horoscope Web Stories (astrowani-website/aw/horoscope-stories.js).
+// They are written onto the VPS by the nightly bake and are NOT files in the
+// repo, so they cannot be discovered by reading the website directory the way
+// the compatibility pages are; the twelve signs are simply listed.
+const STORY_SIGNS = ['aries', 'taurus', 'gemini', 'cancer', 'leo', 'virgo', 'libra', 'scorpio', 'sagittarius', 'capricorn', 'aquarius', 'pisces'];
+
+function buildSitemap(posts, hindi = hindiPages(), profiles = [], blogStories = []) {
   const entries = [];
   for (const [page, priority, changefreq] of STATIC_PAGES) {
     const enLoc = `${SITE_BASE}/${page}`;
@@ -203,6 +209,27 @@ function buildSitemap(posts, hindi = hindiPages(), profiles = []) {
     const alts = altLinks(enLoc, hiLoc);
     entries.push(urlEntry({ loc: enLoc, lastmod, priority: '0.7', changefreq: 'monthly', alternates: alts }));
     entries.push(urlEntry({ loc: hiLoc, lastmod, priority: '0.7', changefreq: 'monthly', alternates: alts }));
+  }
+
+  // Web Stories (CLAUDE.md EU). Horoscope stories change daily; a blog story
+  // changes when its article does, so it carries the article's lastmod.
+  for (const sign of STORY_SIGNS) {
+    const enLoc = `${SITE_BASE}/stories/${sign}-horoscope.html`;
+    const hiLoc = `${SITE_BASE}/hi/stories/${sign}-horoscope.html`;
+    const alts = altLinks(enLoc, hiLoc);
+    entries.push(urlEntry({ loc: enLoc, priority: '0.6', changefreq: 'daily', alternates: alts }));
+    entries.push(urlEntry({ loc: hiLoc, priority: '0.6', changefreq: 'daily', alternates: alts }));
+  }
+  for (const st of blogStories) {
+    const enLoc = `${SITE_BASE}/stories/${encodeURIComponent(st.slug)}`;
+    if (!st.hasHindi) {
+      entries.push(urlEntry({ loc: enLoc, lastmod: st.lastmod, priority: '0.5', changefreq: 'monthly' }));
+      continue;
+    }
+    const hiLoc = `${SITE_BASE}/hi/stories/${encodeURIComponent(st.slug)}`;
+    const alts = altLinks(enLoc, hiLoc);
+    entries.push(urlEntry({ loc: enLoc, lastmod: st.lastmod, priority: '0.5', changefreq: 'monthly', alternates: alts }));
+    entries.push(urlEntry({ loc: hiLoc, lastmod: st.lastmod, priority: '0.5', changefreq: 'monthly', alternates: alts }));
   }
 
   // Astrologer profile pages (src/astrologerProfilePages.js). English only.
@@ -263,7 +290,14 @@ module.exports = function registerBlogSitemap(app, supabase) {
       } catch (pErr) {
         console.error('[blog-sitemap] astrologer profiles:', pErr.message);
       }
-      return res.status(200).send(buildSitemap(data || [], undefined, profiles));
+      // Blog stories (src/blogStories.js). A failure costs those entries only.
+      let blogStories = [];
+      try {
+        blogStories = await require('./blogStories').listStories(supabase);
+      } catch (sErr) {
+        console.error('[blog-sitemap] blog stories:', sErr.message);
+      }
+      return res.status(200).send(buildSitemap(data || [], undefined, profiles, blogStories));
     } catch (err) {
       console.error('[blog-sitemap]', err.message);
       // Still answer with a VALID sitemap of the static pages rather than a 500.
@@ -278,4 +312,5 @@ module.exports = function registerBlogSitemap(app, supabase) {
 
 module.exports.buildSitemap = buildSitemap;
 module.exports.STATIC_PAGES = STATIC_PAGES;
+module.exports.STORY_SIGNS = STORY_SIGNS;
 module.exports.hindiPages = hindiPages;
