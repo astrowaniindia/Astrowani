@@ -1,3 +1,4 @@
+const { brandTitle } = require('./seoTitle');
 /**
  * One Web Story per blog article, for Google Discover (CLAUDE.md EU).
  *
@@ -148,7 +149,7 @@ function buildBlogStory(row, { base = SITE_BASE, hi = false } = {}) {
     lang: hi ? 'hi' : 'en',
     siteBase: base,
     title,
-    headTitle: `${title} | Astrowani Story`,
+    headTitle: brandTitle(title),
     description: describe(row, hi),
     canonical: storyUrl(row.slug, base, hi),
     alternates: translated

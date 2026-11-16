@@ -1,3 +1,4 @@
+const { firstFitting } = require('./seoTitle');
 /**
  * Public website profile pages, one per astrologer: /astrologers/<slug>.
  *
@@ -148,7 +149,11 @@ function renderProfile(shell, row, cats, reviews, { base = SITE_BASE } = {}) {
   const url = profileUrl(row, base);
   const about = aboutParagraphs(row, f);
   const summary = [f.specialties.slice(0, 3).join(', '), f.years ? `${f.years} years of experience` : '', f.languages.join(', ')].filter(Boolean).join(' · ');
-  const title = `${f.name} — Astrologer${f.specialties[0] ? ` for ${f.specialties[0]}` : ''} | Astrowani`;
+  const title = firstFitting([
+    f.specialties[0] ? `${f.name} — Astrologer for ${f.specialties[0]}` : '',
+    `${f.name} — Astrologer`,
+    f.name,
+  ]);
   const desc = `${f.name}: ${summary}. ${about[0]}`.replace(/\s+/g, ' ').slice(0, 158);
   const image = f.photo || `${base}/assets/og-default.jpg`;
 

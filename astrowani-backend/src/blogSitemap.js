@@ -119,6 +119,8 @@ const STATIC_PAGES = [
   ['safety-guidelines.html', '0.2', 'yearly'],
   ['child-safety.html', '0.2', 'yearly'],
   ['delete-account.html', '0.2', 'yearly'],
+  // Indexable and linked from the footer, so it belongs here too (SEO audit 2026-11-16).
+  ['report-vulnerability.html', '0.1', 'yearly'],
 ];
 
 // The 78 pair pages, one per pair of signs. Listed from the files on disk so a

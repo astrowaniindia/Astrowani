@@ -1,3 +1,4 @@
+const { brandTitle } = require('./seoTitle');
 // Read-only public article routes. Kept separate so tests never start billing workers.
 const fs = require('fs');
 const path = require('path');
@@ -164,7 +165,7 @@ function renderArticle(shell, post, { base = SITE_BASE, hi = false, status = 200
   // Remove all conflicting template metadata, including legacy duplicates outside SEO:START.
   let html = shell.replace(/<head>([\s\S]*?)<\/head>/i, (_, head) => `<head>\n${baseTag}${head
     .replace(/<base\b[^>]*>\s*/gi, '')
-    .replace(/<title[^>]*>[\s\S]*?<\/title>/gi, () => `<title>${escape(title)} — Astrowani Blog</title>`)
+    .replace(/<title[^>]*>[\s\S]*?<\/title>/gi, () => `<title>${escape(brandTitle(title))}</title>`)
     .replace(/<meta\b[^>]*(?:name="(?:description|robots|twitter:[^"]+)"|property="og:[^"]+")[^>]*>\s*/gi, '')
     .replace(/<link\b[^>]*(?:rel="canonical"|hreflang="[^"]+")[^>]*>\s*/gi, '')
     .replace(/<script\b[^>]*type="application\/ld\+json"[^>]*>[\s\S]*?<\/script>\s*/gi, '')}
@@ -175,7 +176,7 @@ ${tags.join('\n')}</head>`);
   const back = hi ? '../blog.html' : 'blog.html';
   const body = post
     ? `<a href="${back}" class="blog-back-link">${hi ? '← सभी लेख' : '← Back to all articles'}</a>
-      ${post.thumbnail ? `<img class="blog-hero-image" src="${escape(image)}" alt="">` : ''}
+      ${post.thumbnail ? `<img class="blog-hero-image" src="${escape(image)}" alt="" width="1200" height="675" fetchpriority="high">` : ''}
       <div class="blog-meta">${escape(hi ? 'Astrowani' : 'By Astrowani')}<span class="dot-sep">·</span><time datetime="${escape(post.createdAt)}">${escape(fmtDate(post.createdAt, hi))}</time>${post.updatedAt && post.updatedAt !== post.createdAt ? `<span class="dot-sep">·</span>${escape(hi ? 'अद्यतन' : 'Updated')} <time datetime="${escape(post.updatedAt)}">${escape(fmtDate(post.updatedAt, hi))}</time>` : ''}</div>
       <h1 class="serif blog-article-title">${escape(title)}</h1>
       ${storyLink(post, base, hi)}
