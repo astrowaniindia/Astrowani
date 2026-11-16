@@ -12,6 +12,17 @@
    <script src="script.js?v=N"> whenever this file OR script.js changes, so the
    new URL has never been cached and Cloudflare is forced to fetch fresh.
    ============================================================ */
+/* Size-matched FALLBACK fonts (2026-11-16). Until Manrope / Marcellus arrive,
+   text is drawn in a local font; when they arrive the text used to re-wrap and
+   shove the hero down (Lighthouse CLS 0.08-0.12, cause "Web font loaded").
+   size-adjust makes the local font take the same width as the real one, so the
+   swap no longer moves anything. Ratios were measured in Chrome against the real
+   fonts (Manrope ~1.01x Arial across weights 400-800, Marcellus 1.027x Georgia).
+   Roboto / Noto Serif (Android) are listed after the measured fonts and are close
+   enough in width to share the same correction. */
+@font-face { font-family: 'Manrope Fallback'; src: local('Arial'), local('Liberation Sans'), local('Arimo'), local('Helvetica'), local('Roboto'); size-adjust: 101%; ascent-override: 106%; descent-override: 30%; line-gap-override: 0%; }
+@font-face { font-family: 'Marcellus Fallback'; src: local('Georgia'), local('Noto Serif'), local('DejaVu Serif'), local('Times New Roman'); size-adjust: 103%; ascent-override: 94%; descent-override: 27%; line-gap-override: 0%; }
+
 :root {
   --maroon: #592A19;
   --cream: #F4D8BC;
@@ -52,7 +63,7 @@
   width: 38px; height: 38px; border-radius: 50%; flex: 0 0 auto;
   background: var(--maroon); color: var(--cream); border: 1px solid color-mix(in srgb, var(--cream) 18%, transparent);
   display: flex; align-items: center; justify-content: center; cursor: pointer;
-  font-family: 'Marcellus', serif; font-size: 15px; font-weight: 700;
+  font-family: 'Marcellus', 'Marcellus Fallback', serif; font-size: 15px; font-weight: 700;
   transition: transform .2s ease, filter .2s ease, box-shadow .2s ease;
   box-shadow: 0 10px 20px -12px var(--shadow-color);
 }
@@ -329,11 +340,11 @@ a.ch-cta {
 .page-header p { margin: 14px auto 0; max-width: 560px; font-size: 15.5px; line-height: 1.7; color: var(--cream-muted); }
 
 html { scroll-behavior: smooth; }
-body { margin: 0; font-family: 'Manrope', sans-serif; background: var(--page-bg); color: var(--ink); overflow-x: hidden; }
+body { margin: 0; font-family: 'Manrope', 'Manrope Fallback', sans-serif; background: var(--page-bg); color: var(--ink); overflow-x: hidden; }
 a { color: inherit; text-decoration: none; }
 * { box-sizing: border-box; }
 img { max-width: 100%; height: auto; display: block; }
-.serif { font-family: 'Marcellus', serif; }
+.serif { font-family: 'Marcellus', 'Marcellus Fallback', serif; }
 .wrap { max-width: 1280px; margin: 0 auto; padding: 0 24px; }
 
 /* ---------- section rhythm: every band is a clear, even chunk ---------- */
@@ -346,7 +357,7 @@ section.block, .block { max-width: 1280px; margin: 0 auto; padding: 0 24px; }
    than rewritten, so this only has to make it readable, not re-author it. */
 .legal-content { max-width: 760px; margin: 0 auto; padding: 0 24px; }
 .legal-content h2 {
-  font-family: 'Marcellus', serif; font-weight: 400; font-size: 22px;
+  font-family: 'Marcellus', 'Marcellus Fallback', serif; font-weight: 400; font-size: 22px;
   color: var(--maroon); margin: 40px 0 14px;
 }
 .legal-content h2:first-child { margin-top: 0; }
@@ -686,7 +697,7 @@ h2.section-title { margin: 0; font-size: 36px; font-weight: 400; color: var(--ma
 }
 .shop-card:hover { transform: translateY(-6px); box-shadow: 0 28px 48px -18px var(--shadow-color); }
 .shop-card-body { position: absolute; left: 0; right: 0; bottom: 0; padding: 28px; }
-.shop-card-title { font-family: 'Marcellus', serif; font-size: 26px; font-weight: 400; color: var(--cream); margin-bottom: 8px; }
+.shop-card-title { font-family: 'Marcellus', 'Marcellus Fallback', serif; font-size: 26px; font-weight: 400; color: var(--cream); margin-bottom: 8px; }
 .shop-card-desc { font-size: 13.5px; line-height: 1.6; color: color-mix(in srgb, var(--cream) 85%, transparent); max-width: 300px; margin-bottom: 16px; }
 .shop-card-link { font-size: 14px; font-weight: 800; color: var(--gold); }
 @media (max-width: 760px) { .shop-grid { grid-template-columns: 1fr; } }
@@ -1003,7 +1014,7 @@ footer.site-footer { background: var(--maroon); padding: 64px 24px 28px; color: 
 .calc-btn:hover { filter: brightness(1.05); transform: translateY(-2px); }
 .calc-result { margin-top: 20px; padding: 20px 22px; border-radius: 16px; background: var(--maroon); color: var(--cream); display: none; }
 .calc-result.is-visible { display: block; }
-.calc-result-big { font-size: 24px; font-weight: 800; color: var(--gold); margin-bottom: 6px; font-family: 'Marcellus', serif; }
+.calc-result-big { font-size: 24px; font-weight: 800; color: var(--gold); margin-bottom: 6px; font-family: 'Marcellus', 'Marcellus Fallback', serif; }
 .calc-result-sub { font-size: 13.5px; line-height: 1.65; color: var(--cream-muted); }
 .calc-advanced-note {
   display: flex; align-items: flex-start; gap: 12px; background: color-mix(in srgb, var(--gold) 14%, var(--paper) 86%);
@@ -1022,7 +1033,7 @@ footer.site-footer { background: var(--maroon); padding: 64px 24px 28px; color: 
 .panchang-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 18px; margin-bottom: 20px; }
 .panchang-stat { background: var(--paper); border-radius: 16px; padding: 18px 20px; box-shadow: 0 8px 20px -16px var(--shadow-color); }
 .panchang-stat-label { font-size: 11.5px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-faint); margin-bottom: 6px; }
-.panchang-stat-value { font-size: 17px; font-weight: 800; color: var(--maroon); font-family: 'Marcellus', serif; }
+.panchang-stat-value { font-size: 17px; font-weight: 800; color: var(--maroon); font-family: 'Marcellus', 'Marcellus Fallback', serif; }
 .panchang-table { width: 100%; border-collapse: collapse; }
 .panchang-table th, .panchang-table td { text-align: left; padding: 10px 14px; font-size: 13.5px; border-bottom: 1px solid var(--border-softer); }
 .panchang-table th { color: var(--ink-faint); font-weight: 800; font-size: 11.5px; text-transform: uppercase; letter-spacing: .03em; }
@@ -1198,3 +1209,12 @@ html[data-lang="hi"] .lang-en { display: none; }
    long as the loading it is covering and can never leave a lasting gap. */
 #blog-related-root { min-height: 620px; }
 @media (max-width: 900px) { #blog-related-root { min-height: 1600px; } }
+
+/* Homepage only (the bands that follow the hero wrapper): the browser skips
+   style, layout and paint for a section while it is off screen, and renders it
+   as it nears the viewport. The homepage is ~2,200 elements with two endlessly
+   scrolling astrologer strips; Lighthouse measured 7.9 s of main-thread work on
+   a phone, almost all of it rendering, not script (2026-11-16). `auto 900px`
+   is only the placeholder height before a section has been rendered once; after
+   that the browser remembers the real height, so the scrollbar settles. */
+.ch-wrap ~ .band { content-visibility: auto; contain-intrinsic-size: auto 900px; }

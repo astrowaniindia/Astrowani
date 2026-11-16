@@ -36,7 +36,7 @@
   border: 1px solid var(--border-soft);
 }
 .aw-card-sm { padding: 24px 22px; }
-.aw-card-title { margin: 0 0 8px; font-family: 'Marcellus', serif; font-size: 23px; font-weight: 400; color: var(--maroon); }
+.aw-card-title { margin: 0 0 8px; font-family: 'Marcellus', 'Marcellus Fallback', serif; font-size: 23px; font-weight: 400; color: var(--maroon); }
 .aw-card-text { margin: 0 0 18px; font-size: 14.5px; line-height: 1.6; color: var(--ink-soft); }
 .aw-fineprint { margin: 14px 0 0; font-size: 11.5px; line-height: 1.5; color: var(--ink-faint); text-align: center; }
 .aw-fineprint a { color: var(--gold-deep); text-decoration: underline; }
@@ -82,7 +82,7 @@
 .aw-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   padding: 13px 22px; border: 0; border-radius: 999px; cursor: pointer;
-  font-family: 'Marcellus', serif; font-size: 15px; font-weight: 700;
+  font-family: 'Marcellus', 'Marcellus Fallback', serif; font-size: 15px; font-weight: 700;
   transition: transform .18s ease, filter .18s ease, box-shadow .18s ease;
 }
 .aw-btn:disabled { opacity: .6; cursor: default; }
@@ -104,7 +104,7 @@
 .aw-amount {
   padding: 12px 4px; border-radius: 12px; cursor: pointer;
   border: 1.5px solid var(--border-soft); background: transparent;
-  font-family: 'Marcellus', serif; font-size: 15px; font-weight: 700; color: var(--ink);
+  font-family: 'Marcellus', 'Marcellus Fallback', serif; font-size: 15px; font-weight: 700; color: var(--ink);
 }
 .aw-amount:hover { border-color: var(--gold-deep); }
 .aw-amount.is-active { background: var(--gold); border-color: var(--gold); color: var(--maroon); }
@@ -116,7 +116,7 @@
   border: 1px solid color-mix(in srgb, var(--gold-deep) 35%, transparent);
 }
 .aw-balance-label { font-size: 13px; font-weight: 700; color: var(--ink-soft); }
-.aw-balance-value { font-family: 'Marcellus', serif; font-size: 26px; color: var(--maroon); }
+.aw-balance-value { font-family: 'Marcellus', 'Marcellus Fallback', serif; font-size: 26px; color: var(--maroon); }
 .aw-nav-balance { font-weight: 800; }
 
 /* ---------- ringing ---------- */
@@ -178,14 +178,14 @@
 .aw-peer-avatar { width: 42px; height: 42px; border-radius: 50%; object-fit: cover;
   border: 2px solid var(--gold); flex: 0 0 auto; }
 .aw-peer-who { flex: 1 1 auto; min-width: 0; }
-.aw-peer-name { font-family: 'Marcellus', serif; font-size: 17px; }
+.aw-peer-name { font-family: 'Marcellus', 'Marcellus Fallback', serif; font-size: 17px; }
 .aw-peer-meta { font-size: 12px; color: var(--cream-muted); }
 .aw-screen-main { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
 
 /* connecting / error state shared by both screens */
 .aw-stage { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; padding: 24px; }
 .aw-stage-card { text-align: center; max-width: 420px; }
-.aw-stage-title { font-family: 'Marcellus', serif; font-weight: 400; font-size: 26px;
+.aw-stage-title { font-family: 'Marcellus', 'Marcellus Fallback', serif; font-weight: 400; font-size: 26px;
   color: var(--ink); margin: 0 0 8px; }
 .aw-call-screen .aw-stage-title { color: var(--cream); }
 .aw-stage-text { font-size: 15px; line-height: 1.6; color: var(--ink-soft); margin: 0 0 22px; }
@@ -307,7 +307,7 @@ body.is-video-call .aw-call-peer .aw-ring-avatar { width: 54px; height: 54px; ma
   background: #000; z-index: 2;
 }
 .aw-call-peer { position: relative; z-index: 1; text-align: center; padding: 20px; }
-.aw-call-name { font-family: 'Marcellus', serif; font-size: 21px; margin-top: 4px; }
+.aw-call-name { font-family: 'Marcellus', 'Marcellus Fallback', serif; font-size: 21px; margin-top: 4px; }
 .aw-call-status { font-size: 13.5px; color: var(--cream-muted); margin-top: 4px; }
 .aw-call-controls {
   display: flex; gap: 12px; justify-content: center; padding: 14px; flex: 0 0 auto;
@@ -335,7 +335,7 @@ body.is-video-call .aw-call-peer .aw-ring-avatar { width: 54px; height: 54px; ma
 .aw-history-main { flex: 1 1 auto; min-width: 0; }
 .aw-history-desc { font-size: 14px; font-weight: 700; color: var(--ink); }
 .aw-history-date { font-size: 11.5px; color: var(--ink-faint); margin-top: 2px; }
-.aw-history-amt { font-family: 'Marcellus', serif; font-size: 16px; flex: 0 0 auto; }
+.aw-history-amt { font-family: 'Marcellus', 'Marcellus Fallback', serif; font-size: 16px; flex: 0 0 auto; }
 .aw-history-amt.is-credit { color: #1B7F3B; }
 .aw-history-amt.is-debit { color: var(--ink-soft); }
 :root[data-theme="inverted"] .aw-history-amt.is-credit { color: #7BD79B; }
@@ -475,7 +475,7 @@ body.is-video-call .aw-call-peer .aw-ring-avatar { width: 54px; height: 54px; ma
 }
 body.aw-imgedit-open { overflow: hidden; }
 .aw-imgedit-bar { display: flex; align-items: center; gap: 6px; padding: 10px 12px; flex: 0 0 auto; }
-.aw-imgedit-title { flex: 1 1 auto; font-family: 'Marcellus', serif; font-size: 16px; }
+.aw-imgedit-title { flex: 1 1 auto; font-family: 'Marcellus', 'Marcellus Fallback', serif; font-size: 16px; }
 .aw-imgedit-icon {
   width: 40px; height: 40px; border: 0; border-radius: 999px; background: rgba(255,255,255,.1);
   color: #fff; font-size: 22px; line-height: 1; cursor: pointer;
@@ -519,7 +519,7 @@ body.aw-imgedit-open { overflow: hidden; }
 .aw-crop-h.br::after { right: 7px; bottom: 7px; border-right: 4px solid #fff; border-bottom: 4px solid #fff; }
 
 .aw-img-text {
-  position: absolute; font-family: 'Manrope', sans-serif; font-weight: 700;
+  position: absolute; font-family: 'Manrope', 'Manrope Fallback', sans-serif; font-weight: 700;
   white-space: pre-wrap; overflow-wrap: anywhere; pointer-events: none;
 }
 .aw-img-text.is-editable { pointer-events: auto; cursor: move; outline: 1px dashed rgba(255,255,255,.5); outline-offset: 4px; }

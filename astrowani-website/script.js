@@ -788,6 +788,20 @@ document.addEventListener('DOMContentLoaded', () => {
     sweepReveals();
   };
 
+  // Shop card photos are set only when the cards come near the screen. As inline
+  // CSS backgrounds they were fetched at once, ~190 KB competing with the
+  // homepage's first screen on a phone (Lighthouse, 2026-11-16).
+  (() => {
+    const cards = [...document.querySelectorAll('[data-bg]')];
+    if (!cards.length) return;
+    const show = (el) => { el.style.backgroundImage = `url('${el.dataset.bg}')`; };
+    if (!('IntersectionObserver' in window)) { cards.forEach(show); return; }
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) if (e.isIntersecting) { show(e.target); io.unobserve(e.target); }
+    }, { rootMargin: '400px 0px' });
+    cards.forEach((c) => io.observe(c));
+  })();
+
   // The 3D model loads BY ITSELF once its section is about a screen away, so it
   // never competes with the top of the page (the renderer and the 2.4 MB model
   // are the heaviest things on the site) but is ready by the time it is seen.

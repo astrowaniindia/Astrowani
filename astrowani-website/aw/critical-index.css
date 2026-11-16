@@ -1,4 +1,15 @@
 /* from style.css */
+/* Size-matched FALLBACK fonts (2026-11-16). Until Manrope / Marcellus arrive,
+   text is drawn in a local font; when they arrive the text used to re-wrap and
+   shove the hero down (Lighthouse CLS 0.08-0.12, cause "Web font loaded").
+   size-adjust makes the local font take the same width as the real one, so the
+   swap no longer moves anything. Ratios were measured in Chrome against the real
+   fonts (Manrope ~1.01x Arial across weights 400-800, Marcellus 1.027x Georgia).
+   Roboto / Noto Serif (Android) are listed after the measured fonts and are close
+   enough in width to share the same correction. */
+@font-face { font-family: 'Manrope Fallback'; src: local('Arial'), local('Liberation Sans'), local('Arimo'), local('Helvetica'), local('Roboto'); size-adjust: 101%; ascent-override: 106%; descent-override: 30%; line-gap-override: 0%; }
+@font-face { font-family: 'Marcellus Fallback'; src: local('Georgia'), local('Noto Serif'), local('DejaVu Serif'), local('Times New Roman'); size-adjust: 103%; ascent-override: 94%; descent-override: 27%; line-gap-override: 0%; }
+
 :root { --maroon: #592A19; --cream: #F4D8BC; --gold: #FFD700; --maroon-dark: var(--maroon); --ink: var(--maroon); --ink-soft: color-mix(in srgb, var(--maroon) 62%, var(--cream) 38%); --ink-faint: color-mix(in srgb, var(--maroon) 45%, var(--cream) 55%); --gold-deep: color-mix(in srgb, var(--gold) 62%, var(--maroon) 38%); --paper: var(--cream); --page-bg: color-mix(in srgb, var(--cream) 94%, var(--maroon) 6%); --band-tint: color-mix(in srgb, var(--cream) 82%, var(--maroon) 18%); --cream-on-dark: var(--cream); --cream-muted: color-mix(in srgb, var(--cream) 70%, var(--maroon) 30%); --border-soft: color-mix(in srgb, var(--maroon) 16%, transparent); --border-softer: color-mix(in srgb, var(--maroon) 10%, transparent); --shadow-color: color-mix(in srgb, var(--maroon) 28%, transparent); }
 .nav-util-group { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
 .ch-nav-wrap .nav-util-group { margin-left: 22px; }
@@ -8,7 +19,7 @@
 @media (max-width: 760px) {
 .ch-nav-wrap .nav-util-group { display: none; }
 }
-.nav-util-btn { width: 38px; height: 38px; border-radius: 50%; flex: 0 0 auto; background: var(--maroon); color: var(--cream); border: 1px solid color-mix(in srgb, var(--cream) 18%, transparent); display: flex; align-items: center; justify-content: center; cursor: pointer; font-family: Marcellus, serif; font-size: 15px; font-weight: 700; transition: transform 0.2s, filter 0.2s, box-shadow 0.2s; box-shadow: 0 10px 20px -12px var(--shadow-color); }
+.nav-util-btn { width: 38px; height: 38px; border-radius: 50%; flex: 0 0 auto; background: var(--maroon); color: var(--cream); border: 1px solid color-mix(in srgb, var(--cream) 18%, transparent); display: flex; align-items: center; justify-content: center; cursor: pointer; font-family: 'Marcellus', 'Marcellus Fallback', serif; font-size: 15px; font-weight: 700; transition: transform 0.2s, filter 0.2s, box-shadow 0.2s; box-shadow: 0 10px 20px -12px var(--shadow-color); }
 .nav-util-btn:hover { transform: translateY(-2px); filter: brightness(1.12); }
 .ch-wrap { --ch-ink: var(--cream); --ch-ink-soft: color-mix(in srgb, var(--cream) 60%, var(--maroon) 40%); --ch-bg: var(--maroon); --ch-paper: color-mix(in srgb, var(--maroon) 78%, var(--cream) 22%); --ch-shadow: color-mix(in srgb, black 45%, transparent); --ch-ring: color-mix(in srgb, var(--cream) 16%, transparent); --ch-hairline: color-mix(in srgb, var(--cream) 14%, transparent); background: var(--ch-bg); color: var(--ch-ink); position: relative; overflow: hidden; }
 .ch-nav-wrap { position: sticky; top: 18px; margin-top: 18px; z-index: 50; display: flex; justify-content: center; padding: 0px 20px; }
@@ -78,11 +89,11 @@ a.ch-cta { position: relative; z-index: 1; display: inline-block; background: va
 .m-nav-util { flex: 1 1 0px; min-height: 44px; border-radius: 999px; cursor: pointer; border: 1.5px solid color-mix(in srgb, var(--cream) 28%, transparent); background: transparent; color: var(--cream); font-style: inherit; font-variant: inherit; font-stretch: inherit; line-height: inherit; font-family: inherit; font-optical-sizing: inherit; font-size-adjust: inherit; font-kerning: inherit; font-feature-settings: inherit; font-variation-settings: inherit; font-language-override: inherit; font-size: 13px; font-weight: 700; }
 .m-nav-util:hover { background: color-mix(in srgb, var(--cream) 10%, transparent); }
 html { scroll-behavior: smooth; }
-body { margin: 0px; font-family: Manrope, sans-serif; background: var(--page-bg); color: var(--ink); overflow-x: hidden; }
+body { margin: 0px; font-family: 'Manrope', 'Manrope Fallback', sans-serif; background: var(--page-bg); color: var(--ink); overflow-x: hidden; }
 a { color: inherit; text-decoration: none; }
 * { box-sizing: border-box; }
 img { max-width: 100%; height: auto; display: block; }
-.serif { font-family: Marcellus, serif; }
+.serif { font-family: 'Marcellus', 'Marcellus Fallback', serif; }
 #scroll-progress { position: fixed; top: 0px; left: 0px; height: 3px; width: 0%; background: var(--gold); z-index: 80; }
 .nav-links { display: flex; align-items: center; gap: 16px; font-size: 13px; font-weight: 600; color: var(--cream); flex-wrap: nowrap; white-space: nowrap; }
 .nav-links .nav-item-drop:hover .nav-drop-trigger, .nav-links .nav-item-drop.nav-drop-open .nav-drop-trigger { color: var(--gold); }

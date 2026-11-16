@@ -79,7 +79,7 @@ const IMAGES = [
   // 500x500 at 1440px, and at 156 KB it is the heaviest image a phone actually
   // downloads on the homepage — the three phone mock-ups above it are
   // display:none on mobile and never fetched at all.
-  { file: 'zodiac-wheel.png', widths: [320, 512, 640], sizes: '(max-width: 700px) 290px, 500px' },
+  { file: 'zodiac-wheel.webp', widths: [320, 512, 640], sizes: '(max-width: 700px) 290px, 500px' },
 ];
 
 /** Round up to a multiple of 16, so the widths read as deliberate rather than measured. */

@@ -40,8 +40,8 @@ on:
         default: mobile
       ab_baseline:
         description: >-
-          Optional git ref. When set, ALSO serves the website from this checkout on
-          the runner and compares the homepage at HEAD against the homepage at this
+          Optional git ref. When set, ALSO serves the website on the runner and
+          compares the homepage at the run's commit against the whole website at this
           ref, 3 runs each — same machine, same server, so the live origin's
           variable response time is out of the comparison.
         required: false
@@ -96,8 +96,10 @@ jobs:
           set -e
           mkdir -p ab/head ab/base
           cp -r astrowani-website/. ab/head/
-          cp -r astrowani-website/. ab/base/
-          git show "$BASE_REF:astrowani-website/index.html" > ab/base/index.html
+          # The WHOLE website as it was at the baseline, not just its index.html:
+          # serving the old page with today's CSS and JS would hand the baseline
+          # half of the change being measured.
+          git archive "$BASE_REF" astrowani-website | tar -x -C ab/base --strip-components=1
           npx --yes http-server@14.1.1 ab/head -p 8081 -s -c-1 &
           npx --yes http-server@14.1.1 ab/base -p 8082 -s -c-1 &
           sleep 6

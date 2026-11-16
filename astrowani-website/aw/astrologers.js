@@ -1,5 +1,5 @@
-import { api } from './api.js?v=68';
-import { getSocket } from './socket.js?v=68';
+import { api } from './api.js?v=69';
+import { getSocket } from './socket.js?v=69';
 
 /**
  * The live astrologer roster.
@@ -142,6 +142,18 @@ export function paintStatus() {
 
 export async function start() {
   await refresh();
+  // The live-update socket is connected a few seconds AFTER the page has loaded
+  // (or on the first tap, if sooner). It is only for online/busy changes while
+  // someone is browsing, and connecting during page load put the Socket.IO
+  // client and its handshake inside the window Lighthouse scores (2026-11-16).
+  // Nothing is lost: the 60-second refresh below is the floor either way.
+  await new Promise((resolve) => {
+    let done = false;
+    const go = () => { if (!done) { done = true; resolve(); } };
+    const later = () => setTimeout(go, 4000);
+    if (document.readyState === 'complete') later(); else window.addEventListener('load', later, { once: true });
+    window.addEventListener('pointerdown', go, { once: true, passive: true });
+  });
   try {
     const socket = await getSocket();
     // Coalesced: a burst of changes (an astrologer toggling several services at
