@@ -242,6 +242,17 @@ function buildPage(html, dict) {
 // ── run ─────────────────────────────────────────────────────────────────────
 
 const dict = fs.existsSync(STRINGS) ? JSON.parse(fs.readFileSync(STRINGS, 'utf8')) : {};
+// apply-seo.js and the generators drop " | Astrowani" from a title that would run
+// past 60 characters (seo-title.js). The dictionary is keyed on the full English
+// title, so give each shortened title the same translation, or the Hindi page
+// would keep an English <title>.
+{
+  const { fitTitle } = require('./seo-title');
+  for (const [en, hi] of Object.entries(dict)) {
+    const short = fitTitle(en);
+    if (short !== en && !dict[short]) dict[short] = fitTitle(hi);
+  }
+}
 if (!check && !listMissing && !fs.existsSync(HI_DIR)) fs.mkdirSync(HI_DIR, { recursive: true });
 
 let built = 0;

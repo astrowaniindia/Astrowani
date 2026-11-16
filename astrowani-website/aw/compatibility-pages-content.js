@@ -175,7 +175,7 @@ const SHARED = {
   hub: {
     title: 'Zodiac Compatibility — Rashi Milan for Every Sign Pair | Astrowani',
     titleHi: 'राशि अनुकूलता — हर राशि जोड़ी का राशि मिलान | Astrowani',
-    desc: 'Zodiac compatibility for all 78 sign pairs: elements, temperament, the Graha Maitri and Bhakoot points of Guna Milan, and what each sign brings to a relationship.',
+    desc: 'Zodiac compatibility for all 78 sign pairs: elements, temperament, Graha Maitri and Bhakoot points, and what each sign brings to a relationship.',
     h1: ['Zodiac compatibility', 'राशि अनुकूलता'],
     lead: ['Pick a pair of signs to see how they are traditionally said to get on, and why.',
       'राशियों की एक जोड़ी चुनें और देखें कि परंपरागत रूप से उनकी कैसी बनती है, और क्यों।'],
@@ -355,7 +355,7 @@ for (let i = 0; i < SIGNS.length; i++) {
       file: fileFor(A, B),
       title: `${pairName[0]} Compatibility | Astrowani`,
       titleHi: `${pairName[1]} राशि की अनुकूलता | Astrowani`,
-      desc: `${pairName[0]} compatibility (${vedic}): elements, temperament, ruling planets, and their Guna Milan points — Graha Maitri ${gm}/5 and Bhakoot ${bk}/7.`,
+      desc: `${pairName[0]} compatibility (${vedic}): elements, temperament, ruling planets and Guna Milan — Graha Maitri ${gm}/5, Bhakoot ${bk}/7.`,
       crumb: pairName,
       label: pairName,
       h1: [`${pairName[0]} compatibility`, `${pairName[1]} राशि मिलान`],

@@ -21,6 +21,7 @@
  * ============================================================================
  */
 
+const { fitTitle } = require('./seo-title');
 const fs = require('fs');
 const path = require('path');
 const { SHARED, SIGNS, PAIRS, pairsOf } = require('./compatibility-pages-content.js');
@@ -202,7 +203,7 @@ if (require.main === module) {
 
   let wrote = 0;
   for (const pg of pages) {
-    const top = chromeTop.replace(/<title>[\s\S]*?<\/title>/, `<title>${pg.title}</title>`);
+    const top = chromeTop.replace(/<title>[\s\S]*?<\/title>/, `<title>${fitTitle(pg.title)}</title>`);
     const html = (top + pg.body + '\n\n' + chromeBottom).split('\r\n').join('\n')
       .replace('<body>', `<body>\n${MARK}`).split('\n').join(eol);
     const out = path.join(ROOT, pg.file);

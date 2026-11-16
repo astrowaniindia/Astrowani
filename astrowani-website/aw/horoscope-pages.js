@@ -23,6 +23,7 @@
  * ============================================================================
  */
 
+const { fitTitle } = require('./seo-title');
 const fs = require('fs');
 const path = require('path');
 const { SHARED, SIGNS } = require('./horoscope-pages-content.js');
@@ -231,7 +232,7 @@ if (require.main === module) {
 
   let wrote = 0;
   for (const s of SIGNS) {
-    const top = chromeTop.replace(/<title>[\s\S]*?<\/title>/, `<title>${s.title}</title>`);
+    const top = chromeTop.replace(/<title>[\s\S]*?<\/title>/, `<title>${fitTitle(s.title)}</title>`);
     let html = (top + body(s) + '\n\n' + chromeBottom).split('\r\n').join('\n')
       .replace('<body>', `<body>\n${MARK}`).split('\n').join(eol);
     const out = path.join(ROOT, s.file);

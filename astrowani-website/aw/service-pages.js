@@ -40,6 +40,7 @@
  * ============================================================================
  */
 
+const { fitTitle } = require('./seo-title');
 const fs = require('fs');
 const path = require('path');
 
@@ -347,7 +348,7 @@ if (require.main === module) {
     // anyway, but writing the template's title made --check report every page as
     // changed on every run (and briefly left the wrong title on disk).
     const top = chromeTop.replace(/<!-- SEO:START[\s\S]*?<!-- SEO:END -->\r?\n?/, '')
-      .replace(/<title>[\s\S]*?<\/title>/, `<title>${p.title.replace(/&(?!amp;)/g, '&amp;')}</title>`);
+      .replace(/<title>[\s\S]*?<\/title>/, `<title>${fitTitle(p.title).replace(/&(?!amp;)/g, '&amp;')}</title>`);
     let html = top + body(p) + eol + eol + chromeBottom;
     html = html.split('\n').join(eol).split(eol + eol + eol).join(eol + eol);
     const out = path.join(ROOT, p.file);

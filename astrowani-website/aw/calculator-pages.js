@@ -36,6 +36,7 @@
  * last.
  */
 
+const { fitTitle } = require('./seo-title');
 const fs = require('fs');
 const path = require('path');
 const { SHARED, PAGES } = require('./calculator-pages-content.js');
@@ -189,7 +190,7 @@ if (require.main === module) {
   let wrote = 0;
   for (const p of PAGES) {
     const card = liftCard(src, p.id).split('\r\n').join('\n');
-    const top = chromeTop.replace(/<title>[\s\S]*?<\/title>/, `<title>${p.title.replace(/&(?!amp;)/g, '&amp;')}</title>`);
+    const top = chromeTop.replace(/<title>[\s\S]*?<\/title>/, `<title>${fitTitle(p.title).replace(/&(?!amp;)/g, '&amp;')}</title>`);
     let html = top + body(p, card) + '\n\n' + chromeBottom;
     html = html.split('\r\n').join('\n').replace('<body>', `<body>\n${MARK}`).split('\n').join(eol);
     const out = path.join(ROOT, p.file);

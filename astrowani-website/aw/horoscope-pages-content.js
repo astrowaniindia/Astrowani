@@ -156,7 +156,7 @@ function derived(s) {
   return {
     title: `${s.name} Horoscope Today (${s.vedic} Rashifal) | Astrowani`,
     titleHi: `आज का ${s.hi} राशिफल — दैनिक ${s.hi} राशिफल | Astrowani`,
-    desc: `Today's ${s.name} horoscope, plus tomorrow, this week, this month and this year — with what ${s.name} (${s.vedic} rashi) is traditionally said to be like in love and work.`,
+    desc: `${s.name} horoscope for today, tomorrow, this week, month and year — plus what ${s.name} (${s.vedic} rashi) is said to be like in love and work.`,
     crumb: [s.name, s.hi],
     h1: [`${s.name} horoscope`, `${s.hi} राशिफल`],
     lead: [`Today's reading for ${s.name} (${s.vedic}), and what the sign is traditionally said to be like.`,

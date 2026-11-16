@@ -38,6 +38,7 @@
  * next run overwrites them.
  */
 
+const { fitTitle } = require('./seo-title');
 const fs = require('fs');
 const path = require('path');
 
@@ -398,12 +399,22 @@ const esc = (s) => String(s)
  * with the phrase a person actually types, from the keyword list supplied
  * 2026-10-29, and keep the brand as a suffix.
  */
-function titleOf(html, cfg) {
-  if (cfg && cfg.title) return cfg.title;
+function rawTitle(html) {
   const m = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
   if (!m) return SITE_NAME;
   return m[1].replace(/<[^>]+>/g, '')
     .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim();
+}
+
+/**
+ * Google shows about 60 characters of a title and rewrites longer ones. When a
+ * title only runs over because of the " | Astrowani" suffix, the suffix goes and
+ * the searched-for words stay. (SEO audit 2026-11-16: 22 static pages, mostly the
+ * calculators and their Hindi twins, were 61-69 characters.)
+ */
+
+function titleOf(html, cfg) {
+  return fitTitle(cfg && cfg.title ? cfg.title : rawTitle(html));
 }
 
 /** The lead paragraph of a Hindi page, trimmed to a usable meta description. */
@@ -512,8 +523,10 @@ for (const [file, cfg] of Object.entries(PAGES)) {
   // Rewrite the <title> itself where PAGES sets one. Done BEFORE the block is
   // built so og:title and twitter:title pick up the same string — three places
   // claiming different titles for one page is its own problem.
-  if (cfg.title) {
-    const want = `<title>${cfg.title.replace(/&/g, '&amp;')}</title>`;
+  // fitTitle can shorten a Hindi title too, which has no cfg.title of its own.
+  const fitted = titleOf(html, cfg);
+  if (cfg.title || fitted !== rawTitle(html)) {
+    const want = `<title>${fitted.replace(/&/g, '&amp;')}</title>`;
     if (/<title[^>]*>[\s\S]*?<\/title>/i.test(html)) {
       html = html.replace(/<title[^>]*>[\s\S]*?<\/title>/i, want);
     }
