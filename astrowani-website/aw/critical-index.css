@@ -169,7 +169,7 @@ img { max-width: 100%; height: auto; display: block; }
 .hero-stats { display: flex; gap: 32px; flex-wrap: wrap; }
 .hero-stats .stat-num { font-size: 26px; color: var(--maroon); }
 .hero-stats .stat-label { font-size: 12.5px; color: var(--ink-soft); font-weight: 600; }
-.app-3d-model { width: 100%; height: 420px; --poster-color: transparent; --progress-bar-height: 0px; }
+.app-3d-model { display: block; width: 100%; height: 420px; --poster-color: transparent; --progress-bar-height: 0px; }
 @media (max-width: 760px) {
 .app-3d-model { height: 340px; }
 }

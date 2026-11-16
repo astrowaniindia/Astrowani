@@ -788,30 +788,40 @@ document.addEventListener('DOMContentLoaded', () => {
     sweepReveals();
   };
 
-  // Load the optional renderer and model only after a visitor asks for them.
+  // The 3D model loads BY ITSELF once its section is about a screen away, so it
+  // never competes with the top of the page (the renderer and the 2.4 MB model
+  // are the heaviest things on the site) but is ready by the time it is seen.
+  // There is no poster image and no button in the normal case — owner's
+  // decision, 2026-11-16. The button appears only after a failed load, as a retry.
   (() => {
     const button = document.getElementById('app-3d-load');
     const model = document.getElementById('app-3d-model');
     if (!button || !model) return;
     const status = document.getElementById('app-3d-status');
-    const poster = document.getElementById('app-3d-poster');
     const hint = document.getElementById('app-3d-hint');
     let loader;
-    button.addEventListener('click', async () => {
-      button.disabled = true;
+    let busy = false;
+    async function loadModel() {
+      if (busy) return;
+      busy = true;
+      button.hidden = true;
       status.textContent = 'Loading 3D preview…';
       try {
         if (!customElements.get('model-viewer')) {
           loader ||= import('https://cdn.jsdelivr.net/npm/@google/model-viewer@3.5.0/dist/model-viewer.min.js').catch(err => { loader = null; throw err; });
           await loader;
         }
-        model.hidden = false;
         await new Promise((resolve, reject) => {
           const timer = setTimeout(() => finish(new Error('Timeout')), 45000);
+          // model-viewer's own `loaded` flag as well as its 'load' event: the
+          // event can be missed (it fires before rendering in a hidden tab), and
+          // the flag cannot.
+          const poll = setInterval(() => { if (model.loaded) finish(); }, 400);
           const loaded = () => finish();
           const failed = () => finish(new Error('Model load failed'));
           function finish(err) {
             clearTimeout(timer);
+            clearInterval(poll);
             model.removeEventListener('load', loaded);
             model.removeEventListener('error', failed);
             err ? reject(err) : resolve();
@@ -820,17 +830,24 @@ document.addEventListener('DOMContentLoaded', () => {
           model.addEventListener('error', failed, {once:true});
           model.setAttribute('src', model.dataset.src);
         });
-        poster.hidden = true;
-        button.hidden = true;
         status.textContent = '';
         hint?.classList.add('is-shown');
       } catch (_) {
-        model.hidden = true;
         model.removeAttribute('src');
         status.textContent = 'The preview could not load. You can try again.';
-        button.disabled = false;
+        button.hidden = false;
+        busy = false;
       }
-    });
+    }
+    button.addEventListener('click', loadModel);
+    if ('IntersectionObserver' in window) {
+      const io = new IntersectionObserver((entries) => {
+        if (entries.some((e) => e.isIntersecting)) { io.disconnect(); loadModel(); }
+      }, { rootMargin: '600px 0px' });
+      io.observe(model);
+    } else {
+      loadModel();
+    }
     model.addEventListener('camera-change', e => {
       if (e.detail?.source === 'user-interaction') hint?.classList.remove('is-shown');
     });

@@ -853,7 +853,7 @@ h2.section-title { margin: 0; font-size: 36px; font-weight: 400; color: var(--ma
    model's feet before. Stacking in flow makes overlap structurally
    impossible rather than something to keep nudging percentages to avoid. */
 .app-3d-stage { flex: 0 0 auto; position: relative; z-index: 1; width: 340px; max-width: 42vw; display: flex; flex-direction: column; align-items: center; }
-.app-3d-model { width: 100%; height: 420px; --poster-color: transparent; --progress-bar-height: 0px; }
+.app-3d-model { display: block; width: 100%; height: 420px; --poster-color: transparent; --progress-bar-height: 0px; }
 @media (max-width: 760px) { .app-3d-stage { width: 100%; max-width: 100%; } .app-3d-model { height: 340px; } }
 
 /* "drag to rotate" hint below the 3D model — see the comment in index.html
