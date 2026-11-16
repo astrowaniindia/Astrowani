@@ -5406,3 +5406,20 @@ Two kinds of AMP Web Story, sharing one renderer, `astrowani-backend/src/webStor
 - **Hindi pages now inherit `noindex` from their English twin** (`apply-seo.js`). Before this, `hi/404.html` was indexable.
 - **The promo image was renamed `promo-free-7min-woman.webp`**, and only the first headline line was redrawn. The artwork's font is Alfa Slab One. A redraw of the original line matched the source to 0.6% of pixels.
 - **Lal Kitab category** id `801dce2a-1d97-4724-bbf1-1023712684e4` (`name_hi` लाल किताब): the image is in `app-images/categories/`, uploaded with the immutable cache header. It is live in `/api/categories`. Astrologers add it to `specialties` themselves.
+
+### EU3. Same day, evening: deployed, credit colour, 3D auto-load, homepage speed
+
+- **Deployed in the safe order**: the commits were pushed to a branch, `Apply nginx blog routes` was run on that branch, and only then was `main` pushed. Use the same method next time; deploys only fire on `main`.
+- **`cleanContent` in `blogPublic.js` now allows exactly four classes**: `aw-photo-credit`, `aw-faq`, `aw-faq-list` and `aw-faq-title`. From 2026-10-30 every class had been stripped, so the credit lost its `#f4d8bc`.
+- **The 3D model now auto-loads.** An IntersectionObserver in `script.js` with a 600px margin sets the model's `src`, and the model uses `loading="eager"`; with `lazy`, model-viewer waits until the model is on screen. The load also resolves on `model.loaded`, because the 'load' event can be missed in a background tab.
+- **Lighthouse workflow**: pinned to **13.6.0**. Version 12.2.1 fails on the runner's Chrome with "frame_sequence", which leaves the diagnostics empty.
+  - It now prints the LCP element.
+  - `ab_baseline` serves the whole website as it was at that ref (via `git archive`) and compares homepages on the runner.
+  - Run it on a pushed branch to measure before deploying.
+- **Homepage speed:**
+  - `Manrope Fallback` / `Marcellus Fallback` fonts with `size-adjust`, in `style.css` and the critical CSS.
+  - The hero wheel is now `zodiac-wheel.webp`. The PNG stays for the Web Stories.
+  - Shop cards use `data-bg`, which is set by an IntersectionObserver.
+  - `.ch-wrap ~ .band { content-visibility: auto }` applies to the homepage only.
+  - The roster socket connects 4s after load.
+  - **Live result:** score 77–87 (was 55–67). The English homepage keeps a CLS of 0.078 with no cause attributed, while the Hindi homepage is 0. The likely cause is Marcellus fallback metrics on machines without Georgia; self-hosting the fonts is the fix.

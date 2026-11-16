@@ -5,7 +5,7 @@ first preview on 2026-10-08 to today. Add to it whenever the website changes. Th
 technical notes for each piece live in `CLAUDE.md` (the section letters, e.g. **EN**, are
 given below); this file is the readable overview.
 
-_Last updated: 2026-11-16._
+_Last updated: 2026-11-16 (evening)._
 
 ---
 
@@ -110,6 +110,25 @@ The 2026-10-30 gap analysis found the whole site was only 56 URLs. Today:
 - **The promo image** now says "Talk for **7**-min for Free" (redrawn in the artwork's own font).
 - **Lal Kitab category** created in the database (English + Hindi, with an image), so
   astrologers can add it to their specialties in the astrologer app.
+- **Deployed the same day** in the safe order (nginx routes first, from a branch, then
+  `main`). Blogs never went down; old article links 301 to `/blog/<slug>`.
+- **Photo credit back to `#f4d8bc`.** The server-side HTML cleaner had been stripping the
+  credit's class (and the FAQ accordion's) since 2026-10-30; those four classes now survive.
+- **The 3D guide loads by itself** as you scroll to it — no picture, no button (a retry
+  button appears only if loading fails).
+- **Homepage speed, round 2** (measured with Lighthouse 13.6.0, which replaced a pinned
+  12.2.1 that could no longer read Chrome's traces):
+  - size-matched fallback fonts (`Manrope Fallback`, `Marcellus Fallback`) so text does not
+    re-wrap when the web fonts arrive;
+  - the hero's zodiac wheel is a 17 KB WebP (10 KB on phones) instead of a 53 KB PNG;
+  - the shop-card photos load only when the cards near the screen;
+  - homepage sections after the hero use `content-visibility: auto` (off-screen sections,
+    including the two scrolling astrologer strips, are not rendered until needed);
+  - the live-roster socket connects 4 s after load.
+  - **Live result:** score 55–67 → **77–87**, phone busy time 0.3–1.5 s → **0.1–0.4 s**,
+    weight ~1 MB → ~0.8 MB. LCP is now mostly the server's response time (1.2–2.1 s).
+  - The Lighthouse workflow gained an **A/B mode** (`ab_baseline`) that compares the
+    homepage against any earlier commit on the same machine.
 
 ---
 
@@ -227,6 +246,11 @@ excluding the store-reviewer number (…9999999999) and the analytics-excluded c
 8. A **Hindi speaker** should read some horoscope, compatibility and report pages.
 9. **EU consent banner** — not needed for India; an open question for EU visitors.
 10. Google Business Profile, Wikidata, Reddit/Quora presence.
+
+**Homepage — what is left:** the server's response time (1.2–2.1 s; a Cloudflare cache rule
+for HTML, owner's dashboard), and a 0.078 layout shift that exists only on the English
+homepage (Hindi is 0) — probably the Marcellus heading font swapping on machines without
+Georgia; self-hosting the two fonts would remove it.
 
 **After deploy, to check live:** Lighthouse (homepage speed with the inlined CSS), nginx
 `-t`, the nightly bake and its 24 stories, IndexNow, `/stories/<slug>` and `/blog/<slug>`,
