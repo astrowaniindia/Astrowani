@@ -25,6 +25,30 @@ const ms = (v) => (v == null ? '—' : `${Math.round(v)}ms`);
 const s2 = (v) => (v == null ? '—' : v.toFixed(3));
 const kb = (v) => (v == null ? '—' : `${Math.round(v / 1024)}KB`);
 
+/**
+ * Which element was the Largest Contentful Paint, as a short HTML snippet.
+ * Lighthouse 12 had an audit for it; 13 moved it into the LCP insight. Both are
+ * searched for the first node snippet, so this works on either.
+ */
+function lcpElement(a) {
+  for (const id of ['largest-contentful-paint-element', 'lcp-breakdown-insight', 'lcp-discovery-insight']) {
+    const snippet = findSnippet(a[id] && a[id].details);
+    if (snippet) return snippet.replace(/\s+/g, ' ').slice(0, 110);
+  }
+  return null;
+}
+
+/** The first `snippet` string anywhere inside a Lighthouse details object. */
+function findSnippet(node) {
+  if (!node || typeof node !== 'object') return null;
+  if (typeof node.snippet === 'string') return node.snippet;
+  for (const v of Object.values(node)) {
+    const hit = findSnippet(v);
+    if (hit) return hit;
+  }
+  return null;
+}
+
 const rows = [];
 for (const file of process.argv.slice(2)) {
   let report;
@@ -37,7 +61,10 @@ for (const file of process.argv.slice(2)) {
   const a = report.audits || {};
   const num = (id) => (a[id] && typeof a[id].numericValue === 'number' ? a[id].numericValue : null);
   rows.push({
-    url: (report.finalDisplayedUrl || report.requestedUrl || file).replace(/^https?:\/\/[^/]+/, ''),
+    // A local A/B run serves two variants on two ports; keep the port so the rows differ.
+    url: (report.finalDisplayedUrl || report.requestedUrl || file)
+      .replace(/^https?:\/\/(?:127\.0\.0\.1|localhost)(:\d+)/, 'local$1')
+      .replace(/^https?:\/\/[^/]+/, ''),
     score: report.categories && report.categories.performance
       ? Math.round(report.categories.performance.score * 100)
       : null,
@@ -48,6 +75,7 @@ for (const file of process.argv.slice(2)) {
     si: num('speed-index'),
     ttfb: num('server-response-time'),
     bytes: num('total-byte-weight'),
+    lcpEl: lcpElement(a),
   });
 }
 
@@ -70,6 +98,10 @@ for (const r of rows) {
       lpad(s2(r.cls), 8) + lpad(ms(r.si), 9) + lpad(ms(r.ttfb), 8) + lpad(kb(r.bytes), 9),
   );
 }
+
+console.log('');
+console.log('largest contentful paint element:');
+for (const r of rows) console.log(`  ${r.url.slice(0, 40).padEnd(41)} ${r.lcpEl || '(not reported)'}`);
 
 console.log('');
 console.log(`against the Core Web Vitals targets (LCP <= ${TARGETS.lcp}ms, TBT <= ${TARGETS.tbt}ms, CLS <= ${TARGETS.cls}):`);

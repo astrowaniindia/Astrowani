@@ -33,17 +33,27 @@ on:
           https://shop.astrowani.com/test-site/consult.html
           https://shop.astrowani.com/test-site/astrologers.html
           https://shop.astrowani.com/test-site/blog.html
-          https://shop.astrowani.com/test-site/blog-post.html?slug=understanding-kaal-sarp-dosh-meaning-and-practical-guidance
+          https://shop.astrowani.com/test-site/blog/understanding-kaal-sarp-dosh-meaning-and-practical-guidance
       form_factor:
         description: mobile or desktop
         required: false
         default: mobile
+      ab_baseline:
+        description: >-
+          Optional git ref. When set, ALSO serves the website from this checkout on
+          the runner and compares the homepage at HEAD against the homepage at this
+          ref, 3 runs each — same machine, same server, so the live origin's
+          variable response time is out of the comparison.
+        required: false
+        default: ''
 
 jobs:
   measure:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # ab_baseline needs history
 
       - uses: actions/setup-node@v4
         with:
@@ -62,7 +72,7 @@ jobs:
             # --no-sandbox is required for Chrome on a runner. Two runs would be
             # better statistics, but one is enough to see a regression and keeps
             # this quick; add --runs if that ever stops being true.
-            npx --yes lighthouse@12.2.1 "$url" \
+            npx --yes lighthouse@13.6.0 "$url" \
               --only-categories=performance \
               --form-factor="$FORM_FACTOR" \
               $( [ "$FORM_FACTOR" = "mobile" ] && echo --screenEmulation.mobile || echo --screenEmulation.disabled ) \
@@ -71,6 +81,39 @@ jobs:
               --quiet || echo "  (that URL failed; continuing)"
             echo "::endgroup::"
           done
+
+      # A/B of the homepage on the runner (only when ab_baseline is set).
+      # 12.2.1 used to be pinned here; it no longer understands the trace format of
+      # the runner's Chrome (2026-11-16: the LCP-element, render-blocking and
+      # layout-shift audits all failed with "reading 'frame_sequence'"), so the
+      # diagnostics came back empty. Keep the pin current.
+      - name: A/B the homepage against a baseline ref
+        if: ${{ inputs.ab_baseline != '' }}
+        env:
+          BASE_REF: ${{ inputs.ab_baseline }}
+          FORM_FACTOR: ${{ inputs.form_factor }}
+        run: |
+          set -e
+          mkdir -p ab/head ab/base
+          cp -r astrowani-website/. ab/head/
+          cp -r astrowani-website/. ab/base/
+          git show "$BASE_REF:astrowani-website/index.html" > ab/base/index.html
+          npx --yes http-server@14.1.1 ab/head -p 8081 -s -c-1 &
+          npx --yes http-server@14.1.1 ab/base -p 8082 -s -c-1 &
+          sleep 6
+          for i in 1 2 3; do
+            for v in head:8081 base:8082; do
+              name=${v%%:*}; port=${v##*:}
+              npx --yes lighthouse@13.6.0 "http://127.0.0.1:$port/" \
+                --only-categories=performance --form-factor="$FORM_FACTOR" \
+                $( [ "$FORM_FACTOR" = "mobile" ] && echo --screenEmulation.mobile || echo --screenEmulation.disabled ) \
+                --output=json --output-path="lh/ab-$name-$i.json" \
+                --chrome-flags="--headless=new --no-sandbox --disable-dev-shm-usage" --quiet || true
+            done
+          done
+          echo "== HEAD (port 8081) vs $BASE_REF (port 8082) =="
+          node .github/scripts/lighthouse-summary.js lh/ab-head-*.json lh/ab-base-*.json | tee ab-summary.txt
+          { echo '### Homepage A/B'; echo '```'; cat ab-summary.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Summarise
         run: |
