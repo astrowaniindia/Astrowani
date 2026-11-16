@@ -38,6 +38,10 @@ const RESPONSIVE_DIR = path.join(ASSETS, 'responsive');
 
 const check = process.argv.includes('--check');
 
+// Content-hashed URLs (aw/version-images.js), so a srcset written here is the
+// same string that script would write and both stay idempotent.
+const { versioned } = require('./version-images.js');
+
 /** The srcset value for one entry, or null when no variant was built. */
 function srcsetFor(entry) {
   const parts = [];
@@ -48,20 +52,20 @@ function srcsetFor(entry) {
   if (entry.widths) {
     for (const variant of variantsFor(entry)) {
       if (fs.existsSync(path.join(RESPONSIVE_DIR, variant.name))) {
-        parts.push(`assets/responsive/${variant.name} ${variant.width}w`);
+        parts.push(`${versioned(`assets/responsive/${variant.name}`)} ${variant.width}w`);
       }
     }
     if (!parts.length) return null;
     const natural = naturalWidth(entry.file);
-    if (natural) parts.push(`assets/${entry.file} ${natural}w`);
+    if (natural) parts.push(`${versioned(`assets/${entry.file}`)} ${natural}w`);
     return parts.join(', ');
   }
   for (const variant of variantsFor(entry)) {
     if (fs.existsSync(path.join(RESPONSIVE_DIR, variant.name))) {
-      parts.push(`assets/responsive/${variant.name} ${variant.density}x`);
+      parts.push(`${versioned(`assets/responsive/${variant.name}`)} ${variant.density}x`);
     } else if (variant.density === 2) {
       // No 2x variant because it would have upscaled: the original IS the 2x.
-      parts.push(`assets/${entry.file} 2x`);
+      parts.push(`${versioned(`assets/${entry.file}`)} 2x`);
     }
   }
   return parts.length > 1 ? parts.join(', ') : null;
@@ -71,7 +75,7 @@ function srcsetFor(entry) {
 function naturalWidth(file) {
   for (const page of fs.readdirSync(SITE).filter((f) => f.endsWith('.html'))) {
     const html = fs.readFileSync(path.join(SITE, page), 'utf8');
-    const m = html.match(new RegExp(`<img[^>]*width="(\\d+)"[^>]*src="assets/${escapeForRegex(file)}"`));
+    const m = html.match(new RegExp(`<img[^>]*width="(\\d+)"[^>]*src="assets/${escapeForRegex(file)}(?:\\?h=[0-9a-f]{8})?"`));
     if (m) return Number(m[1]);
   }
   return null;
@@ -98,7 +102,7 @@ for (const file of fs.readdirSync(SITE).filter((f) => f.endsWith('.html'))) {
     }
     // Every <img> whose src is this asset. The tag is matched whole so an
     // existing srcset can be replaced rather than duplicated.
-    const tag = new RegExp(`<img\\b[^>]*\\bsrc="assets/${escapeForRegex(entry.file)}"[^>]*>`, 'g');
+    const tag = new RegExp(`<img\\b[^>]*\\bsrc="assets/${escapeForRegex(entry.file)}(?:\\?h=[0-9a-f]{8})?"[^>]*>`, 'g');
     after = after.replace(tag, (match) => {
       const stripped = match.replace(/\s+srcset="[^"]*"/g, '');
       // Before `src`, so the attribute order reads the way a reader expects.
