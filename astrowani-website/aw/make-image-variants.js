@@ -12,7 +12,7 @@
  *   testimonial-rohit.png      319x319 source, 153 KB, rendered  38x38
  *   svc-horoscope.png          506x493 source, 165 KB, rendered 140x140
  *   app-screenshot-home-2.webp 1024x1536 source, 171 KB, rendered 83x137
- *   promo-free-11min-woman     960x1920 source, 144 KB, rendered 165x341
+ *   promo-free-7min-woman     960x1920 source, 144 KB, rendered 165x341
  *   google-play-badge.png      719x278 source,  87 KB, rendered 134x52, on 27 pages
  *
  * A 153 KB file for a 38-pixel avatar is the whole argument.
@@ -64,7 +64,7 @@ const check = process.argv.includes('--check');
  * layout does not make every variant subtly too small.
  */
 const IMAGES = [
-  { file: 'promo-free-11min-woman.webp', css: 165 },
+  { file: 'promo-free-7min-woman.webp', css: 165 },
   { file: 'promo-free-5min-guru.webp', css: 83 },
   { file: 'app-screenshot-home-2.webp', css: 83 },
   { file: 'google-play-badge.png', css: 134 },
