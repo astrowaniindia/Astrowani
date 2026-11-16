@@ -5389,3 +5389,20 @@ Two kinds of AMP Web Story, sharing one renderer, `astrowani-backend/src/webStor
 - Covers: `aw/make-story-posters.js` makes `assets/stories/<sign>.jpg`, with the zodiac wheel turned so that sign sits at the top, plus `blog.jpg` as the fallback. They are 960x1280 with no text, because Discover lays its own title over the image. A blog story's cover is the article photo, cropped to 3:4 by the storage render endpoint.
 - **DEPLOY ORDER, as for ET4/ET5: nginx routes first** (`Apply nginx blog routes`, which now adds the two `/stories/` locations), **then the backend, then the website.**
 - Not yet seen on the live site, and Discover pickup cannot be tested before it is live. Check it in Search Console → Enhancements once deployed.
+
+### EU2. Same day, later: report, image hashes, critical CSS, promo, Lal Kitab — and WEBSITE.md
+
+**`WEBSITE.md` (repo root) is the readable history of all website work.** Add to it whenever the website changes.
+
+- **`aw/version-images.js`** stamps every local image reference in the pages and CSS with an 8-hex content hash: `?h=`, deliberately NOT `?v=`, because `bump-version` rewrites `?v=<digits>`. It never touches the SEO block, and `apply-srcset` writes the same hashed URLs. **It runs LAST in the chain, after apply-seo.** If it changes `style.css` or `aw.css`, run `bump-version` as well.
+- **`aw/apply-critical-css.js`** (homepage only, EN + HI):
+  - It inlines `aw/critical-index.css`, which `aw/critical-css-extract.js` extracted in a browser, and loads the two stylesheets as preload with a noscript fallback.
+  - The CSS is a snapshot: re-extract it after changing the nav or hero styles.
+  - The hero's `heroRise` animation is in it with identical timing, so the animation does not restart when the full sheets arrive.
+  - **The browser pane pauses animations while it is hidden.** A screenshot from it can show the hero blank. That is the pane, not the page.
+- **`aw/report-page.js` + `aw/report-data.js`**: "What India asks an astrologer", EN + HI.
+  - **`APPROVED = false`**: noindex, unlinked, no Dataset markup. Publishing is the owner's decision.
+  - The generator drops any group under 20 and never reports anyone under 18.
+- **Hindi pages now inherit `noindex` from their English twin** (`apply-seo.js`). Before this, `hi/404.html` was indexable.
+- **The promo image was renamed `promo-free-7min-woman.webp`**, and only the first headline line was redrawn. The artwork's font is Alfa Slab One. A redraw of the original line matched the source to 0.6% of pixels.
+- **Lal Kitab category** id `801dce2a-1d97-4724-bbf1-1023712684e4` (`name_hi` लाल किताब): the image is in `app-images/categories/`, uploaded with the immutable cache header. It is live in `/api/categories`. Astrologers add it to `specialties` themselves.
