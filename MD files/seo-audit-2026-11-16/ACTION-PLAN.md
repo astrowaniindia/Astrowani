@@ -3,6 +3,24 @@
 Full evidence is in [FULL-AUDIT-REPORT.md](FULL-AUDIT-REPORT.md). The IDs (C1, H1…) match
 that report.
 
+## Status (2026-11-17)
+
+**Done and verified live:**
+- **C1:** reviewer astrologer hidden. The admin dashboard also gained a Hide/Unhide menu item.
+- **M1:** the Hindi listing is server-rendered, with 8 Hindi cards and its own canonical.
+- **M2:** titles fit in 60 characters and descriptions in 160.
+- **M3:** blog image dimensions set, and the first card loads eagerly.
+- **H3:** the 5 thin posts were rewritten to about 1,000 words EN + HI, with FAQs. The
+  backup is in `blog-posts-before-rewrite.json`.
+- **report-vulnerability:** added to the sitemap.
+- **Also fixed:** `?page=999` now returns 404 instead of 503.
+
+**Still to do in the Cloudflare dashboard (owner):** H1 (Block AI bots and Managed
+robots.txt off), H2 (Cache Rule for static `.html`) and HSTS.
+
+**H4 is not done, deliberately:** writing bios for real astrologers would put words in their
+mouths. They need to write their own.
+
 ## Now (this week)
 
 | # | Item | Where | Effort |
