@@ -5422,4 +5422,4 @@ Two kinds of AMP Web Story, sharing one renderer, `astrowani-backend/src/webStor
   - Shop cards use `data-bg`, which is set by an IntersectionObserver.
   - `.ch-wrap ~ .band { content-visibility: auto }` applies to the homepage only.
   - The roster socket connects 4s after load.
-  - **Live result:** score 77–87 (was 55–67). The English homepage keeps a CLS of 0.078 with no cause attributed, while the Hindi homepage is 0. The likely cause is Marcellus fallback metrics on machines without Georgia; self-hosting the fonts is the fix.
+  - **Live result:** score 77–87 (was 55–67). The English homepage keeps a CLS of 0.078 with no cause attributed, while the Hindi homepage is 0, cause still unknown. **It is NOT the fonts**: self-hosted fonts with preloads (branch `self-host-fonts` / `perf-fonts`, not merged) left CLS at 0.078 and made LCP worse in an A/B on the runner. To find the real cause, run Lighthouse with `--save-assets` and read the trace's layout-shift events, which give the impacted nodes' old and new rects.

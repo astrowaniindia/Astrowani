@@ -249,8 +249,10 @@ excluding the store-reviewer number (…9999999999) and the analytics-excluded c
 
 **Homepage — what is left:** the server's response time (1.2–2.1 s; a Cloudflare cache rule
 for HTML, owner's dashboard), and a 0.078 layout shift that exists only on the English
-homepage (Hindi is 0) — probably the Marcellus heading font swapping on machines without
-Georgia; self-hosting the two fonts would remove it.
+homepage (Hindi is 0), cause not yet identified. **It is NOT the fonts**: self-hosting
+Manrope and Marcellus with preloads was built and A/B-tested on 2026-11-16 — CLS stayed at
+0.078 and LCP got worse (the preloads compete with the hero image), so it was not deployed.
+That work is kept on the `self-host-fonts` branch (GitHub: `perf-fonts`).
 
 **After deploy, to check live:** Lighthouse (homepage speed with the inlined CSS), nginx
 `-t`, the nightly bake and its 24 stories, IndexNow, `/stories/<slug>` and `/blog/<slug>`,
