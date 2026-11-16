@@ -220,8 +220,12 @@ Switch the reviewer off with `reviewEnabled: false` in `blog_agent_config`.
 
 ### Three a day, hours apart (2026-11-17)
 
-- **Slots: 07:30, 13:30 and 19:30 IST**, each starting up to 20 minutes late at
-  random, plus a **22:30 catch-up** slot. These replace 03:30 / 09:30 / 17:30.
+- **Random times, not fixed ones.** Each article goes out at a random moment
+  inside its window, re-drawn every day by systemd's `RandomizedDelaySec`
+  (`FixedRandomDelay` is deliberately not set): **06:00-10:00, 12:00-16:00 and
+  18:00-21:30 IST**, plus a **22:45-23:15 catch-up**. The windows never overlap
+  and leave at least 2 hours between them, so the three never land close
+  together. These replace the fixed 03:30 / 09:30 / 17:30.
 - **Each scheduled run publishes at most one article**, so two never land back
   to back, and none once the day already has `dailyTarget` (3). The catch-up slot
   runs with `--count 0` and writes one only if the day is still short.

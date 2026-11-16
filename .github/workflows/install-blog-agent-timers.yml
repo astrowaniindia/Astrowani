@@ -2,8 +2,8 @@ name: Install blog agent timers (manual)
 
 # Re-installs the blog agent's systemd service and timers on the VPS from
 # vps-deployment/blog-agent/install.sh. Run it after changing the schedule or
-# the run time limit (2026-11-17: 07:30 / 13:30 / 19:30 IST, a 22:30 catch-up,
-# 45-minute runs).
+# the run time limit (2026-11-17: random times in 06:00-10:00, 12:00-16:00 and
+# 18:00-21:30 IST, a 22:45-23:15 catch-up, 45-minute runs).
 #
 # SAFE TO RE-RUN. The installer only writes unit files and restarts the timers;
 # it never touches the database, so it cannot switch the agent on. Whether

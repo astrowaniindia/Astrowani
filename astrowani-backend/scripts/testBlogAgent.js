@@ -1125,9 +1125,20 @@ section('three a day, hours apart — how many each run writes');
   const install = require('fs').readFileSync(require('path').join(__dirname, '../../vps-deployment/blog-agent/install.sh'), 'utf8');
   ok('the installer reloads systemd AFTER writing the timers', install.lastIndexOf('systemctl daemon-reload') > install.indexOf('install_timer catchup'));
   ok('the unit timeout (2700s) leaves room above the run budget (2400s)', /TimeoutStartSec=2700/.test(install) && /BLOG_AGENT_RUN_BUDGET_SECONDS=2400/.test(install));
-  const times = [...install.matchAll(/install_timer \w+\s+"\*-\*-\* (\d\d):(\d\d)/g)].map((m) => +m[1] * 60 + +m[2]);
-  eq('the installer defines 4 timers (3 slots + catch-up)', times.length, 4);
-  ok('the three writing slots are at least 5 hours apart', times.slice(0, 3).every((t, i, a) => i === 0 || t - a[i - 1] >= 300), JSON.stringify(times));
+  // Each timer: start time + RandomizedDelaySec = the window it can fire in.
+  const slots = [...install.matchAll(/install_timer (\w+)\s+"\*-\*-\* (\d\d):(\d\d):\d\d" (\d) (\d+)/g)]
+    .map((m) => ({ name: m[1], start: +m[2] * 60 + +m[3], end: +m[2] * 60 + +m[3] + Math.round(+m[5] / 60), count: +m[4] }));
+  eq('the installer defines 4 timers (3 slots + catch-up)', slots.length, 4);
+  ok('every slot has a random window of at least 30 minutes', slots.length === 4 && slots.every((t) => t.end - t.start >= 30), JSON.stringify(slots));
+  ok('no fixed time: the writing slots each span 3+ hours', slots.slice(0, 3).every((t) => t.end - t.start >= 180), JSON.stringify(slots));
+  ok('the windows do not overlap and leave 2+ hours between them',
+    slots.length === 4 && slots.slice(1).every((t, i) => t.start - slots[i].end >= 75)
+      && slots.slice(1, 3).every((t, i) => t.start - slots[i].end >= 120), JSON.stringify(slots));
+  ok('the catch-up slot ends before midnight IST (the day boundary), with room for a run',
+    slots.length === 4 && slots[3].end + 40 <= 24 * 60 && slots[3].count === 0, JSON.stringify(slots[3]));
+  ok('the three writing slots publish one each', slots.slice(0, 3).every((t) => t.count === 1));
+  ok('FixedRandomDelay is NOT set (it would freeze one random time forever)',
+    !install.split(/\r?\n/).some((l) => !/^\s*#/.test(l) && /FixedRandomDelay\s*=\s*(yes|true)/i.test(l)));
 }
 
 configChecks().then(() => {

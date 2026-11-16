@@ -96,40 +96,45 @@ UNIT
 # IST is named explicitly. Writing these in UTC is how a schedule ends up five
 # and a half hours out after somebody edits it a year from now.
 install_timer() {
-  local name="$1" when="$2" count="$3"
+  local name="$1" when="$2" count="$3" window="$4"
   cat > "/etc/systemd/system/astrowani-blog-$name.timer" <<UNIT
 [Unit]
-Description=Astrowani blog agent — $name slot ($when IST)
+Description=Astrowani blog agent — $name slot (random time in the $window s after $when IST)
 
 [Timer]
 OnCalendar=$when
 Timezone=Asia/Kolkata
 # Run a slot missed while the box was down, rather than skipping the day.
 Persistent=true
-# Up to 20 minutes of jitter. Three posts landing at exactly :30:00 every day is
-# a machine signature; it also spreads the load off a fixed instant.
-RandomizedDelaySec=1200
+# A RANDOM time inside the window, re-drawn every day (owner, 2026-11-17: no
+# fixed publishing times). systemd picks a new delay each time the timer elapses
+# unless FixedRandomDelay=yes, which is deliberately not set.
+RandomizedDelaySec=$window
 Unit=astrowani-blog-agent@$count.service
 
 [Install]
 WantedBy=timers.target
 UNIT
   INSTALLED_TIMERS+=("astrowani-blog-$name.timer")
-  echo "  wrote astrowani-blog-$name.timer ($when IST, count $count)"
+  echo "  wrote astrowani-blog-$name.timer ($when IST + up to ${window}s, count $count)"
 }
 INSTALLED_TIMERS=()
 
 systemctl daemon-reload
 
-# Three articles, six hours apart, during reading hours (owner, 2026-11-17). Each
-# run publishes at most ONE, so two never land back to back. The old 03:30 slot
-# published in the middle of the night.
-install_timer morning   "*-*-* 07:30:00" 1
-install_timer midday    "*-*-* 13:30:00" 1
-install_timer evening   "*-*-* 19:30:00" 1
-# Catch-up: writes one ONLY if the day is still short of its three. On a normal
-# day it does nothing.
-install_timer catchup   "*-*-* 22:30:00" 0
+# Three articles a day at RANDOM times (owner, 2026-11-17), one per window. The
+# windows do not overlap and are 2 hours apart, so the three never land close
+# together; each run publishes at most ONE. Window = start + RandomizedDelaySec:
+#   morning   06:00-10:00   (14400 s)
+#   midday    12:00-16:00   (14400 s)
+#   evening   18:00-21:30   (12600 s)
+install_timer morning   "*-*-* 06:00:00" 1 14400
+install_timer midday    "*-*-* 12:00:00" 1 14400
+install_timer evening   "*-*-* 18:00:00" 1 12600
+# Catch-up, 22:45-23:15: writes one ONLY if the day is still short of its three,
+# and finishes before midnight IST (the day boundary). On a normal day it does
+# nothing.
+install_timer catchup   "*-*-* 22:45:00" 0 1800
 
 # daemon-reload AFTER every unit file is written, then restart each timer. Enabling
 # a timer whose file changed without a reload keeps the OLD schedule, so re-running
