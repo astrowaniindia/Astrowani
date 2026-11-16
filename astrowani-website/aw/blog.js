@@ -1,5 +1,5 @@
-import { api } from './api.js?v=69';
-import { track } from './analytics.js?v=69';
+import { api } from './api.js?v=70';
+import { track } from './analytics.js?v=70';
 
 /**
  * The blog section.

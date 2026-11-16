@@ -623,6 +623,33 @@ body.aw-imgedit-open { overflow: hidden; }
  * The default triangle marker is removed and replaced with our own chevron so it
  * matches the site rather than the browser.
  */
+/*
+ * Key Takeaways box (blog agent, 2026-11-17, adapted from claude-blog): 3-5 points
+ * placed after an article's opening answer. Written by src/blogAgent/seo.js
+ * takeawaysHtml(); the classes are allowlisted in src/blogPublic.js cleanContent.
+ */
+.legal-content .aw-takeaways,
+.aw-takeaways {
+  margin: 26px 0 30px;
+  padding: 18px 22px 8px;
+  border: 1px solid var(--gold-deep, #b48a3c);
+  border-left: 4px solid var(--gold, #ffd700);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .06);
+}
+.legal-content .aw-takeaways-title,
+.aw-takeaways-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--gold, #ffd700);
+}
+.legal-content .aw-takeaways ul,
+.aw-takeaways ul { margin: 0 0 10px; padding-left: 20px; }
+.legal-content .aw-takeaways li,
+.aw-takeaways li { margin: 0 0 8px; line-height: 1.6; }
+
 .legal-content .aw-faq-title,
 .aw-faq-title { margin-top: 44px; }
 
