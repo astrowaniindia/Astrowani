@@ -5465,3 +5465,38 @@ controls, no-key behaviour unchanged, lookups against real production rows read-
 model on Hinglish messages the rules miss). Confirmed to fail when the old column list is put back.
 `index.js` never booted. Admin builds. **Not deployed, not exercised in the admin UI or on a device.**
 Still not software: somebody has to own the inbox 9am-11pm IST.
+
+### EV2. Same day: the AI sends its own replies and learns from the team; money stays out of its mouth
+
+Owner, 2026-11-17, three instructions in order: let the AI give the reply (no drafts step for
+these), make it learn from every human handover reply, and **never let it write about money**.
+
+- **Learning (`loadLearned` / `similarReplies` in `src/supportAi.js`).** Nothing is trained and
+  nothing is stored twice: every `support_messages` row with `sender = 'human'` is an example
+  (the person's last three messages before it, and what the team said), read straight from the
+  table with a 5-minute cache, so a reply sent now is in use within minutes. The examples closest
+  to a new message (word overlap, rarer words weigh more, per app side) go into the prompt as
+  `T1..Tn`. Left out: conversations rated 1 or 2, replies under 25 characters, photos. Contact
+  details are starred out. Production had 54 human replies in 30 conversations when this was built.
+- **The AI's own words reach the customer directly** in three places: `answer`, the message that
+  goes with a `handover`, and `compose()`, which writes the reply for an intent a RULE already sent
+  to a person (blocked account, changed number, a complaint about an astrologer). The rule still
+  decides what happens; the model only writes what is read meanwhile.
+- **MONEY IS NOT THE MODEL'S SUBJECT, and this is enforced in code three ways.** (1) `passesGate`
+  discards any model-written reply that MENTIONS refunds, credits, rupees/paise, a time promise, a
+  phone number or a link, not only one that promises them. (2) Anything the model files under
+  `billing` / `refund` / `payout` gets no model-written reply. (3) `compose()` is not called for
+  money intents or for `safety`; those get the fixed hand-written line. Team replies about money are
+  kept as lessons for the admin's Suggest-reply draft only (`safeOnly`), never for a reply the AI
+  sends itself. The hand-written intents remain the only thing that talks about money.
+  **An earlier version the same day let the model explain refunds without promising one; the owner
+  rejected that. Do not loosen the gate back to "promises only".**
+- **An answer must cite its lines** (`sources: ["K3","T1"]`, checked by `citesRealSources`). Found
+  by testing: asked about a free chat, which no line mentions, the model answered "that is not
+  available right now" and marked itself grounded. With citations required it routes or hands over.
+- A slow key is abandoned after 3.5s (was 5s) and skipped for a minute.
+
+Verified: `scripts/supportAiCheck.js --live`, 70/70 on a clean run (one earlier run had a single
+timeout on the free local keys, which in production falls back to the rules). Includes a lesson
+taught through `_setLearned` being used by the real model, with a control that it does not invent
+the same answer without the lesson. **Not deployed; not exercised in the apps.**

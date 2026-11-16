@@ -728,9 +728,10 @@ async function generateReply({ party, history = [], message }) {
       return { reply: ai.reply, escalate: false, category: ai.category || null, toolTrace: ai.trace };
     } else if (ai && ai.kind === 'handover') {
       return {
-        reply: lang === 'hi'
+        // The model's own words when they passed the gate; the fixed line otherwise.
+        reply: ai.reply || (lang === 'hi'
           ? 'यह किसी व्यक्ति को देखना चाहिए। मैं आपको अभी टीम से जोड़ रहा हूं।'
-          : 'This needs a person rather than me. Connecting you to the team now.',
+          : 'This needs a person rather than me. Connecting you to the team now.'),
         escalate: true,
         reason: `Assistant handed over${ai.summary ? `: ${ai.summary}` : '.'} Message: ${raw.slice(0, 200)}`,
         category: ai.category || 'other',
@@ -770,14 +771,29 @@ async function generateReply({ party, history = [], message }) {
     }
   }
 
-  // Intents that are never answered by the bot.
+  // Intents a person has to settle. The RULE decides that; the model only
+  // writes what the person is told while they wait, from their own records and
+  // from how the team has answered cases like it (supportAi.compose). Two
+  // exceptions get the fixed line and nothing else: safety (nothing improvised
+  // is said to someone reporting a threat) and anything about money (owner's
+  // rule: the model does not write about money at all).
   if (best.escalate) {
+    let written = null;
+    const aboutMoney = ['billing', 'refund', 'payout', 'order'].includes(best.category);
+    if (best.id !== 'safety' && !aboutMoney) {
+      let facts = '';
+      try { facts = await factsFor(party); } catch (_) { facts = ''; }
+      written = await supportAi.compose({
+        party, message: raw, history, facts,
+        situation: best.reason || `Intent: ${best.id}`,
+      });
+    }
     return {
-      reply: lang === 'hi'
+      reply: (written && written.reply) || (lang === 'hi'
         ? 'यह किसी व्यक्ति को देखना चाहिए। मैं आपको अभी टीम से जोड़ रहा हूं।'
-        : 'This needs a person rather than me. Connecting you to the team now.',
+        : 'This needs a person rather than me. Connecting you to the team now.'),
       intent: best.id,
-      toolTrace: trace,
+      toolTrace: (written && written.trace) || trace,
       escalate: true,
       reason: best.reason || `Intent: ${best.id}`,
       category: best.category || 'other',

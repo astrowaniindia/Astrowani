@@ -29,7 +29,15 @@ const ok = (name, cond, extra = '') => {
   ok('a plain how-to answer passes', passesGate('Your past chats are under Menu > Chat History. It is a read-only record.'));
   ok('a Hinglish how-to passes', passesGate('Aap Menu > Chat History me apni purani chats dekh sakte hain.'));
   ok('a Hindi how-to passes', passesGate('आप मेनू > चैट हिस्ट्री में अपनी पुरानी चैट देख सकते हैं।'));
-  ok('"refund" is blocked', !passesGate('You will get a refund for that call.'));
+  ok('even only EXPLAINING refunds is blocked', !passesGate('Refund requests are checked by our team against the call record before anything is decided.'));
+  ok('a rupee amount is blocked', !passesGate('Your last call with the astrologer was charged Rs. 30 on 16 Nov.'));
+  ok('"paise" is blocked', !passesGate('Aapke paise call connect hone par hi kat te hain.'));
+  ok('"credit" is blocked', !passesGate('Wallet credit ke liye team se baat karni hogi.'));
+  ok('"you will get a refund" is blocked', !passesGate('You will get a refund for that call.'));
+  ok('"we will refund" is blocked', !passesGate('Sorry about that, we will refund the Rs. 30 today.'));
+  ok('"has been refunded" is blocked', !passesGate('The amount has been refunded to your wallet.'));
+  ok('"refund mil jayega" is blocked', !passesGate('Chinta mat kijiye, aapko refund mil jayega.'));
+  ok('"2 ghante me" is blocked', !passesGate('Team aapko 2 ghante me reply karegi.'));
   ok('"will be credited" is blocked', !passesGate('The amount will be credited to your wallet shortly.'));
   ok('"paise wapas" is blocked', !passesGate('Aapke paise wapas aa jayenge, chinta mat kijiye.'));
   ok('Hindi "वापस" is blocked', !passesGate('आपके पैसे वापस कर दिए जाएंगे।'));
@@ -38,9 +46,33 @@ const ok = (name, cond, extra = '') => {
   ok('a link is blocked', !passesGate('Open https://example.com/help to fix this problem.'));
   ok('an empty reply is blocked', !passesGate(''));
   ok('a very long reply is blocked', !passesGate('word '.repeat(200)));
+  const { citesRealSources } = supportAi._internals;
+  ok('real citations are accepted', citesRealSources(['K3', 't1'], 12, 2));
+  ok('no citation is refused', !citesRealSources([], 12, 2) && !citesRealSources(undefined, 12, 2));
+  ok('a citation to a line that does not exist is refused', !citesRealSources(['K40'], 12, 2) && !citesRealSources(['T1'], 12, 0));
+  ok('a made-up citation is refused', !citesRealSources(['general knowledge'], 12, 2));
   ok('parseJson reads a fenced object', parseJson('```json\n{"action":"intent"}\n```')?.action === 'intent');
   ok('parseJson refuses prose', parseJson('Sure! Here you go.') === null);
   ok('parseJson refuses an array', parseJson('[1,2]') === null);
+
+  console.log('\n1b. Learning from the team replies (no network)');
+  const { similarReplies, _setLearned } = supportAi._internals;
+  _setLearned([
+    { side: 'customer', question: 'kundli report kab milegi maine order kiya tha', answer: 'Aapki kundli report My Orders me aa jati hai, wahan se download kar sakte hain.' },
+    { side: 'customer', question: 'astrologer ne galat bataya', answer: 'Hume khed hai. Kripya astrologer ka naam aur samay batayein, hum jaanch karenge.' },
+    { side: 'customer', question: 'kundli report nahi aayi', answer: 'Aapki kundli report My Orders me aa jati hai, wahan se download kar sakte hain.' },
+    { side: 'vendor', question: 'kundli report payout kab', answer: 'Payout har somvar ko process hota hai.' },
+    { side: 'customer', question: 'kundli report ka refund chahiye', answer: 'Humne aapka refund wallet me kar diya hai.' },
+  ]);
+  const near = await similarReplies('meri kundli report abhi tak nahi mili', 'customer');
+  ok('the closest team reply comes back first', near.length > 0 && /My Orders/.test(near[0].answer));
+  ok('the same saved reply is one lesson, not two', near.filter((n) => /My Orders/.test(n.answer)).length === 1);
+  ok('a team reply about money is a lesson for drafts', (await similarReplies('kundli report refund', 'customer')).some((n) => /refund/.test(n.answer)));
+  ok('but is never shown for a reply the AI sends itself', !(await similarReplies('kundli report refund', 'customer', 5, { safeOnly: true })).some((n) => /refund/.test(n.answer)));
+  ok('an astrologer-side reply is not shown to a customer', !near.some((n) => /Payout/.test(n.answer)));
+  ok('an unrelated message finds nothing', (await similarReplies('wallet recharge upi failed', 'customer')).length === 0);
+  ok('the astrologer side has its own lessons', (await similarReplies('payout kab hota hai', 'vendor')).some((n) => /somvar/.test(n.answer)));
+  _setLearned([]);
 
   console.log('\n2. With no key, the bot behaves exactly as before (no network)');
   const saved = {};
@@ -58,6 +90,7 @@ const ok = (name, cond, extra = '') => {
   ok('an old-style marker in history still counts as a miss', r2old.escalate === true);
   const r3 = await bot.generateReply({ party: nobody, history: [], message: 'I want a refund' });
   ok('a refund still goes to a person by rule', r3.escalate === true && r3.intent === 'refund');
+  ok('and with the fixed line', /needs a person rather than me/.test(r3.reply));
   Object.assign(process.env, saved);
 
   console.log('\n3. Lookups read real columns (read-only, production)');
@@ -93,7 +126,8 @@ const ok = (name, cond, extra = '') => {
       const v = { kind: 'vendor', id: nobody.id };
       const isIntent = (r, ids) => !!r && r.kind === 'intent' && ids.includes(r.id);
       const cases = [
-        [c, 'mujhe free chatkrni h', (r) => isIntent(r, ['free_call']) || (!!r && ['clarify', 'answer'].includes(r.kind))],
+        // No line mentions a free CHAT. It must not make up an answer about one.
+        [c, 'mujhe free chatkrni h', (r) => !r || isIntent(r, ['free_call']) || ['clarify', 'handover'].includes(r.kind) || (r.kind === 'answer' && !/available nahi|not available|uplabdh nahi/i.test(r.reply))],
         [c, 'maine astrologer se baat ki thi wo chat history kaha dikhegi', (r) => !!r && r.kind === 'answer' && /history/i.test(r.reply)],
         [c, 'Mujhe apke paletform per work karna hai', (r) => isIntent(r, ['become_astrologer']) || (!!r && r.kind === 'answer' && /astrolog/i.test(r.reply))],
         [c, 'No astrology is taking my query or chat request despite payment', (r) => !!r && (r.kind === 'handover' || isIntent(r, ['astrologer_not_answering', 'recharge_failed', 'charged_but_call_failed']))],
@@ -110,6 +144,33 @@ const ok = (name, cond, extra = '') => {
         const shown = r ? `${r.kind}${r.id ? `:${r.id}` : ''}${r.reply ? ` "${r.reply.slice(0, 120)}"` : ''}` : 'null';
         ok(`"${msg.slice(0, 46)}" -> ${shown} (${Date.now() - t}ms)`, check(r));
       }
+      // Learning, end to end: something only the team's past reply could teach.
+      _setLearned([{ side: 'customer', question: 'gemstone ka certificate milta hai kya order ke sath', answer: 'Ji haan, har gemstone ke saath lab certificate box ke andar aata hai. Agar na mile to order ki photo yahan bhej dijiye.' }]);
+      const taught = await supportAi.route({ party: c, message: 'stone ke sath certificate aata hai ya nahi', history: [], intents: I });
+      console.log(`       taught: ${taught ? `${taught.kind} "${taught.reply || ''}"` : 'null'}`);
+      ok('a question the team answered once is now answered by the AI', !!taught && taught.kind === 'answer' && /certificate/i.test(taught.reply));
+      _setLearned([]);
+      const untaught = await supportAi.route({ party: c, message: 'stone ke sath certificate aata hai ya nahi', history: [], intents: I });
+      ok('and without that lesson it does not invent the answer (control)', !untaught || untaught.kind !== 'answer' || !/lab certificate/i.test(untaught.reply));
+
+      // A rule sends these to a person; the AI writes what they read meanwhile.
+      const w = await supportAi.compose({
+        party: c, message: 'mera account block ho gaya hai login nahi ho raha', history: [],
+        facts: 'Wallet balance now: Rs. 40.\nMost recent consultation: 16 Nov 4:12 pm with Astro Test, 22 seconds long, rate Rs. 30/min, charged Rs. 30.',
+        situation: 'Account blocked.',
+      });
+      console.log(`       composed: ${w ? w.reply.replace(/\n/g, ' ') : 'null'}`);
+      ok('the AI writes the reply for a blocked account', !!w && w.reply.length > 20);
+      ok('with no money in it, though the facts had some', !!w && passesGate(w.reply));
+
+      // Money: the model is asked nothing, the person gets the fixed line.
+      const money = await bot.generateReply({ party: c, history: [], message: 'mujhe refund chahiye' });
+      ok('a refund request gets the fixed line and a person', money.escalate === true && /needs a person rather than me/.test(money.reply));
+      ok('and the model wrote none of it', !(money.toolTrace && money.toolTrace.action === 'compose'));
+      const m2 = await supportAi.route({ party: c, message: 'recharge kiya tha 500 ka wallet me nahi aaya kya karu', history: [], intents: I });
+      console.log(`       money route: ${m2 ? `${m2.kind}${m2.id ? ':' + m2.id : ''} "${m2.reply || ''}"` : 'null'}`);
+      ok('a money question is never answered in the model\'s words', !m2 || m2.kind === 'intent' || (m2.kind === 'handover' && !m2.reply));
+
       const d = await supportAi.draftReply({
         app: 'customer',
         messages: [{ sender: 'user', body: 'call 20 second me kat gayi aur paise kat gaye' }, { sender: 'agent', body: 'I am passing this to a person.' }],
