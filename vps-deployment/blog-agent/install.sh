@@ -97,13 +97,21 @@ UNIT
 # and a half hours out after somebody edits it a year from now.
 install_timer() {
   local name="$1" when="$2" count="$3" window="$4"
+  # Validate with systemd itself before writing anything: an expression it cannot
+  # parse would otherwise be installed and simply never fire.
+  if ! systemd-analyze calendar "$when Asia/Kolkata" >/dev/null 2>&1; then
+    echo "ERROR: systemd cannot parse the calendar \"$when Asia/Kolkata\"" >&2
+    exit 1
+  fi
   cat > "/etc/systemd/system/astrowani-blog-$name.timer" <<UNIT
 [Unit]
 Description=Astrowani blog agent — $name slot (random time in the $window s after $when IST)
 
 [Timer]
-OnCalendar=$when
-Timezone=Asia/Kolkata
+# The timezone goes INSIDE the calendar expression. A separate "Timezone=" line
+# is not a [Timer] setting: systemd ignored it and read every time as UTC, so
+# until 2026-11-17 each slot fired 5.5 hours late (06:00 "IST" ran at 11:30 IST).
+OnCalendar=$when Asia/Kolkata
 # Run a slot missed while the box was down, rather than skipping the day.
 Persistent=true
 # A RANDOM time inside the window, re-drawn every day (owner, 2026-11-17: no
@@ -144,8 +152,13 @@ for t in "${INSTALLED_TIMERS[@]}"; do
   systemctl enable "$t" >/dev/null 2>&1 || true
   systemctl restart "$t"
 done
-echo "  timers active:"
+echo "  timers active (times shown in the server's zone; NEXT is the first run):"
 systemctl list-timers 'astrowani-blog-*' --no-pager || true
+echo "  the same, in IST:"
+for t in "${INSTALLED_TIMERS[@]}"; do
+  next=$(systemctl show "$t" -p NextElapseUSecRealtime --value 2>/dev/null)
+  [ -n "$next" ] && echo "    $t -> $(TZ=Asia/Kolkata date -d "$next" '+%a %Y-%m-%d %H:%M IST' 2>/dev/null || echo "$next")"
+done
 
 echo
 echo "Installed. The agent is still DISABLED in the database — these timers will"

@@ -1137,6 +1137,9 @@ section('three a day, hours apart — how many each run writes');
   ok('the catch-up slot ends before midnight IST (the day boundary), with room for a run',
     slots.length === 4 && slots[3].end + 40 <= 24 * 60 && slots[3].count === 0, JSON.stringify(slots[3]));
   ok('the three writing slots publish one each', slots.slice(0, 3).every((t) => t.count === 1));
+  ok('the timezone is INSIDE OnCalendar (systemd ignores a separate Timezone= line)',
+    /^OnCalendar=\$when Asia\/Kolkata$/m.test(install) && !/^Timezone=/m.test(install));
+  ok('each calendar is validated with systemd-analyze before install', /systemd-analyze calendar/.test(install));
   ok('FixedRandomDelay is NOT set (it would freeze one random time forever)',
     !install.split(/\r?\n/).some((l) => !/^\s*#/.test(l) && /FixedRandomDelay\s*=\s*(yes|true)/i.test(l)));
 }
