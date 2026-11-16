@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Give every local image reference a content hash: assets/x.jpg -> assets/x.jpg?h=1a2b3c4d
+ * Give every local image (and self-hosted font) reference a content hash: assets/x.jpg -> assets/x.jpg?h=1a2b3c4d
  *
  *   node aw/version-images.js            # rewrite
  *   node aw/version-images.js --check    # report, write nothing
@@ -33,7 +33,7 @@ const crypto = require('crypto');
 
 const ROOT = path.join(__dirname, '..');
 const check = process.argv.includes('--check');
-const IMG = /((?:\.\.\/)?assets\/[A-Za-z0-9_\/.-]+?\.(?:png|jpe?g|webp|svg|gif|avif|ico))(\?h=[0-9a-f]{8})?(?=["')\s,])/g;
+const IMG = /((?:\.\.\/)?assets\/[A-Za-z0-9_\/.-]+?\.(?:png|jpe?g|webp|svg|gif|avif|ico|woff2))(\?h=[0-9a-f]{8})?(?=["')\s,])/g;
 
 const cache = new Map();
 /** The 8-hex content hash of assets/<...>, or null if there is no such file. */
