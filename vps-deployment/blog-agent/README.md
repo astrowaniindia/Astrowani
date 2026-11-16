@@ -189,6 +189,35 @@ Each post is built for search, not just written:
 - A 1200×675 JPEG with EXIF stripped, in `app-images/blogs/` — the same bucket and
   folder the admin dashboard already uses.
 
+### Methods taken from claude-blog (2026-11-17)
+
+[claude-blog](https://github.com/AgriciDaniel/claude-blog) is a Claude Code skill
+that needs a person at the keyboard, so it cannot be "installed" here. Its methods
+were rebuilt inside this agent instead, on the same free Gemini chain:
+
+- **An independent reviewer** (`src/blogAgent/review.js`). After the rule gate
+  passes, a second Gemini call scores the draft out of 100: usefulness 30,
+  clarity 20, trust 20, search 15, AI-answer readiness 15. It publishes only at
+  `reviewMinScore` (default **80**) with no P0 issue. If the reviewer call itself
+  fails, the article publishes on the rule gate alone and the log says so; a
+  reviewer that ran and said no always blocks.
+- **Retries that learn.** A rejected attempt passes its rejections, or the
+  reviewer's P0 issues and fixes, into the next attempt's prompt. Before this, a
+  retry repeated the prompt that had just failed.
+- **A Key Takeaways box**: 3-5 points after the opening answer, built by code
+  from plain-text items (`seo.takeawaysHtml`), translated for Hindi, and
+  allowlisted in `src/blogPublic.js` (class `aw-takeaways`).
+- **A format chosen by intent** (`generate.formatFor`): comparison, how-to, list,
+  explainer or guide, from the topic's wording.
+- **New gate rules** (`quality.js`): `AI_FILLER` (two or more stock phrases such
+  as "delve" or "tapestry"), `UNSOURCED_STATISTIC` ("70% of couples", "studies
+  show"), `HARD_TO_READ` (Flesch under 40; the 3 Gemini articles published before
+  this measured 33-41) and `WRONG_TAKEAWAY_COUNT`.
+
+Cost: one extra Gemini call per attempt. Worst case per article is about 820 s
+(3 attempts x (write + review) + Hindi + image), inside the unit's 1200 s limit.
+Switch the reviewer off with `reviewEnabled: false` in `blog_agent_config`.
+
 ### The remaining SEO blocker, which the agent cannot fix
 
 `blog.html` and `blog-post.html` render **entirely in JavaScript**. Google does

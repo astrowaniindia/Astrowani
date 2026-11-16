@@ -79,6 +79,80 @@ const VAGUE_SOURCE_PATTERNS = [
 ];
 
 /**
+ * STOCK AI PHRASES (adapted from claude-blog's editorial review, first-order
+ * reflex list). One "moreover" is a word; a page that delves into the rich
+ * tapestry of an ever-evolving landscape reads as generated, to readers and to
+ * search engines' helpful-content systems alike. Counted, not banned singly:
+ * more than L.maxFillerPhrases occurrences across the body rejects the article.
+ */
+const FILLER_PATTERNS = [
+  /\bdelv(?:e|es|ed|ing)\b/gi,
+  /\bdive\s+(?:deep\s+)?into\b/gi,
+  /\bdeep\s+dive\b/gi,
+  /\bin\s+today'?s\s+(?:world|fast[- ]paced|digital|modern)\b/gi,
+  /\bever[- ]evolving\b/gi,
+  /\bit(?:'s| is)\s+(?:important|worth|crucial)\s+to\s+(?:note|mention|remember)\b/gi,
+  /\bgame[- ]changer\b/gi,
+  /\bunlock(?:s|ing)?\s+the\s+(?:potential|power|secrets?)\b/gi,
+  /\bharness(?:es|ing)?\s+the\s+power\b/gi,
+  /\b(?:rich\s+)?tapestry\b/gi,
+  /\bembark(?:s|ing)?\s+on\s+(?:a|this|your)\s+journey\b/gi,
+  /\bnavigat(?:e|es|ing)\s+the\s+complexit(?:y|ies)\b/gi,
+  /\ba\s+testament\s+to\b/gi,
+  /\bin\s+conclusion\b/gi,
+  /\bseamless(?:ly)?\b/gi,
+  /\bcutting[- ]edge\b/gi,
+  /\b(?:transformative|revolutioni[sz]e)\b/gi,
+];
+
+/**
+ * INVENTED NUMBERS. Nothing the agent writes is researched, so a percentage of
+ * people or "studies show" can only have been made up — claude-blog's rule is
+ * that an unverifiable statistic is dropped, never softened. Tradition's own
+ * numbers (27 nakshatras, 36 gunas) are not matched: these patterns need a
+ * population or a study as the subject.
+ */
+const UNSOURCED_STAT_PATTERNS = [
+  /\b\d{1,3}(?:\.\d+)?\s?(?:%|per\s?cent)\s+of\s+(?:people|indians|couples|marriages|users|individuals|men|women|those|respondents|astrologers|families)\b/i,
+  /\b(?:studies|research|surveys?|scientists|experts|statistics|data)\s+(?:show|shows|prove|proves|proved|found|finds|suggest|suggests|confirm|confirms|reveal|reveals|indicate|indicates)\b/i,
+  /\baccording\s+to\s+(?:a|one|recent|several|many)\s+(?:study|studies|survey|surveys|report|reports|research)\b/i,
+  /\b(?:a|one|recent)\s+(?:study|survey)\s+(?:by|from|in|of|published)\b/i,
+];
+
+/**
+ * Flesch reading ease for English prose. claude-blog targets 60-70 for a general
+ * reader; astrology prose carries Sanskrit terms (nakshatra, Brihaspati) that
+ * read as long words to the formula, so the floor here is set lower and only
+ * rejects text that is genuinely dense.
+ */
+function syllables(word) {
+  const w = word.toLowerCase().replace(/[^a-z]/g, '');
+  if (!w) return 0;
+  if (w.length <= 3) return 1;
+  const trimmed = w.replace(/(?:[^laeiouy]es|ed|[^laeiouy]e)$/, '').replace(/^y/, '');
+  const groups = trimmed.match(/[aeiouy]{1,2}/g);
+  return Math.max(1, groups ? groups.length : 1);
+}
+
+function fleschReadingEase(text) {
+  const plain = String(text || '').replace(/\s+/g, ' ').trim();
+  const words = plain.match(/[A-Za-z][A-Za-z'-]*/g) || [];
+  if (words.length < 100) return null;
+  const sentences = Math.max(1, (plain.match(/[.!?]+(?:\s|$)/g) || []).length);
+  const syl = words.reduce((n, w) => n + syllables(w), 0);
+  return 206.835 - 1.015 * (words.length / sentences) - 84.6 * (syl / words.length);
+}
+
+function countFiller(text) {
+  const found = [];
+  for (const re of FILLER_PATTERNS) {
+    re.lastIndex = 0;
+    for (const m of String(text || '').matchAll(re)) found.push(m[0].toLowerCase());
+  }
+  return found;
+}
+
+/**
  * Model scaffolding that must never reach a reader. These do not reject — they
  * are evidence the generation was interrupted or the prompt leaked, so the
  * article is retried rather than published with "[insert conclusion here]" in it.
@@ -120,6 +194,15 @@ const DEFAULT_LIMITS = {
   excerptMinChars: 60,
   excerptMaxChars: 320,
   maxSimilarityToExisting: 0.72,
+  // From claude-blog (2026-11-17): a 3-5 point Key Takeaways box, no stock AI
+  // phrasing, and prose a general reader can follow.
+  minTakeaways: 3,
+  maxTakeaways: 5,
+  maxFillerPhrases: 1,      // two or more stock phrases rejects
+  // Flesch. claude-blog targets 60-70; astrology terms read as long words to the
+  // formula. Measured 2026-11-17: the 3 published Gemini articles score 33-41, the 5
+  // hand-rewritten ones 51-64. 40 rejects only the densest; the reviewer pushes further.
+  minReadingEase: 40,
 };
 
 /**
@@ -340,6 +423,26 @@ function check(article, opts = {}) {
     const hit = re.exec(plainEn);
     if (hit) fail('VAGUE_SOURCE', `"${String(hit[0]).slice(0, 60)}"`);
   }
+  for (const re of UNSOURCED_STAT_PATTERNS) {
+    const hit = re.exec(plainEn);
+    if (hit) fail('UNSOURCED_STATISTIC', `"${String(hit[0]).slice(0, 60)}"`);
+  }
+  const filler = countFiller(plainEn);
+  if (filler.length > L.maxFillerPhrases) {
+    fail('AI_FILLER', `${filler.length} stock phrases: ${[...new Set(filler)].slice(0, 5).join(', ')}`);
+  }
+  const readingEase = fleschReadingEase(plainEn);
+  if (readingEase !== null && readingEase < L.minReadingEase) {
+    fail('HARD_TO_READ', `Flesch ${readingEase.toFixed(0)} < ${L.minReadingEase}; use shorter sentences and plainer words`);
+  }
+  // Key Takeaways are the model's output, so they are checked at both stages and
+  // a shortfall is retryable. Only enforced when the article carries the field at
+  // all, so a caller that never asked for takeaways is not failed for lacking them.
+  const takeaways = Array.isArray(article?.takeaways) ? article.takeaways : null;
+  if (takeaways && L.minTakeaways > 0
+    && (takeaways.length < L.minTakeaways || takeaways.length > L.maxTakeaways)) {
+    fail('WRONG_TAKEAWAY_COUNT', `${takeaways.length}, want ${L.minTakeaways}-${L.maxTakeaways}`);
+  }
 
   // ── Near-duplicate of something already published ─────────────────────────
   let maxSim = 0;
@@ -364,6 +467,9 @@ function check(article, opts = {}) {
       metaChars: meta.length, excerptChars: excerpt.length,
       faqCount, secondaryHits, secondaryFound, distinctAnchors: distinctAnchors.size,
       maxSimilarity: Number(maxSim.toFixed(3)),
+      readingEase: readingEase === null ? null : Number(readingEase.toFixed(1)),
+      fillerPhrases: filler.length,
+      takeaways: takeaways ? takeaways.length : null,
     },
   };
 }
@@ -420,6 +526,10 @@ function checkHindi(article, { limits = {} } = {}) {
 }
 
 module.exports = {
+  fleschReadingEase,
+  countFiller,
+  FILLER_PATTERNS,
+  UNSOURCED_STAT_PATTERNS,
   check,
   checkHindi,
   similarity,

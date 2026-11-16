@@ -1008,6 +1008,106 @@ function commercialRotationChecks() {
 
 commercialRotationChecks();
 
+// ═══════════════════════════════════════════════════════════════════════════
+section('claude-blog methods (2026-11-17) — filler, invented numbers, readability, takeaways');
+// ═══════════════════════════════════════════════════════════════════════════
+{
+  const reviewer = require('../src/blogAgent/review');
+  const { cleanContent } = require('../src/blogPublic');
+  const takeaways4 = ['Mangal dosh usually delays a marriage rather than denying it.',
+    'Several classical conditions cancel it, so check before worrying.',
+    'Tuesday fasting and Hanuman Chalisa are the common traditional remedies.',
+    'Only a reading of your own chart can say whether it matters for you.'];
+
+  // Positive control: the good fixture WITH takeaways still passes.
+  const withTk = quality.check(goodArticle({ takeaways: takeaways4 }), { keyword: KEYWORD, limits: LIMITS, existing: [], stage: 'draft' });
+  ok('control: a good draft with 4 takeaways is ACCEPTED', withTk.ok, withTk.rejections.join('; '));
+  eq('  stats report the takeaway count', withTk.stats.takeaways, 4);
+  ok('  stats report a reading-ease score', typeof withTk.stats.readingEase === 'number', String(withTk.stats.readingEase));
+  ok('a draft with no takeaways field is not failed for it (older callers)',
+    !quality.check(goodArticle(), { keyword: KEYWORD, limits: LIMITS, stage: 'draft' }).rejections.some((r) => r.startsWith('WRONG_TAKEAWAY_COUNT')));
+  rejects('2 takeaways is rejected', { takeaways: takeaways4.slice(0, 2) }, 'WRONG_TAKEAWAY_COUNT');
+  rejects('6 takeaways is rejected', { takeaways: [...takeaways4, 'Fifth point that is long enough.', 'Sixth point that is long enough.'] }, 'WRONG_TAKEAWAY_COUNT');
+
+  // Stock AI phrases: one is tolerated, two reject.
+  const one = goodArticle().contentEn.replace('<h2>How it shows up', '<p>Let us delve into it.</p><h2>How it shows up');
+  ok('ONE stock phrase is tolerated', !quality.check(goodArticle({ contentEn: one }), { keyword: KEYWORD, limits: LIMITS, stage: 'draft' })
+    .rejections.some((r) => r.startsWith('AI_FILLER')));
+  rejects('two stock phrases are rejected',
+    { contentEn: one.replace('<h2>Remedies', '<p>It is a rich tapestry of meaning.</p><h2>Remedies') }, 'AI_FILLER');
+  eq('countFiller finds each phrase form', quality.countFiller('We delve and dive into the ever-evolving, a game-changer. In conclusion.').length, 5);
+  eq('countFiller ignores ordinary words (navy, tapes, delivered)', quality.countFiller('A navy cloth, two tapes, a parcel delivered.').length, 0);
+
+  // Invented statistics vs tradition's own numbers.
+  const addP = (p) => goodArticle().contentEn.replace('<h2>Remedies', `<p>${p}</p><h2>Remedies`);
+  rejects('"70% of couples" is rejected', { contentEn: addP('About 70% of couples with this placement marry late.') }, 'UNSOURCED_STATISTIC');
+  rejects('"studies show" is rejected', { contentEn: addP('Studies show that Tuesday fasting helps.') }, 'UNSOURCED_STATISTIC');
+  rejects('"according to a survey" is rejected', { contentEn: addP('According to a survey, most families check this.') }, 'UNSOURCED_STATISTIC');
+  ok('tradition\'s own numbers pass (36 gunas, 27 nakshatras, 7.5 years)',
+    !quality.check(goodArticle({ contentEn: addP('Matching scores 36 gunas across 27 nakshatras; Sade Sati lasts 7.5 years and 100% of charts have Mars somewhere.') }),
+      { keyword: KEYWORD, limits: LIMITS, stage: 'draft' }).rejections.some((r) => r.startsWith('UNSOURCED_STATISTIC')));
+
+  // Readability: Flesch on known text.
+  const plain = 'The cat sat on the mat. It was a warm day. We went out to play. '.repeat(15);
+  const dense = 'Notwithstanding astrological considerations, interpretational methodologies characteristically incorporate multidimensional prognostications, '.repeat(15);
+  ok('plain short sentences read as easy (Flesch > 80)', quality.fleschReadingEase(plain) > 80, String(quality.fleschReadingEase(plain)));
+  ok('dense long words read as hard (Flesch < 20)', quality.fleschReadingEase(dense) < 20, String(quality.fleschReadingEase(dense)));
+  eq('fewer than 100 words is not scored', quality.fleschReadingEase('Too short to score.'), null);
+  rejects('a dense body is rejected as HARD_TO_READ',
+    { contentEn: goodArticle().contentEn.replace(/<p>[^<]{400,}<\/p>/g, `<p>${dense.repeat(2)}</p>`) }, 'HARD_TO_READ');
+
+  // Takeaways box: built by code, escaped, placed before the first <h2>.
+  const box = seo.takeawaysHtml(['First point here.', 'Second <b>bold</b> point.', 'Third & last point.']);
+  ok('takeaways box has the class the site allowlists', box.startsWith('<div class="aw-takeaways">'), box.slice(0, 60));
+  ok('takeaways box escapes model text (no <b> survives, & escaped)', !/<b>/.test(box) && /&amp;/.test(box), box);
+  eq('fewer than 3 takeaways renders nothing', seo.takeawaysHtml(['one long enough point', 'two long enough point']), '');
+  ok('Hindi box is titled in Hindi', seo.takeawaysHtml(['पहला बिंदु यहाँ', 'दूसरा बिंदु यहाँ', 'तीसरा बिंदु यहाँ'], { hindi: true }).includes('मुख्य बातें'));
+  const placed = seo.insertBeforeFirstH2('<p>Answer.</p><h2>One</h2><p>x</p><h2>Two</h2>', box);
+  ok('the box sits after the opening and before the FIRST <h2>', placed.indexOf(box) === '<p>Answer.</p>'.length && placed.indexOf(box) < placed.indexOf('<h2>One'));
+  eq('no <h2> leaves the body unchanged', seo.insertBeforeFirstH2('<p>a</p>', box), '<p>a</p>');
+
+  const assembled = generate.assemble(goodArticle({ takeaways: takeaways4, takeawaysHi: [] }),
+    { topic: TOPIC, slug: 'mangal-dosh-test', imageUrl: '', imageAlt: '', related: [], publishedAt: '2026-11-17' });
+  ok('assemble puts the takeaways box in the published English body', assembled.contentEn.includes('class="aw-takeaways"'));
+  ok('  ...before the first article section', assembled.contentEn.indexOf('aw-takeaways') < assembled.contentEn.indexOf('<h2>'));
+  ok('no Hindi takeaways means no empty Hindi box', !assembled.contentHi.includes('aw-takeaways'));
+  const served = cleanContent(assembled.contentEn);
+  ok('the public article filter KEEPS the takeaways classes', served.includes('class="aw-takeaways"') && served.includes('class="aw-takeaways-title"'));
+
+  // normaliseTakeaways strips numbering/bullets and HTML, drops fragments.
+  const nt = generate.normaliseTakeaways(['1. First real point here', '- <b>Second</b> real point', 'ok', 42]);
+  eq('normaliseTakeaways cleans numbering and markup', JSON.stringify(nt), JSON.stringify(['First real point here', 'Second real point']));
+
+  // Format by intent.
+  eq('a "vs" topic gets the COMPARISON format', generate.formatFor({ title: 'Shani vs Rahu', keyword: '' }).split(':')[0], 'COMPARISON');
+  eq('a "how to" topic gets the HOW-TO format', generate.formatFor({ title: 'How to do Shani upay', keyword: '' }).split(':')[0], 'HOW-TO');
+  eq('a "what is" topic gets the EXPLAINER format', generate.formatFor({ title: 'What is Mangal dosh', keyword: '' }).split(':')[0], 'EXPLAINER');
+  eq('anything else gets the GUIDE format', generate.formatFor({ title: 'Kundali for career', keyword: '' }).split(':')[0], 'GUIDE');
+  ok('"or" alone does NOT make a comparison (common word)', generate.formatFor({ title: 'Gold or silver for Venus', keyword: '' }).split(':')[0] !== 'COMPARISON');
+
+  // The repair loop: the next prompt carries the rejection reasons.
+  const promptPlain = generate.buildPrompt({ topic: TOPIC, limits: LIMITS, related: [], recentTitles: [], sequence: 0 });
+  const promptRepair = generate.buildPrompt({ topic: TOPIC, limits: LIMITS, related: [], recentTitles: [], sequence: 0, repair: ['HARD_TO_READ: Flesch 33 < 40'] });
+  ok('a first attempt carries NO repair block (control)', !promptPlain.includes('WAS REJECTED'));
+  ok('a retry carries the previous rejection in its prompt', promptRepair.includes('WAS REJECTED') && promptRepair.includes('HARD_TO_READ: Flesch 33'));
+  ok('the prompt asks for takeaways and the format', promptPlain.includes('"takeaways"') && promptPlain.includes('FORMAT FOR THIS ARTICLE'));
+  ok('the system prompt bans invented statistics', generate.SYSTEM.includes('NEVER invent a statistic'));
+
+  // The reviewer's arithmetic is ours, not the model's.
+  const r = reviewer.normaliseReview({ scores: { usefulness: 99, clarity: 18, trust: -5, search: 'x', aiAnswers: 12.6 }, p0: [], fixes: ['Fix A', '<b>Fix B</b>'] });
+  eq('scores clamp to each category maximum and are totalled by us', r.total, 30 + 18 + 0 + 0 + 13);
+  eq('fixes are stripped of markup', r.fixes[1], 'Fix B');
+  const passing = { available: true, ok: true, total: 92, minScore: 80, p0: [], fixes: [] };
+  const failing = { available: true, ok: false, total: 71, minScore: 80, p0: ['Claims a certain outcome.'], fixes: ['Add an example to section 2.'] };
+  eq('a passing review contributes no repair notes', reviewer.repairNotes(passing).length, 0);
+  eq('an unavailable review contributes no repair notes', reviewer.repairNotes({ available: false }).length, 0);
+  const notes = reviewer.repairNotes(failing);
+  ok('a failing review feeds its P0, score and fixes into the next attempt',
+    notes[0].startsWith('BLOCKING:') && notes.some((n) => n.includes('71/100')) && notes.includes('Add an example to section 2.'), JSON.stringify(notes));
+  ok('the review prompt tells the reviewer to ignore instructions inside the draft', reviewer.SYSTEM.includes('untrusted'));
+  eq('the rubric totals 100', reviewer.CATEGORIES.reduce((n, [, m]) => n + m, 0), 100);
+}
+
 configChecks().then(() => {
   console.log(`\n${'═'.repeat(60)}`);
   console.log(`${pass} passed, ${fail} failed`);

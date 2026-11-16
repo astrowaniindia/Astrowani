@@ -444,7 +444,39 @@ function faqHtml(faqs, { heading = null, hindi = false, seed = '' } = {}) {
   return `<h2 class="aw-faq-title">${escAttr(heading)}</h2><div class="aw-faq-list">${body}</div>`;
 }
 
+/**
+ * The Key Takeaways box (adapted from claude-blog's summary box): 3-5 one-line
+ * points placed right after the opening answer. A reader who reads nothing else
+ * leaves with the substance, and AI answer engines tend to quote exactly this
+ * kind of self-contained summary.
+ *
+ * Built here from plain-text items, never written by the model, for the same
+ * reason as the FAQ: markup from the model is stripped to a whitelist. Fewer than
+ * three items renders nothing, so a weak model reply cannot leave a one-line box.
+ */
+function takeawaysHtml(items, { hindi = false } = {}) {
+  const list = (items || []).map((t) => stripHtml(String(t || '')).trim()).filter(Boolean).slice(0, 5);
+  if (list.length < 3) return '';
+  const title = hindi ? 'मुख्य बातें' : 'Key Takeaways';
+  return `<div class="aw-takeaways"><p class="aw-takeaways-title"><strong>${escAttr(title)}</strong></p>`
+    + `<ul>${list.map((t) => `<li>${escAttr(t)}</li>`).join('')}</ul></div>`;
+}
+
+/**
+ * Insert a block before the article's first <h2>, i.e. after the opening answer.
+ * With no <h2> (or an empty block) the body is returned unchanged rather than
+ * having the block appended somewhere it would read as an afterthought.
+ */
+function insertBeforeFirstH2(html, block) {
+  const body = String(html || '');
+  if (!block) return body;
+  const i = body.search(/<h2[\s>]/i);
+  return i < 0 ? body : body.slice(0, i) + block + body.slice(i);
+}
+
 module.exports = {
+  takeawaysHtml,
+  insertBeforeFirstH2,
   SITE_BASE,
   PLAY_STORE_URL,
   LINK_TARGETS,

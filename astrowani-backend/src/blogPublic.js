@@ -17,7 +17,7 @@ const cleanContent = (s) => sanitizeHtml(String(s || ''), {
   // (#f4d8bc, aw/aw.css) and the FAQ accordion. Every other class is still
   // stripped. Until 2026-11-16 all classes were, so on the server-rendered page
   // the credit fell back to grey and the FAQ lost its accordion styling.
-  allowedClasses: { '*': ['aw-photo-credit', 'aw-faq', 'aw-faq-list', 'aw-faq-title'] },
+  allowedClasses: { '*': ['aw-photo-credit', 'aw-faq', 'aw-faq-list', 'aw-faq-title', 'aw-takeaways', 'aw-takeaways-title'] },
   allowedSchemes: ['https', 'http', 'mailto'],
 });
 

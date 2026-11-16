@@ -61,6 +61,23 @@ ABSOLUTE PROHIBITIONS - an article breaking any of these is discarded
 - Never claim a specific astrologer, price or offer exists on Astrowani. Refer to
   "verified astrologers on Astrowani" in general terms only.
 
+WRITE LIKE A PERSON, NOT A TEMPLATE (adapted from claude-blog's editorial review)
+- Never use these stock phrases: "delve", "dive into", "deep dive", "in today's world",
+  "in today's fast-paced", "ever-evolving", "it's important to note", "it is worth noting",
+  "game-changer", "unlock the potential", "harness the power", "tapestry", "embark on a
+  journey", "navigate the complexities", "a testament to", "in conclusion". An article
+  that leans on them is DISCARDED.
+- Do not open paragraphs with "Furthermore", "Moreover" or "Additionally" again and again.
+- Do not end sections on a rhetorical question, and do not stack hedges ("may often
+  typically"). Say the thing.
+- Do not announce importance ("this is crucial to understand"). Make the point instead.
+
+NUMBERS
+- NEVER invent a statistic. No "70% of people", no "studies show", no "research proves",
+  no survey figures. Nothing here is researched, so any such number would be made up and
+  an article containing one is DISCARDED. Stay qualitative, or use numbers that are part
+  of the tradition itself (27 nakshatras, 36 gunas, 7.5 years of Sade Sati).
+
 THE BRAND
 - The platform is "Astrowani" - one word, capital A, no space. Never "Astro Wani",
   "AstroWani" or "Astrovani".
@@ -75,7 +92,45 @@ THE BRAND
  * stage 2 — the model is never given a URL to reproduce, because it will
  * eventually reproduce one wrong.
  */
-function buildPrompt({ topic, limits, related, recentTitles, sequence = null }) {
+/**
+ * The article's SHAPE, chosen from what the reader is asking. Adapted from
+ * claude-blog's template selection: a how-to reads as steps, a "what is" as an
+ * explainer, a comparison as a side-by-side. One shape for every subject is what
+ * makes a feed of generated articles read as generated.
+ */
+function formatFor(topic) {
+  const t = `${topic.title || ''} ${topic.keyword || ''}`.toLowerCase();
+  if (/\b(vs|versus)\b|difference between|compared/.test(t)) {
+    return 'COMPARISON: set the two things side by side. Include a <table> comparing them on 4-6 points, then explain which matters when, and why.';
+  }
+  if (/^how\b|\bhow to\b|\bsteps?\b|\bremed(y|ies)\b|\bupay\b|\bwhat to do\b/.test(t)) {
+    return 'HOW-TO: lead with what to do, then the steps as an <ol>, then the reasoning behind them, then common mistakes and when to consult an astrologer.';
+  }
+  if (/\bbest\b|\btop\b|\bsigns of\b|\btypes of\b|\bways\b/.test(t)) {
+    return 'LIST: one <h2> per item, each with its own explanation and example; vary the length of each item to what it actually needs.';
+  }
+  if (/^what\b|\bmeaning\b|\bexplained\b|\bis it\b|\beffects?\b/.test(t)) {
+    return 'EXPLAINER: define it in the opening, then how it works, what it is traditionally read as, the misconceptions, and what someone can actually do.';
+  }
+  return 'GUIDE: open with the answer, then cover what it is, how it shows up in a chart or a life, what to do about it, and when a real reading is needed.';
+}
+
+/**
+ * The repair notes for a retry. A blind retry repeats the prompt that just
+ * failed, so it tends to repeat the failure. Passing the gate's rejections and
+ * the reviewer's fixes back is claude-blog's repair loop, cut down to one prompt.
+ */
+function repairBlock(repair) {
+  const items = (repair || []).map((r) => String(r || '').replace(/\s+/g, ' ').trim()).filter(Boolean).slice(0, 12);
+  if (!items.length) return '';
+  return `
+YOUR PREVIOUS DRAFT OF THIS ARTICLE WAS REJECTED. Write it again and fix every one of
+these, without introducing new problems:
+${items.map((r) => `- ${r.slice(0, 300)}`).join('\n')}
+`;
+}
+
+function buildPrompt({ topic, limits, related, recentTitles, sequence = null, repair = [] }) {
   const minWords = limits.minWordsEn + 150; // ask above the floor so a short answer still passes
   // The three commercial targets for this article come FIRST, then topical
   // ones. See seo.COMMERCIAL: three a post, nine a day, cycling continuously.
@@ -128,8 +183,13 @@ LENGTH - READ THIS TWICE, IT IS THE MOST COMMON FAILURE
   writing an introduction to the introduction.
 
 SHAPE
+- FORMAT FOR THIS ARTICLE: ${formatFor(topic)}
 - Open with 2-3 sentences that answer the question immediately - do not warm up. Someone
   who reads only the first paragraph should already have the answer.
+- Start each <h2> section with its point in the first sentence, then explain. A reader or
+  an AI answer engine should be able to lift any section and have it make sense alone.
+- Use the heading forms the subject needs - a mix of statements and questions, not a
+  question for every heading.
 - Include at least one <ul> list of practical points, and where it fits a short <table>
   (for example a planet, its day, and its remedy).
 - Mention Astrowani ${limits.minAstrowaniMentions + 1} to 7 times, woven into sentences. Count them before you answer.
@@ -159,6 +219,7 @@ Return ONLY a JSON object, no prose around it, with exactly these keys:
   "imageQuery": "2-4 ENGLISH words to search a stock photo library for a photograph that suits this article. Concrete and photographable - 'temple oil lamp', 'indian bride hands', 'night sky stars'. Never abstract, never a named deity or a chart diagram.",
   "imageAlt": "a plain description of that image for alt text, containing the keyword if it reads naturally",
   "contentEn": "the full English body as HTML, at least ${minWords} words",
+  "takeaways": ["3 to 5 KEY TAKEAWAYS, each one plain-text sentence that makes sense on its own, stating a finding or something to do - no HTML, no numbering"],
   "faqs": [
     { "question": "a question people really ask about this", "answer": "2-4 sentences, plain text, no HTML" }
   ]  // EXACTLY ${limits.minFaqs} items
@@ -167,7 +228,8 @@ Give EXACTLY ${limits.minFaqs} FAQs - not four, not six. Every Astrowani article
 The first should be the single most common question on this subject; the rest should cover
 the follow-ups a reader would have afterwards. Keep each answer to 2-4 sentences of plain
 text, and make them genuinely useful rather than restating the article.
-Write the English only. The Hindi version is requested separately.`;
+Write the English only. The Hindi version is requested separately.
+${repairBlock(repair)}`;
 }
 
 /**
@@ -177,7 +239,7 @@ Write the English only. The Hindi version is requested separately.`;
  * say the same thing and share a heading structure — a reader toggling EN/HI on
  * one URL expects one article in two languages, not two loosely related ones.
  */
-function buildHindiPrompt({ topic, limits, titleEn, contentEn, faqs }) {
+function buildHindiPrompt({ topic, limits, titleEn, contentEn, faqs, takeaways = [] }) {
   return `Below is a finished Astrowani blog article in English. Produce the Hindi version.
 
 HOW TO TRANSLATE IT
@@ -204,6 +266,9 @@ ${contentEn}
 FAQS:
 ${(faqs || []).map((f, i) => `${i + 1}. Q: ${f.question}\n   A: ${f.answer}`).join('\n')}
 
+KEY TAKEAWAYS:
+${(takeaways || []).map((t, i) => `${i + 1}. ${t}`).join('\n')}
+
 Return ONLY a JSON object, no prose around it:
 {
   "titleHi": "the Hindi title in Devanagari",
@@ -212,7 +277,8 @@ Return ONLY a JSON object, no prose around it:
   "contentHi": "the full Hindi body as HTML, at least ${limits.minWordsHi + 150} words",
   "faqsHi": [
     { "question": "the question in Hindi", "answer": "the answer in Hindi, plain text, no HTML" }
-  ]  // all ${(faqs || []).length} of them, same order
+  ],  // all ${(faqs || []).length} of them, same order
+  "takeawaysHi": ["the key takeaways in Hindi, all ${(takeaways || []).length} of them, same order, plain text"]
 }`;
 }
 
@@ -302,6 +368,15 @@ function normaliseFaqs(v) {
     .slice(0, 6);
 }
 
+function normaliseTakeaways(v) {
+  if (!Array.isArray(v)) return [];
+  return v
+    .map((t) => normaliseBrand(seo.stripHtml(pickString(typeof t === 'string' ? t : t?.text)))
+      .replace(/^\s*(?:[-*•]|\d+[.)])\s*/, '').slice(0, 300))
+    .filter((t) => t.length >= 12)
+    .slice(0, 6);
+}
+
 /**
  * Ask the model, and normalise whatever comes back into a fixed shape.
  *
@@ -309,7 +384,7 @@ function normaliseFaqs(v) {
  * because a check that lives inside the generator cannot be run against a
  * fixture in a test.
  */
-async function draftEnglish({ topic, limits, related = [], recentTitles = [], sequence = null, log = () => {} }) {
+async function draftEnglish({ topic, limits, related = [], recentTitles = [], sequence = null, repair = [], log = () => {} }) {
   // TWO CALLS, NOT ONE, AND THIS IS THE REASON. The first version asked for both
   // languages plus the FAQs in a single reply, and measured against the real API
   // on 2026-10-13 it failed every time: gemini-3.5-flash-lite returned ~8,000
@@ -320,7 +395,7 @@ async function draftEnglish({ topic, limits, related = [], recentTitles = [], se
   // and 1,117 Hindi words and passed on the first attempt.
   const first = await callGemini({
     system: SYSTEM,
-    prompt: buildPrompt({ topic, limits, related, recentTitles, sequence }),
+    prompt: buildPrompt({ topic, limits, related, recentTitles, sequence, repair }),
     json: true,
     temperature: 0.9, // these are a thousand articles on adjacent subjects; sameness is the risk
     maxOutputTokens: 16384,
@@ -339,8 +414,9 @@ async function draftEnglish({ topic, limits, related = [], recentTitles = [], se
     imageAlt: clean(raw.imageAlt, 220),
     contentEn: normaliseBrand(sanitiseHtml(raw.contentEn)),
     faqs: normaliseFaqs(raw.faqs),
+    takeaways: normaliseTakeaways(raw.takeaways),
     // Filled by addHindi(). Present and empty so the shape never varies.
-    titleHi: '', metaDescriptionHi: '', excerptHi: '', contentHi: '', faqsHi: [],
+    titleHi: '', metaDescriptionHi: '', excerptHi: '', contentHi: '', faqsHi: [], takeawaysHi: [],
   };
 }
 
@@ -372,6 +448,7 @@ async function addHindi(article, { topic, limits, log = () => {} }) {
       system: SYSTEM,
       prompt: buildHindiPrompt({
         topic, limits, titleEn: article.titleEn, contentEn: article.contentEn, faqs: article.faqs,
+        takeaways: article.takeaways,
       }),
       json: true,
       temperature: 0.7, // a translation, so less room to wander than the original
@@ -387,6 +464,7 @@ async function addHindi(article, { topic, limits, log = () => {} }) {
       excerptHi: clean(hi.excerptHi, 600),
       contentHi: normaliseBrand(sanitiseHtml(hi.contentHi)),
       faqsHi: normaliseFaqs(hi.faqsHi),
+      takeawaysHi: normaliseTakeaways(hi.takeawaysHi),
     };
   } catch (err) {
     log(`  Hindi pass failed (${err.message.slice(0, 140)}) — publishing English only`);
@@ -474,6 +552,11 @@ function assemble(draftArticle, { topic, slug, imageUrl, imageAlt, related = [],
   const seed = slug || topic.key || draftArticle.titleEn;
   const woven = weaveInternalLinks(draftArticle.contentEn, category, { max: 3, seed, sequence });
   const wovenHi = weaveInternalLinks(draftArticle.contentHi, category, { max: 2, seed, sequence });
+  // Key Takeaways go straight after the opening answer, before the first section
+  // (claude-blog's summary box). Built by code from plain-text items, like the FAQ,
+  // so the model never writes the markup.
+  woven.html = seo.insertBeforeFirstH2(woven.html, seo.takeawaysHtml(draftArticle.takeaways || []));
+  wovenHi.html = seo.insertBeforeFirstH2(wovenHi.html, seo.takeawaysHtml(draftArticle.takeawaysHi || [], { hindi: true }));
 
   // ORDER: article -> read next -> CTA -> FAQ.
   //
@@ -530,6 +613,9 @@ module.exports = {
   buildPrompt,
   buildHindiPrompt,
   normaliseFaqs,
+  normaliseTakeaways,
+  formatFor,
+  repairBlock,
   ALLOWED_TAGS,
   SYSTEM,
 };

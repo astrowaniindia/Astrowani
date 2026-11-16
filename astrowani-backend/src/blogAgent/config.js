@@ -43,6 +43,12 @@ const DEFAULTS = {
   // Recent posts linked from each new article, for the internal link graph.
   relatedCount: 3,
 
+  // The independent reviewer (review.js, adapted from claude-blog). One extra
+  // Gemini call per attempt. A draft must score reviewMinScore/100 with no P0
+  // issue to publish; below that its fixes are fed into the next attempt.
+  reviewEnabled: true,
+  reviewMinScore: 80,
+
   limits: { ...DEFAULT_LIMITS },
 };
 
@@ -90,6 +96,8 @@ async function load(db, { log = () => {} } = {}) {
   merged.maxAttemptsPerArticle = num(parsed.maxAttemptsPerArticle, DEFAULTS.maxAttemptsPerArticle, 1, 5);
   merged.maxPerDay = num(parsed.maxPerDay, DEFAULTS.maxPerDay, 1, 20);
   merged.relatedCount = num(parsed.relatedCount, DEFAULTS.relatedCount, 0, 6);
+  merged.reviewEnabled = bool(parsed.reviewEnabled, DEFAULTS.reviewEnabled);
+  merged.reviewMinScore = num(parsed.reviewMinScore, DEFAULTS.reviewMinScore, 50, 100);
   // Only the limits actually named are overridden, so adding a new threshold to
   // DEFAULT_LIMITS does not require touching the live row.
   merged.limits = { ...DEFAULT_LIMITS, ...(parsed.limits && typeof parsed.limits === 'object' ? parsed.limits : {}) };

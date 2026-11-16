@@ -14,6 +14,7 @@ const configModule = require('./config');
 const topics = require('./topics');
 const generate = require('./generate');
 const quality = require('./quality');
+const reviewer = require('./review');
 const images = require('./images');
 const store = require('./publish');
 const seo = require('./seo');
@@ -82,6 +83,10 @@ async function runOnce({ db, cfg, log, dryRun = false, forcedTopic = null, state
     let article = null;
     let verdict = null;
     let attempts = 0;
+    // Notes for the next attempt: the gate's rejections and the reviewer's fixes.
+    // A blind retry repeats the prompt that just failed (claude-blog's repair loop).
+    let repair = [];
+    let lastReview = null;
 
     for (let attempt = 1; attempt <= cfg.maxAttemptsPerArticle; attempt += 1) {
       attempts = attempt;
@@ -98,6 +103,7 @@ async function runOnce({ db, cfg, log, dryRun = false, forcedTopic = null, state
         // increases, so the commercial-keyword rotation survives restarts and
         // never depends on the clock -- see seo.COMMERCIAL.
         sequence: history.usedTopicKeys.size,
+        repair,
         log,
       });
 
@@ -110,8 +116,37 @@ async function runOnce({ db, cfg, log, dryRun = false, forcedTopic = null, state
       });
       log(`  stats: ${JSON.stringify(verdict.stats)}`);
 
-      if (verdict.ok) { article = drafted; break; }
-      log(`  REJECTED: ${verdict.rejections.join('; ')}`);
+      if (!verdict.ok) {
+        log(`  REJECTED: ${verdict.rejections.join('; ')}`);
+        repair = verdict.rejections.slice();
+        continue;
+      }
+
+      // ── Independent review (review.js) ──────────────────────────────────────
+      // Only on a draft that passed the rule gate: no point paying for a review of
+      // an article that is already rejected.
+      if (!cfg.reviewEnabled) { article = drafted; break; }
+      log(`  rule gate passed — asking the reviewer (needs ${cfg.reviewMinScore}/100)…`);
+      lastReview = await reviewer.review(drafted, { keyword: topic.keyword, minScore: cfg.reviewMinScore, log });
+      if (!lastReview.available) {
+        // The reviewer itself failed (quota, timeout). The rule gate has passed, so
+        // publish on that rather than letting a reviewer outage stop the blog.
+        log(`  reviewer unavailable (${lastReview.error}) — publishing on the rule gate alone`);
+        article = drafted;
+        break;
+      }
+      log(`  review: ${lastReview.total}/100 ${JSON.stringify(lastReview.scores)}${lastReview.p0.length ? ` P0: ${lastReview.p0.join(' | ')}` : ''}`);
+      if (lastReview.ok) { article = drafted; break; }
+      verdict = {
+        ...verdict,
+        ok: false,
+        rejections: [
+          `REVIEW_SCORE: ${lastReview.total}/100 < ${cfg.reviewMinScore}`,
+          ...lastReview.p0.map((x) => `REVIEW_P0: ${x}`),
+        ],
+      };
+      log(`  REJECTED by reviewer: ${verdict.rejections.join('; ')}`);
+      repair = reviewer.repairNotes(lastReview);
     }
 
     if (!article) {
