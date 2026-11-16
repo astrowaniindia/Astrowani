@@ -79,7 +79,11 @@ ExecStart=$NODE_BIN --env-file=$BACKEND_DIR/.env $BACKEND_DIR/scripts/runBlogAge
 # killed under the original 600s. The process exits on its own when it finishes,
 # so a generous ceiling costs nothing; being killed mid-retry costs the slot and
 # looks like a hang rather than a rejection.
-TimeoutStartSec=1200
+# 45 minutes, so a run can try another topic when one is rejected and make up a
+# missed slot. The agent stops itself 5 minutes earlier (the env below), so this
+# limit is never what ends a run.
+TimeoutStartSec=2700
+Environment=BLOG_AGENT_RUN_BUDGET_SECONDS=2400
 # Nice + IOSchedulingClass: the backend shares this single core (CLAUDE.md DN)
 # and serves live calls and chat. The agent must always lose that contest.
 Nice=10
@@ -110,15 +114,33 @@ Unit=astrowani-blog-agent@$count.service
 [Install]
 WantedBy=timers.target
 UNIT
-  systemctl enable --now "astrowani-blog-$name.timer"
-  echo "  installed astrowani-blog-$name.timer ($when IST, $count article)"
+  INSTALLED_TIMERS+=("astrowani-blog-$name.timer")
+  echo "  wrote astrowani-blog-$name.timer ($when IST, count $count)"
 }
+INSTALLED_TIMERS=()
 
 systemctl daemon-reload
 
-install_timer morning   "*-*-* 03:30:00" 1
-install_timer midday    "*-*-* 09:30:00" 1
-install_timer evening   "*-*-* 17:30:00" 1
+# Three articles, six hours apart, during reading hours (owner, 2026-11-17). Each
+# run publishes at most ONE, so two never land back to back. The old 03:30 slot
+# published in the middle of the night.
+install_timer morning   "*-*-* 07:30:00" 1
+install_timer midday    "*-*-* 13:30:00" 1
+install_timer evening   "*-*-* 19:30:00" 1
+# Catch-up: writes one ONLY if the day is still short of its three. On a normal
+# day it does nothing.
+install_timer catchup   "*-*-* 22:30:00" 0
+
+# daemon-reload AFTER every unit file is written, then restart each timer. Enabling
+# a timer whose file changed without a reload keeps the OLD schedule, so re-running
+# this to change the times used to do nothing.
+systemctl daemon-reload
+for t in "${INSTALLED_TIMERS[@]}"; do
+  systemctl enable "$t" >/dev/null 2>&1 || true
+  systemctl restart "$t"
+done
+echo "  timers active:"
+systemctl list-timers 'astrowani-blog-*' --no-pager || true
 
 echo
 echo "Installed. The agent is still DISABLED in the database — these timers will"

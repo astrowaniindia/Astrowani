@@ -161,7 +161,8 @@ function usage() {
 
   node --env-file=.env scripts/runBlogAgent.js [options]
 
-  --count N, -n N   articles to write this invocation (default: config)
+  --count N, -n N   articles to write this invocation (default: config).
+                    0 = catch-up only: write just what today is short of.
   --dry-run         generate and check, print the result, store NOTHING
   --draft           publish with is_published = false
   --topic KEY       force a specific catalogue topic (e.g. mangal-dosh)

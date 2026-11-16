@@ -1108,6 +1108,28 @@ section('claude-blog methods (2026-11-17) — filler, invented numbers, readabil
   eq('the rubric totals 100', reviewer.CATEGORIES.reduce((n, [, m]) => n + m, 0), 100);
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+section('three a day, hours apart — how many each run writes');
+// ═══════════════════════════════════════════════════════════════════════════
+{
+  const { plannedCount, ATTEMPT_RESERVE_MS } = require('../src/blogAgent/index');
+  const s = (published, asked = 1) => plannedCount({ scheduled: true, dailyTarget: 3, publishedToday: published, asked });
+  eq('a scheduled run with none published today writes ONE', s(0), 1);
+  eq('a scheduled run with 2 published writes ONE (the third)', s(2), 1);
+  eq('a scheduled run once the day has 3 writes NONE', s(3), 0);
+  eq('a scheduled run never writes 2 back to back, even if asked for 2', s(0, 2), 1);
+  eq('the catch-up slot (count 0) writes one when the day is short', s(1, 0), 1);
+  eq('the catch-up slot writes none on a full day', s(3, 0), 0);
+  eq('a manual run writes what was asked', plannedCount({ scheduled: false, dailyTarget: 3, publishedToday: 3, asked: 2 }), 2);
+  ok('an attempt is not started with under 8 minutes left', ATTEMPT_RESERVE_MS >= 8 * 60 * 1000);
+  const install = require('fs').readFileSync(require('path').join(__dirname, '../../vps-deployment/blog-agent/install.sh'), 'utf8');
+  ok('the installer reloads systemd AFTER writing the timers', install.lastIndexOf('systemctl daemon-reload') > install.indexOf('install_timer catchup'));
+  ok('the unit timeout (2700s) leaves room above the run budget (2400s)', /TimeoutStartSec=2700/.test(install) && /BLOG_AGENT_RUN_BUDGET_SECONDS=2400/.test(install));
+  const times = [...install.matchAll(/install_timer \w+\s+"\*-\*-\* (\d\d):(\d\d)/g)].map((m) => +m[1] * 60 + +m[2]);
+  eq('the installer defines 4 timers (3 slots + catch-up)', times.length, 4);
+  ok('the three writing slots are at least 5 hours apart', times.slice(0, 3).every((t, i, a) => i === 0 || t - a[i - 1] >= 300), JSON.stringify(times));
+}
+
 configChecks().then(() => {
   console.log(`\n${'═'.repeat(60)}`);
   console.log(`${pass} passed, ${fail} failed`);

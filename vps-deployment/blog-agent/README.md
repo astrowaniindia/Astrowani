@@ -218,6 +218,23 @@ Cost: one extra Gemini call per attempt. Worst case per article is about 820 s
 (3 attempts x (write + review) + Hindi + image), inside the unit's 1200 s limit.
 Switch the reviewer off with `reviewEnabled: false` in `blog_agent_config`.
 
+### Three a day, hours apart (2026-11-17)
+
+- **Slots: 07:30, 13:30 and 19:30 IST**, each starting up to 20 minutes late at
+  random, plus a **22:30 catch-up** slot. These replace 03:30 / 09:30 / 17:30.
+- **Each scheduled run publishes at most one article**, so two never land back
+  to back, and none once the day already has `dailyTarget` (3). The catch-up slot
+  runs with `--count 0` and writes one only if the day is still short.
+- **A rejected topic no longer costs the slot its article.** The run moves on to
+  the next topic, up to `maxTopicsPerRun` (6). It stops cleanly when its time
+  budget (`BLOG_AGENT_RUN_BUDGET_SECONDS`, 2400 s) is nearly used, and never
+  starts an attempt with under 8 minutes left, so systemd (`TimeoutStartSec`
+  2700 s) never kills it mid-publish.
+- A rejected topic is recorded and **never retried**, in the same run or later.
+- **To apply new times or limits on the server**, run the **Install blog agent
+  timers** workflow in GitHub Actions. It only rewrites the timers; it never
+  switches the agent on.
+
 ### The remaining SEO blocker, which the agent cannot fix
 
 `blog.html` and `blog-post.html` render **entirely in JavaScript**. Google does

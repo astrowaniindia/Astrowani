@@ -1,0 +1,42 @@
+name: Install blog agent timers (manual)
+
+# Re-installs the blog agent's systemd service and timers on the VPS from
+# vps-deployment/blog-agent/install.sh. Run it after changing the schedule or
+# the run time limit (2026-11-17: 07:30 / 13:30 / 19:30 IST, a 22:30 catch-up,
+# 45-minute runs).
+#
+# SAFE TO RE-RUN. The installer only writes unit files and restarts the timers;
+# it never touches the database, so it cannot switch the agent on. Whether
+# anything is published is still app_settings.blog_agent_config.enabled (the
+# admin Blogs page switch).
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: install-blog-agent-timers
+  cancel-in-progress: false
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the installer parses
+        run: bash -n vps-deployment/blog-agent/install.sh
+
+      - name: Install on the VPS
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$VPS_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/deploy_key"
+
+          scp $SSH_OPTS vps-deployment/blog-agent/install.sh "$VPS_USER@$VPS_HOST:/tmp/blog-agent-install.sh"
+          ssh $SSH_OPTS "$VPS_USER@$VPS_HOST" 'bash /tmp/blog-agent-install.sh && rm -f /tmp/blog-agent-install.sh'

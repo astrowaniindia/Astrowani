@@ -49,6 +49,15 @@ const DEFAULTS = {
   reviewEnabled: true,
   reviewMinScore: 80,
 
+  // THE DAILY PROMISE (owner, 2026-11-17): three good articles a day, spread
+  // hours apart. Each scheduled run publishes AT MOST ONE, so two never land
+  // back to back; a rejected topic no longer costs the slot its article (the run
+  // moves on to the next topic); and the 22:30 catch-up slot writes one only if
+  // the day is still short. See install.sh for the times.
+  dailyTarget: 3,
+  // How many different topics one run may try before giving up.
+  maxTopicsPerRun: 6,
+
   limits: { ...DEFAULT_LIMITS },
 };
 
@@ -98,6 +107,9 @@ async function load(db, { log = () => {} } = {}) {
   merged.relatedCount = num(parsed.relatedCount, DEFAULTS.relatedCount, 0, 6);
   merged.reviewEnabled = bool(parsed.reviewEnabled, DEFAULTS.reviewEnabled);
   merged.reviewMinScore = num(parsed.reviewMinScore, DEFAULTS.reviewMinScore, 50, 100);
+  merged.dailyTarget = num(parsed.dailyTarget, DEFAULTS.dailyTarget, 0, 10);
+  merged.maxTopicsPerRun = num(parsed.maxTopicsPerRun, DEFAULTS.maxTopicsPerRun, 1, 20);
+
   // Only the limits actually named are overridden, so adding a new threshold to
   // DEFAULT_LIMITS does not require touching the live row.
   merged.limits = { ...DEFAULT_LIMITS, ...(parsed.limits && typeof parsed.limits === 'object' ? parsed.limits : {}) };

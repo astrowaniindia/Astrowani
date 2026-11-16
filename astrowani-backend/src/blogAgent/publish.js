@@ -103,7 +103,11 @@ async function loadAgentHistory(db, { imageWindow = 30 } = {}) {
   return {
     usedTopicKeys: new Set(rows.map((r) => r.topic_key).filter(Boolean)),
     recentImageRefs: rows.slice(0, imageWindow).map((r) => r.image_source).filter(Boolean),
-    publishedToday: rows.filter((r) => r.status === 'published' && r.started_at >= dayStart).length,
+    // By getTime(), never as strings: PostgREST returns "+00:00" and a string
+    // compare against a "Z" timestamp is only right by luck. Catch-up depends on
+    // this number being exact.
+    publishedToday: rows.filter((r) => r.status === 'published'
+      && new Date(r.started_at).getTime() >= new Date(dayStart).getTime()).length,
     ledgerMissing: false,
   };
 }

@@ -43,7 +43,15 @@ function makeClient() {
  * an unattended agent and the caller should record it and move on, not crash.
  * A genuine fault (no key, database unreachable) does throw.
  */
-async function runOnce({ db, cfg, log, dryRun = false, forcedTopic = null, state, history }) {
+/**
+ * What one more attempt can still need, worst case: draft (~130 s) + review
+ * (~90 s) + Hindi (~180 s, measured 2026-11-17) + image and publish (~60 s).
+ * An attempt is not started with less than this left before the run's deadline,
+ * so the systemd unit never kills a run halfway through publishing.
+ */
+const ATTEMPT_RESERVE_MS = 480 * 1000;
+
+async function runOnce({ db, cfg, log, dryRun = false, forcedTopic = null, state, history, deadline = Infinity }) {
   const limits = cfg.limits;
 
   // ── Topic ────────────────────────────────────────────────────────────────
@@ -89,6 +97,13 @@ async function runOnce({ db, cfg, log, dryRun = false, forcedTopic = null, state
     let lastReview = null;
 
     for (let attempt = 1; attempt <= cfg.maxAttemptsPerArticle; attempt += 1) {
+      if (Date.now() + ATTEMPT_RESERVE_MS > deadline) {
+        log(`  out of time for another attempt — stopping here (the next run makes it up)`);
+        await store.closeRun(db, runId, {
+          status: 'skipped', attempts, rejections: ['OUT_OF_TIME', ...(verdict?.rejections || [])],
+        });
+        return { status: 'skipped', reason: 'OUT_OF_TIME', topic, attempts };
+      }
       attempts = attempt;
       log(`attempt ${attempt}/${cfg.maxAttemptsPerArticle}: asking the model…`);
       // ENGLISH ONLY at this point. The Hindi pass runs after this gate passes,
@@ -322,7 +337,8 @@ async function run({
     return { ran: false, reason: 'disabled', results: [] };
   }
 
-  const wanted = Math.max(1, Math.min(10, count || cfg.articlesPerRun));
+  // count === 0 is the catch-up slot: write only what the day is short of.
+  const asked = count === 0 ? 0 : Math.max(1, Math.min(10, count || cfg.articlesPerRun));
 
   const [state, history] = await Promise.all([
     store.loadBlogState(db),
@@ -353,20 +369,58 @@ async function run({
     if (!forcedTopic) throw new Error(`--topic "${topicKey}" is not in the catalogue`);
   }
 
+  // ── How many to write ────────────────────────────────────────────────────
+  // A SCHEDULED run publishes at most ONE article, so the day's three are always
+  // hours apart (owner, 2026-11-17), and none once the day has its three. The
+  // catch-up slot (--count 0) follows the same rule, so on a normal day it does
+  // nothing. Manual runs (--dry-run, --topic) write exactly what was asked.
+  const scheduled = !dryRun && !topicKey;
+  const wanted = plannedCount({ scheduled, dailyTarget: cfg.dailyTarget, publishedToday: history.publishedToday, asked });
+  if (scheduled) {
+    log(`target: ${cfg.dailyTarget}/day, ${history.publishedToday} published today — writing ${wanted}`);
+    if (!wanted) return { ran: true, published: 0, results: [], config: cfg, reason: 'DAILY_TARGET_MET' };
+  }
+
+  // The run's own deadline, under the systemd unit's TimeoutStartSec, so it
+  // stops cleanly rather than being killed mid-publish.
+  const budgetSec = Number(process.env.BLOG_AGENT_RUN_BUDGET_SECONDS) > 0
+    ? Number(process.env.BLOG_AGENT_RUN_BUDGET_SECONDS) : 1080;
+  const deadline = Date.now() + budgetSec * 1000;
+
   const results = [];
-  for (let i = 0; i < wanted; i += 1) {
-    if (!dryRun && history.publishedToday + results.filter((r) => r.status === 'published').length >= cfg.maxPerDay) {
+  let topicsTried = 0;
+  const publishedSoFar = () => results.filter((r) => r.status === 'published' || r.status === 'dry-run').length;
+  while (publishedSoFar() < wanted) {
+    if (!dryRun && history.publishedToday + publishedSoFar() >= cfg.maxPerDay) {
       log(`daily cap of ${cfg.maxPerDay} reached — stopping.`);
       results.push({ status: 'skipped', reason: 'DAILY_CAP' });
       break;
     }
-    log(`\n── article ${i + 1} of ${wanted} ──`);
+    if (topicsTried >= cfg.maxTopicsPerRun) {
+      log(`tried ${topicsTried} topics this run — stopping; the next run makes up the shortfall.`);
+      break;
+    }
+    if (Date.now() + ATTEMPT_RESERVE_MS > deadline) {
+      log(`run time budget (${budgetSec}s) nearly used — stopping; the next run makes up the shortfall.`);
+      break;
+    }
+    topicsTried += 1;
+    log(`\n── article ${publishedSoFar() + 1} of ${wanted} (topic ${topicsTried}) ──`);
+    let r;
     try {
-      results.push(await runOnce({ db, cfg, log, dryRun, forcedTopic, state, history }));
+      r = await runOnce({ db, cfg, log, dryRun, forcedTopic, state, history, deadline });
     } catch (err) {
       log(`FAILED: ${err.message}`);
-      results.push({ status: 'failed', error: err.message });
+      r = { status: 'failed', error: err.message };
     }
+    results.push(r);
+    // A rejected topic is never offered again — not in this run either. Without
+    // this the next pick would be the topic that was just rejected.
+    if (r && r.topic && r.topic.key) history.usedTopicKeys.add(r.topic.key);
+    if (r && r.status === 'skipped' && r.reason === 'TOPIC_CATALOGUE_EXHAUSTED') break;
+    if (r && r.status === 'skipped' && r.reason === 'OUT_OF_TIME') break;
+    // A forced topic is one subject: trying it again would only repeat it.
+    if (forcedTopic) break;
   }
 
   const published = results.filter((r) => r.status === 'published').length;
@@ -383,4 +437,15 @@ async function run({
   return { ran: true, published, results, config: cfg };
 }
 
-module.exports = { run, runOnce, makeClient };
+/**
+ * How many articles this invocation should publish. Pure, so it is tested
+ * offline. A scheduled run (a timer, including the catch-up slot) publishes at
+ * most one and none once the day has its target; a manual run writes what was
+ * asked, at least one.
+ */
+function plannedCount({ scheduled, dailyTarget, publishedToday, asked }) {
+  if (!scheduled) return Math.max(1, asked || 1);
+  return Math.min(1, Math.max(0, dailyTarget - publishedToday));
+}
+
+module.exports = { run, runOnce, makeClient, plannedCount, ATTEMPT_RESERVE_MS };
