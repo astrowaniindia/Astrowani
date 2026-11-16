@@ -12,6 +12,11 @@ const plain = (s) => sanitizeHtml(String(s || ''), { allowedTags: [], allowedAtt
 const cleanContent = (s) => sanitizeHtml(String(s || ''), {
   allowedTags: sanitizeHtml.defaults.allowedTags.concat(['img', 'details', 'summary']),
   allowedAttributes: { a: ['href', 'title'], img: ['src', 'alt', 'width', 'height', 'loading'], '*': ['id'] },
+  // ONLY the classes the blog agent writes, by exact name — the photo credit
+  // (#f4d8bc, aw/aw.css) and the FAQ accordion. Every other class is still
+  // stripped. Until 2026-11-16 all classes were, so on the server-rendered page
+  // the credit fell back to grey and the FAQ lost its accordion styling.
+  allowedClasses: { '*': ['aw-photo-credit', 'aw-faq', 'aw-faq-list', 'aw-faq-title'] },
   allowedSchemes: ['https', 'http', 'mailto'],
 });
 

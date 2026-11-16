@@ -14,6 +14,7 @@ const rows = Array.from({ length: 65 }, (_, i) => ({
   thumbnail: '', created_at: '2026-10-13T11:25:22.538Z', updated_at: '2026-10-29T11:25:22.538Z',
 }));
 rows[62].content_en += '<script>alert(1)</script><img src="x" onerror="alert(2)"><a href="javascript:alert(3)">bad</a>';
+rows[60].content_en += '<p class="aw-photo-credit evil-class"><em>Photo by <a href="https://unsplash.com/@x">X</a> on Unsplash.</em></p><h2 class="aw-faq-title">Frequently asked questions</h2><div class="aw-faq-list"><details class="aw-faq"><summary>Q?</summary><p>A.</p></details></div>';
 let fail = false;
 const db = { from(table) {
   assert.equal(table, 'blogs');
@@ -80,6 +81,12 @@ test('article source HTML has one description, article social tags and readable 
   // The article is the page's primary content landmark (SEO audit 2026-10-29, section 5).
   assert.match(html, /<article id="blog-post-root"[^>]*data-server-rendered="true"/);
   assert.match(html, /"dateModified":"2026-10-29/);
+  // The blog agent's own classes survive the sanitiser (photo credit colour, FAQ
+  // accordion); any other class does not.
+  assert.match(html, /<p class="aw-photo-credit">/);
+  assert.match(html, /<h2 class="aw-faq-title">/);
+  assert.match(html, /<div class="aw-faq-list"><details class="aw-faq">/);
+  assert.doesNotMatch(html, /evil-class/);
 });
 test('Hindi article content, metadata and route language agree without stored preferences', async () => {
   const r = await fetch(`${base}/hi/blog/article-60`); const html = await r.text();
