@@ -52,7 +52,7 @@ const listMissing = process.argv.includes('--missing');
 const PAGES = [
   'index.html', 'consult.html', 'astrologers.html', 'book-call.html',
   'kundli-reading.html', 'marriage.html', 'tarot-reading.html', 'numerology.html',
-  'career-astrology.html', 'vastu.html', 'lal-kitab.html', 'palmistry.html',
+  'career-astrology.html', 'vastu.html', 'lal-kitab.html', 'palmistry.html', 'what-india-asks-an-astrologer.html',
   'horoscope.html', 'panchang.html', 'calculators.html', 'free-services.html',
   'courses.html', 'about.html', 'blog.html', 'blog-post.html',
   'privacy-policy.html', 'terms-and-conditions.html', 'refund-cancellation.html',
