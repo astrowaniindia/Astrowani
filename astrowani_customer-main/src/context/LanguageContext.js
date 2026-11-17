@@ -781,6 +781,8 @@ const translations = {
     'freeCallInstant.notified': 'We will notify you',
     'freeCallInstant.trustLine': 'Verified astrologers. No charge for this call.',
     'freeCallInstant.nobodyOnline': 'No astrologer is online for free calls right now. Please check back a little later.',
+    'freeCallInstant.bookLaterHint': 'Or pick a time now, and our astrologer will call you in the app.',
+    'freeCallInstant.bookLater': 'Book my free call',
     'freeCallInstant.notAvailable': 'This offer is not available right now.',
     // Every one of these says the free call is NOT spent, because it is not — the server
     // unlinks the booking when the astrologer is the one who dropped it.
@@ -2495,6 +2497,8 @@ const translations = {
     'freeCallInstant.notified': 'हम आपको सूचित करेंगे',
     'freeCallInstant.trustLine': 'सत्यापित ज्योतिषी। इस कॉल का कोई शुल्क नहीं।',
     'freeCallInstant.nobodyOnline': 'इस समय निःशुल्क कॉल के लिए कोई ज्योतिषी ऑनलाइन नहीं है। कृपया थोड़ी देर बाद देखें।',
+    'freeCallInstant.bookLaterHint': 'या अभी समय चुनिए, हमारे ज्योतिषी आपको ऐप में कॉल करेंगे।',
+    'freeCallInstant.bookLater': 'मेरी मुफ़्त कॉल बुक करें',
     'freeCallInstant.notAvailable': 'यह ऑफ़र अभी उपलब्ध नहीं है।',
     'freeCallInstant.declinedTitle': 'वे कॉल नहीं ले सके',
     'freeCallInstant.declinedBody': 'यह ज्योतिषी अभी आपकी कॉल नहीं ले सके। कृपया कोई और चुनें — आपकी निःशुल्क कॉल अब भी आपकी है।',

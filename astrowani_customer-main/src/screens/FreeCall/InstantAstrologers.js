@@ -29,7 +29,8 @@ import { supabase } from '../../api/SupabaseClient';
 import { COLORS } from '../../Theme/Colors';
 import { scale, verticalScale, moderateScale } from '../../utils/Scaling';
 import { LanguageContext } from '../../context/LanguageContext';
-import { getInstantAstrologers, ringInstantAstrologer, giveUpInstantRing } from '../../api/FreeCallApi';
+import { getInstantAstrologers, ringInstantAstrologer, giveUpInstantRing, getFreeCallOffer } from '../../api/FreeCallApi';
+import FreeCallOffer from '../../components/FreeCallOffer';
 import { showStatusPopup } from '../../components/StatusPopup';
 import StarRating from '../../components/StarRating';
 import AstrologerBadge from '../../components/AstrologerBadge';
@@ -63,6 +64,31 @@ export default function InstantAstrologers({ navigation, route }) {
   const [data, setData] = useState({ astrologers: [], durationMinutes: 7 });
   const [blocked, setBlocked] = useState(null); // { code, message } when the server refuses
   const [notified, setNotified] = useState({}); // astrologerId -> true
+  // When NOBODY is online for instant calls, the customer can book a time instead.
+  // The booking goes to the offer's assigned astrologer (admin: Free Call Booking
+  // Offer → assignment), who rings them in the app from "My Free Calls". Not offered
+  // when astrologers are merely busy — owner's choice, 2026-11-17.
+  const [bookOffer, setBookOffer] = useState(null);
+  const [bookingOpen, setBookingOpen] = useState(false);
+  const [bookingLoading, setBookingLoading] = useState(false);
+  const openBooking = async () => {
+    if (bookingLoading) return;
+    setBookingLoading(true);
+    try {
+      const res = await getFreeCallOffer();
+      if (res?.offer) {
+        // Shown as the scheduled flow: the sheet hands instant-mode offers back to
+        // this screen, which is the opposite of what is wanted here.
+        setBookOffer({ ...res.offer, mode: 'scheduled' });
+        setBookingOpen(true);
+        captureEvent('free_call_book_when_offline_opened', {});
+      } else {
+        showStatusPopup({ variant: 'busy', title: '', message: t('freeCallInstant.notAvailable') });
+      }
+    } finally {
+      setBookingLoading(false);
+    }
+  };
 
   // The in-flight ring. A ref rather than state because the ring timeout and the
   // unmount cleanup both read it from inside closures that must not go stale.
@@ -605,6 +631,12 @@ export default function InstantAstrologers({ navigation, route }) {
           {/* Honest rather than hopeful. Pretending somebody is about to appear is worse
               than saying the panel is offline and giving them a reason to come back. */}
           <Text style={styles.blockedTxt}>{t('freeCallInstant.nobodyOnline')}</Text>
+          <Text style={[styles.blockedTxt, styles.bookLaterHint]}>{t('freeCallInstant.bookLaterHint')}</Text>
+          <TouchableOpacity style={styles.bookLaterBtn} onPress={openBooking} activeOpacity={0.85} disabled={bookingLoading}>
+            {bookingLoading
+              ? <ActivityIndicator color={COLORS.white} />
+              : <Text style={styles.bookLaterTxt}>{t('freeCallInstant.bookLater')}</Text>}
+          </TouchableOpacity>
         </View>
       ) : (
         <>
@@ -664,6 +696,15 @@ export default function InstantAstrologers({ navigation, route }) {
         astro={ringing ? { name: ringing.name, profileImage: ringing.image } : null}
         onCancel={() => { stopRinging('cancelled'); load(); }}
         context="free_call_instant"
+      />
+
+      <FreeCallOffer
+        visible={bookingOpen}
+        offer={bookOffer}
+        t={t}
+        source="instant_nobody_online"
+        startAtSlots
+        onClose={() => setBookingOpen(false)}
       />
     </View>
   );
@@ -914,4 +955,15 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(13),
     lineHeight: moderateScale(19),
   },
+  bookLaterHint: { color: '#6b5a4e', marginTop: verticalScale(18) },
+  bookLaterBtn: {
+    marginTop: verticalScale(14),
+    backgroundColor: COLORS.AstroMaroon,
+    borderRadius: moderateScale(24),
+    paddingVertical: verticalScale(12),
+    paddingHorizontal: scale(28),
+    minWidth: scale(200),
+    alignItems: 'center',
+  },
+  bookLaterTxt: { color: COLORS.white, fontSize: moderateScale(15), fontWeight: '700' },
 });
