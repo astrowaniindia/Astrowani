@@ -135,6 +135,49 @@ function SavedRepliesEditor({ replies, onClose, onSaved }) {
   );
 }
 
+/**
+ * What the support bot has picked up from the team's own replies. Read-only:
+ * the way to teach it more is to keep answering handed-over conversations.
+ */
+function BotLearningPanel({ onClose }) {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
+  useEffect(() => {
+    client.get('/api/admin/support/ai-learning')
+      .then(({ data: res }) => (res.data ? setData(res.data) : setError(res.message || 'Nothing to show.')))
+      .catch((e) => setError(e.response?.data?.message || e.message));
+  }, []);
+  const side = (label, s) => (
+    <div className="si-learn-side">
+      <h3>{label}</h3>
+      <p className="muted">
+        {s.lessons} team replies read. {s.safeForOwnReplies} of them the bot may learn from for its own replies;
+        the other {s.lessons - s.safeForOwnReplies} touch money, contact details, dates or promises, so they
+        only help the &ldquo;Suggest reply&rdquo; drafts you check before sending.
+      </p>
+      {s.playbook.length ? (
+        <ol>{s.playbook.map((r) => <li key={r}>{r}</li>)}</ol>
+      ) : <p className="muted">No rules yet. It needs at least three suitable replies to draw from.</p>}
+    </div>
+  );
+  return (
+    <Modal title="What the bot learned from your replies" onClose={onClose} className="si-modal-wide">
+      {!data && !error && <p className="muted">Reading your team&apos;s replies…</p>}
+      {error && <p className="muted">{error}</p>}
+      {data && (
+        <>
+          <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>
+            Every reply your team sends in a handed-over chat teaches the bot within a few minutes.
+            These rules are rebuilt every six hours. Nothing about money is ever learned for the bot&apos;s own replies.
+          </p>
+          {side('Customer app', data.customer)}
+          {side('Astrologer app', data.vendor)}
+        </>
+      )}
+    </Modal>
+  );
+}
+
 /** The few facts that answer most questions: who, how to reach them, their money. */
 function PersonPanel({ thread }) {
   const p = thread.party;
@@ -207,6 +250,7 @@ export default function SupportInbox() {
   const [lightbox, setLightbox] = useState(null);
   // The AI-suggested reply. It only ever fills the box; a person sends it.
   const [suggesting, setSuggesting] = useState(false);
+  const [showLearning, setShowLearning] = useState(false);
   const [suggestNote, setSuggestNote] = useState(null);
   const suggestedFor = useRef(null);
   const threadEndRef = useRef(null);
@@ -357,7 +401,10 @@ export default function SupportInbox() {
   return (
     <div className="si-page">
       <div className="row-between" style={{ marginBottom: 14, alignItems: 'flex-end' }}>
-        <h1 className="page-title" style={{ margin: 0 }}>Support Inbox</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <h1 className="page-title" style={{ margin: 0 }}>Support Inbox</h1>
+          <button className="si-tool" onClick={() => setShowLearning(true)}>🧠 What the bot learned</button>
+        </div>
         <div className="si-numbers">
           <span className={summary?.waiting ? 'si-num-red' : ''}><b>{summary?.waiting ?? '—'}</b> need a reply</span>
           <span className={summary?.overdue ? 'si-num-amber' : ''}><b>{summary?.overdue ?? '—'}</b> overdue</span>
@@ -536,6 +583,7 @@ export default function SupportInbox() {
           <img src={lightbox} alt="Full size" />
         </div>
       )}
+      {showLearning && <BotLearningPanel onClose={() => setShowLearning(false)} />}
       {editingReplies && (
         <SavedRepliesEditor replies={replies} onClose={() => setEditingReplies(false)} onSaved={setReplies} />
       )}

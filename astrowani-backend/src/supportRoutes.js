@@ -713,6 +713,13 @@ module.exports = function registerSupportRoutes(app) {
     return res.json({ success: true, data: clean });
   }));
 
+  // What the support bot has picked up from the team's replies: how many it can
+  // use, and the playbook rules it has drawn from them. Read-only.
+  app.get('/api/admin/support/ai-learning', requireAdminToken, h(async (_req, res) => {
+    if (!supportAi.available()) return res.json({ success: true, data: null, message: 'No AI key configured.' });
+    return res.json({ success: true, data: await supportAi.learningSummary() });
+  }));
+
   // How the team is doing — the numbers every help desk puts on its front page.
   // Medians, not averages: one conversation answered after a month would make an
   // average say nothing about the typical person.

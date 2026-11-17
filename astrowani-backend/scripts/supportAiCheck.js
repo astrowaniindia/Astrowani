@@ -51,6 +51,8 @@ const ok = (name, cond, extra = '') => {
   ok('no citation is refused', !citesRealSources([], 12, 2) && !citesRealSources(undefined, 12, 2));
   ok('a citation to a line that does not exist is refused', !citesRealSources(['K40'], 12, 2) && !citesRealSources(['T1'], 12, 0));
   ok('a made-up citation is refused', !citesRealSources(['general knowledge'], 12, 2));
+  ok('a playbook citation is accepted when the rule exists', citesRealSources(['P2'], 12, 0, 3));
+  ok('and refused when it does not', !citesRealSources(['P4'], 12, 0, 3) && !citesRealSources(['P1'], 12, 0));
   ok('parseJson reads a fenced object', parseJson('```json\n{"action":"intent"}\n```')?.action === 'intent');
   ok('parseJson refuses prose', parseJson('Sure! Here you go.') === null);
   ok('parseJson refuses an array', parseJson('[1,2]') === null);
@@ -72,7 +74,41 @@ const ok = (name, cond, extra = '') => {
   ok('an astrologer-side reply is not shown to a customer', !near.some((n) => /Payout/.test(n.answer)));
   ok('an unrelated message finds nothing', (await similarReplies('wallet recharge upi failed', 'customer')).length === 0);
   ok('the astrologer side has its own lessons', (await similarReplies('payout kab hota hai', 'vendor')).some((n) => /somvar/.test(n.answer)));
+  _setLearned([
+    { side: 'customer', question: 'wallet recharge chat failed', answer: 'Tell me the time of the recharge please.' },
+    { side: 'customer', question: 'chat history delete karna hai', answer: 'Chat History is in the Menu.' },
+    { side: 'customer', question: 'chat astrologer rude', answer: 'Which astrologer was it?' },
+  ]);
+  ok('one shared common word is not a match', (await similarReplies('free chat kaha hai', 'customer', 5, { semantic: false })).length === 0);
+  ok('two shared words are (control)', (await similarReplies('meri chat history kaha hai', 'customer', 5, { semantic: false })).some((n) => /Chat History/.test(n.answer)));
   _setLearned([]);
+
+  console.log('\n1d. Which team replies the AI may learn from for its OWN messages (no network)');
+  const { safeLesson, validPlaybookRule } = supportAi._internals;
+  const L = (answer, extra = {}) => ({ side: 'customer', question: 'q', focus: 'q', answer, hadContact: false, ...extra });
+  // Positive controls first: a filter that refused everything would pass every
+  // "is refused" line below and the bot would learn nothing.
+  ok('a plain how-to reply is a lesson', safeLesson(L('Just click the poster on the home screen to get the free chat.')));
+  ok('a Hinglish how-to reply is a lesson', safeLesson(L('Direct call hota hai app se hi, normal phone call nahi aata.')));
+  ok('a clarifying question is a lesson', safeLesson(L('Can you tell me what the issue is, and with which astrologer?')));
+  ok('"we will delete your history" is not', !safeLesson(L('Ok as you requested, we will delete all your history.')));
+  ok('"we will provide you a new call" is not', !safeLesson(L('Really sorry, we will provide you a new call, do not worry.')));
+  ok('a Hinglish commitment is not', !safeLesson(L('Aapka issue hum check karke theek kar denge.')));
+  ok('"send your Aadhaar on whatsapp" is not', !safeLesson(L('Send your aadhar and pan card on whatapp then you get an interview.')));
+  ok('a reply with a number in it is not', !safeLesson(L('Suniye aapne 3 min baat kar li hai free call pe.')));
+  ok('a reply about payment is not', !safeLesson(L('Haan aap dusron se payment karwa sakte ho.')));
+  ok('a time promise is not', !safeLesson(L('You will get a call soon from our administrator.')));
+  ok('a reply that had a link in it is not', !safeLesson(L('Open this to pay', { hadContact: true })));
+  ok('a refund reply is not', !safeLesson(L('Humne aapka refund wallet me kar diya hai.')));
+  ok('the gate refuses an offer of a free call', !passesGate('Sorry for that, we can arrange a new call for you.'));
+  ok('the gate still allows "start a new chat"', passesGate('To talk again, start a new chat with the astrologer from Chat History.'));
+  ok('the gate refuses "50rs"', !passesGate('You get 50rs when your friend registers.'));
+  ok('a playbook rule naming its replies is kept', !!validPlaybookRule({ rule: 'Point people who cannot find the free chat to the home screen poster.', from: ['T1'] }, 3));
+  ok('a rule with no source is dropped', !validPlaybookRule({ rule: 'Point people who cannot find the free chat to the home screen poster.', from: [] }, 3));
+  ok('a rule citing a reply that does not exist is dropped', !validPlaybookRule({ rule: 'Point people who cannot find the free chat to the home screen poster.', from: ['T9'] }, 3));
+  ok('a rule with a number is dropped', !validPlaybookRule({ rule: 'Tell them free calls last seven minutes, or 7 at most.', from: ['T1'] }, 3));
+  ok('a rule about refunds is dropped', !validPlaybookRule({ rule: 'Offer a refund when a call drops early.', from: ['T1'] }, 3));
+  ok('a person-only habit is dropped', !validPlaybookRule({ rule: 'Introduce yourself by name when you start helping.', from: ['T1'] }, 3));
 
   console.log('\n1c. Which language is the person writing in (no network)');
   const { languageOf, pickLanguage } = bot._internals;
@@ -234,6 +270,22 @@ const ok = (name, cond, extra = '') => {
       ok('a draft comes back for the team', !!d && d.draft.length > 20);
       ok('the draft uses the real amount', !!d && /30/.test(d.draft));
       ok('the draft leaves the money decision to the person', !!d && /\[/.test(d.draft));
+
+      console.log('\n5. Learning from the REAL team replies (read-only, production)');
+      supportAi._internals._forgetLearned();
+      const summary = await supportAi.learningSummary();
+      const cs = summary.customer;
+      console.log(`       customer: ${cs.lessons} lessons, ${cs.safeForOwnReplies} usable for its own replies, playbook ${cs.playbook.length} rules`);
+      cs.playbook.forEach((r) => console.log(`         - ${r}`));
+      ok('real team replies are loaded', cs.lessons > 0);
+      ok('some are usable for the bot\'s own replies, and not all', cs.safeForOwnReplies > 0 && cs.safeForOwnReplies < cs.lessons);
+      ok('a playbook was drawn from them', cs.playbook.length > 0);
+      ok('every playbook rule passes the money gate', cs.playbook.every((r) => passesGate(r) && !/\d/.test(r)));
+      await supportAi._internals.embed((await supportAi._internals.loadLearned()).map((i) => i.focus), { timeoutMs: 20000 });
+      const byMeaning = await similarReplies('free chat kaha milegi mujhe', 'customer', 3, { safeOnly: true });
+      console.log(`       "free chat kaha milegi mujhe" -> ${byMeaning.map((x) => x.answer.slice(0, 50)).join(' | ')}`);
+      ok('a real lesson is found for a reworded question', byMeaning.some((x) => /poster|free/i.test(x.answer)));
+      ok('and none of what it found mentions money', byMeaning.every((x) => passesGate(x.answer)));
     }
   }
 

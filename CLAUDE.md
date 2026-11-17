@@ -5525,3 +5525,39 @@ never by request**.
 Verified: `scripts/supportAiCheck.js --live` 99/100, the one miss a timeout on the rate-limited
 local keys (that case passed twice when re-run alone). Run the live suite sparingly: two free keys
 are exhausted by a few runs in a row, after which every model call returns null by design.
+
+### EV4. Same day: the bot takes IDEAS from the team's replies (meaning-based matching + a playbook)
+
+Owner: "he will get some ideas from there". Two additions in `src/supportAi.js`, both optional
+(no key, a timeout or an error falls back to word matching / no playbook):
+
+- **Meaning-based matching.** Each lesson's `focus` (the customer's LAST message before the team
+  reply, not all three glued together, which diluted every match) is embedded with
+  `gemini-embedding-001` at 256 dims, cached by text; each incoming message is embedded once
+  (2s cap). **`MIN_SIMILARITY = 0.76`, measured on the real lessons**: unrelated pairs reach 0.72,
+  genuine ones 0.76-0.87, so 0.70 let junk in. Word matching now also needs two shared words or one
+  rare one: a single common word ("chat") pulled a wallet complaint in as the lesson for "free chat".
+- **The playbook.** In the background, every 6 h per app side, the model reads the usable team
+  replies and writes up to 12 general habits ("Direct users to the home screen poster for the free
+  chat"). Code keeps a rule only if it cites real replies, passes the money gate, has no digits, and
+  is not a person-only habit (introducing yourself, holidays, scheduling a call). Rules go into every
+  prompt as `P1..Pn` and are citable. Memory only, nothing written to the DB; an empty rebuild keeps
+  the old rules.
+- **`safeLesson()` — which team replies the bot may learn from for its OWN messages**, stricter than
+  the gate on its own words, because a team reply is a person acting on one case. Excluded: any
+  digit, payment/WhatsApp/Aadhaar/PAN/OTP/bank/UPI, anything that had a contact detail, any
+  "we will…" / "kar denge" commitment, and time words (soon, tomorrow, weekdays). **Measured on
+  production: of 43 lessons only 14 qualify** (12 customer, 2 astrologer); the other 29 still feed
+  the admin's Suggest-reply drafts. Real examples it now refuses: "send your aadhar & pan card on
+  whatsapp", "We will delete your all history", "we will provide you a new call".
+- The gate also refuses offering a free/new/replacement call (`offer|provide|give|arrange…` +
+  `new|free|another… call/session/chat`) and `50rs`-style amounts. "get" is deliberately not one of
+  those verbs: "click the poster to get the free chat" is a how-to.
+- `GET /api/admin/support/ai-learning` + "🧠 What the bot learned" in the Support Inbox: lesson
+  counts and the playbook per app. Read-only.
+
+Verified: `scripts/supportAiCheck.js` 98/98 offline (fails 10 checks if `safeLesson` accepts
+everything), 131/131 live minus one gate false-positive fixed after; the admin route 6/6 over real
+HTTP on a bare Express app (admin 200, no token 401, customer token 403). The real playbook on
+2026-11-17 had 5 customer rules and 0 astrologer rules (only 2 usable astrologer replies; it needs 3).
+**It improves only as the team answers more handed-over chats. Not deployed.**
