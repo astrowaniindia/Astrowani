@@ -589,7 +589,8 @@ module.exports = function registerSupportRoutes(app) {
     const appFilter = req.query.app;
 
     let q = db.from('support_conversations').select('*');
-    if (status && status !== 'all') {
+    // 'recent' = everything, newest message first (the inbox's default view).
+    if (status && status !== 'all' && status !== 'recent') {
       // 'waiting' is the to-do list: our turn to answer, whatever the status says.
       if (status === 'waiting') q = q.not('awaiting_reply_since', 'is', null);
       // 'open' is everything still with a person, answered or not.
@@ -613,13 +614,17 @@ module.exports = function registerSupportRoutes(app) {
     const custIds = [...new Set(rows.map((r) => r.customer_id).filter(Boolean))];
     const astroIds = [...new Set(rows.map((r) => r.astrologer_id).filter(Boolean))];
     const names = {};
+    // Phone numbers in the list itself, so the team can act without looking the
+    // person up. Deleted accounts hold a 'deleted:' placeholder: shown as none.
+    const phones = {};
+    const realPhone = (v) => (v && !/^deleted:/.test(String(v)) ? String(v) : null);
     if (custIds.length) {
       const { data: c } = await db.from('customers').select('id, name, mobile').in('id', custIds);
-      (c || []).forEach((x) => { names[x.id] = x.name || x.mobile || 'Customer'; });
+      (c || []).forEach((x) => { names[x.id] = x.name || x.mobile || 'Customer'; phones[x.id] = realPhone(x.mobile); });
     }
     if (astroIds.length) {
-      const { data: a } = await db.from('astrologers').select('id, first_name, last_name').in('id', astroIds);
-      (a || []).forEach((x) => { names[x.id] = `${x.first_name || ''} ${x.last_name || ''}`.trim() || 'Astrologer'; });
+      const { data: a } = await db.from('astrologers').select('id, first_name, last_name, phone_number').in('id', astroIds);
+      (a || []).forEach((x) => { names[x.id] = `${x.first_name || ''} ${x.last_name || ''}`.trim() || 'Astrologer'; phones[x.id] = realPhone(x.phone_number); });
     }
     const ownerIds = [...new Set(rows.map((r) => r.assigned_admin_id).filter(Boolean))];
     const ownerNames = {};
@@ -646,6 +651,7 @@ module.exports = function registerSupportRoutes(app) {
     const out = rows.map((r) => ({
       ...r,
       partyName: names[r.customer_id || r.astrologer_id] || '—',
+      partyPhone: phones[r.customer_id || r.astrologer_id] || null,
       assignedName: r.assigned_admin_id ? ownerNames[r.assigned_admin_id] || 'Admin' : null,
       lastUserMessage: lastSaid[r.id] ? String(lastSaid[r.id]).slice(0, 160) : null,
       // Our turn to answer. The column is the authority; see sql/support_alerts.sql.
@@ -669,6 +675,7 @@ module.exports = function registerSupportRoutes(app) {
     // fact ordered by last_message_at, which buries a breached urgent conversation
     // under every chatty one.
     out.sort((a, b) => {
+      if (status === 'recent') return new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0);
       if (a.waitingOnUs !== b.waitingOnUs) return a.waitingOnUs ? -1 : 1;
       const pa = RANK[a.priority] ?? 2; const pb = RANK[b.priority] ?? 2;
       if (pa !== pb) return pa - pb;

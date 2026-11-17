@@ -23,6 +23,8 @@ import Modal from '../components/Modal';
 import './SupportInbox.css';
 
 const TABS = [
+  // Default: every conversation, newest message first, each marked replied or not.
+  { key: 'recent', label: 'Recent' },
   { key: 'waiting', label: 'Reply needed' },
   { key: 'pending', label: 'Waiting on them' },
   { key: 'solved', label: 'Solved' },
@@ -233,7 +235,7 @@ function PersonPanel({ thread }) {
 
 export default function SupportInbox() {
   const [rows, setRows] = useState([]);
-  const [tab, setTab] = useState('waiting');
+  const [tab, setTab] = useState('recent');
   const [appFilter, setAppFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [tableMissing, setTableMissing] = useState(false);
@@ -407,7 +409,6 @@ export default function SupportInbox() {
         </div>
         <div className="si-numbers">
           <span className={summary?.waiting ? 'si-num-red' : ''}><b>{summary?.waiting ?? '—'}</b> need a reply</span>
-          <span className={summary?.overdue ? 'si-num-amber' : ''}><b>{summary?.overdue ?? '—'}</b> overdue</span>
           <span><b>{firstReply == null ? '—' : waited(firstReply)}</b> typical first reply</span>
         </div>
       </div>
@@ -444,23 +445,25 @@ export default function SupportInbox() {
                 key={r.id}
                 className={`si-item ${selected === r.id ? 'active' : ''} ${r.waitingOnUs ? 'waiting' : ''}`}
                 onClick={() => openThread(r.id)}>
-                <div className={`si-prio-bar si-prio-${r.priority}`} />
+                <div className={`si-prio-bar ${r.waitingOnUs ? 'si-prio-urgent' : ''}`} />
                 <div className={`si-avatar ${r.app === 'vendor' ? 'si-avatar-astro' : ''}`}>{initials(r.partyName)}</div>
                 <div className="si-item-body">
                   <div className="si-item-top">
                     <span className="si-item-name">{r.partyName}</span>
-                    {r.waitingOnUs
-                      ? <span className={`si-wait ${r.slaBreached ? 'late' : ''}`}>{waited(r.waitingMinutes)}</span>
-                      : <span className="si-item-time">{when(r.last_message_at)}</span>}
+                    <span className="si-item-time">{when(r.last_message_at)}</span>
                   </div>
-                  <div className="si-item-preview">{r.lastUserMessage || r.subject || '—'}</div>
-                  {(r.priority === 'urgent' || r.priority === 'high' || r.app === 'vendor') && (
-                    <div className="si-item-meta">
-                      {r.priority === 'urgent' && <span className="si-chip si-chip-red">Urgent</span>}
-                      {r.priority === 'high' && <span className="si-chip si-chip-amber">High</span>}
-                      {r.app === 'vendor' && <span className="si-chip si-chip-violet">Astrologer</span>}
+                  {r.partyPhone && (
+                    <div className="si-item-phone">
+                      <a href={`tel:${r.partyPhone}`} onClick={(e) => e.stopPropagation()}>📞 {r.partyPhone}</a>
                     </div>
                   )}
+                  <div className="si-item-preview">{r.lastUserMessage || r.subject || '—'}</div>
+                  <div className="si-item-meta">
+                    {r.waitingOnUs
+                      ? <span className="si-chip si-chip-red">Not replied · {waited(r.waitingMinutes)}</span>
+                      : <span className="si-chip si-chip-green">Replied</span>}
+                    {r.app === 'vendor' && <span className="si-chip si-chip-violet">Astrologer</span>}
+                  </div>
                 </div>
               </button>
             ))}
@@ -483,7 +486,14 @@ export default function SupportInbox() {
             <>
               <div className="si-thread-head">
                 <div style={{ minWidth: 0 }}>
-                  <div className="si-thread-title">{partyName(thread.party)}</div>
+                  <div className="si-thread-title">
+                    {partyName(thread.party)}
+                    {(() => {
+                      const ph = thread.party?.mobile || thread.party?.phone_number || '';
+                      return ph && !/^deleted:/.test(ph)
+                        ? <a className="si-thread-phone" href={`tel:${ph}`}>📞 {ph}</a> : null;
+                    })()}
+                  </div>
                   <div className="si-thread-sub">
                     {STATUS_LABEL[thread.status] || thread.status}
                     {waitingMin != null && <> · <b className="si-red">waiting {waited(waitingMin)}</b></>}

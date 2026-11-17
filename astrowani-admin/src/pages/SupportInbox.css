@@ -215,3 +215,9 @@
 .si-learn-side h3 { margin: 0 0 4px; font-size: 15px; }
 .si-learn-side p { font-size: 13px; margin: 0 0 8px; }
 .si-learn-side ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+
+/* Phone number in the list and the thread header, so action needs no lookup. */
+.si-item-phone { margin-top: 2px; font-size: 12px; font-weight: 600; }
+.si-item-phone a, .si-thread-phone { color: var(--crimson); text-decoration: none; }
+.si-item-phone a:hover, .si-thread-phone:hover { text-decoration: underline; }
+.si-thread-phone { margin-left: 10px; font-size: 13px; font-weight: 600; }
