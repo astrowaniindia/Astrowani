@@ -854,7 +854,7 @@ async function decideReply({ party, history = [], message, want = 'en' }) {
     } else if (ai && ai.kind === 'handover') {
       return {
         // The model's own words when they passed the gate; the fixed line otherwise.
-        reply: ai.reply || say(want, 'This needs a person rather than me. Connecting you to the team now.', 'यह किसी व्यक्ति को देखना चाहिए। मैं आपको अभी टीम से जोड़ रहा हूं।', 'Yeh kisi vyakti ko dekhna chahiye. Main aapko abhi team se jod raha hoon.'),
+        reply: ai.reply || say(want, 'Let me bring in a colleague from our team who can sort this out for you.', 'मैं अपनी टीम के एक साथी को जोड़ रहा हूं जो इसे आपके लिए सुलझाएंगे।', 'Main apni team ke ek saathi ko jod raha hoon jo ise aapke liye suljha denge.'),
         inLanguage: true,
         escalate: true,
         reason: `Assistant handed over${ai.summary ? `: ${ai.summary}` : '.'} Message: ${raw.slice(0, 200)}`,
@@ -862,6 +862,15 @@ async function decideReply({ party, history = [], message, want = 'en' }) {
         priority: ai.priority || 'normal',
         toolTrace: ai.trace,
       };
+    }
+
+    // The AI could not be reached (keys drained, switched off, timed out): an
+    // answer the bot has already given for this kind of question, matched by
+    // words, with no model call at all (supportAi.offlineAnswer).
+    if (!ai) {
+      const side = party.kind === 'customer' ? 'customer' : 'vendor';
+      const off = await supportAi.offlineAnswer({ side, message: raw, language: want, languageOf: (t) => pickLanguage(t) });
+      if (off) return { reply: off.reply, inLanguage: true, escalate: false, toolTrace: off.trace };
     }
 
     if (!best || !ai || ai.kind !== 'intent') {
@@ -918,7 +927,7 @@ async function decideReply({ party, history = [], message, want = 'en' }) {
       });
     }
     return {
-      reply: (written && written.reply) || say(want, 'This needs a person rather than me. Connecting you to the team now.', 'यह किसी व्यक्ति को देखना चाहिए। मैं आपको अभी टीम से जोड़ रहा हूं।', 'Yeh kisi vyakti ko dekhna chahiye. Main aapko abhi team se jod raha hoon.'),
+      reply: (written && written.reply) || say(want, 'Let me bring in a colleague from our team who can sort this out for you.', 'मैं अपनी टीम के एक साथी को जोड़ रहा हूं जो इसे आपके लिए सुलझाएंगे।', 'Main apni team ke ek saathi ko jod raha hoon jo ise aapke liye suljha denge.'),
       inLanguage: true,
       intent: best.id,
       toolTrace: (written && written.trace) || trace,

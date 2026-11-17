@@ -327,8 +327,8 @@ module.exports = function registerSupportRoutes(app) {
     // model: it costs nothing, cannot fail, and means the screen is never empty
     // while the first reply is generated.
     const hello = party.kind === 'customer'
-      ? `Hi ${party.name}, I'm the Astrowani support assistant. Tell me what's wrong and I'll look into your account right away. If it needs a person, I'll bring one in.`
-      : `Hi ${party.name}, I'm the Astrowani support assistant. Ask me about payouts, your profile, requests or anything else — I can check your account, and I'll bring in a person when it needs one.`;
+      ? `Hi ${party.name}, this is Astrowani Support. Tell us what's wrong and we'll look into your account right away.`
+      : `Hi ${party.name}, this is Astrowani Support. Ask us about payouts, your profile, requests or anything else, and we'll check your account right away.`;
     await addMessage(data.id, 'agent', hello);
 
     return res.json({ success: true, data });
