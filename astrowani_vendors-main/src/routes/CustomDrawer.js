@@ -56,6 +56,22 @@ function CustomDrawer(props) {
   const [loading, setLoading] = useState(false);
   const [ids, setIds] = useState('');
   const [missedCount, setMissedCount] = useState(0);
+  // "My Free Calls" shows only to astrologers free-call bookings go to (the server
+  // decides, from the live offer). Hidden for everyone else, as since 2026-10-02.
+  const [freeCallsAssigned, setFreeCallsAssigned] = useState(false);
+
+  const fetchFreeCallsAssigned = async () => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      if (!token) return;
+      const res = await Instance.get('/api/vendor/free-call-bookings', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setFreeCallsAssigned(res.data?.assigned === true);
+    } catch (e) {
+      // non-fatal: the entry just stays as it was
+    }
+  };
 
   // Count missed call/chat requests created since the vendor last opened the Missed screen.
   const fetchMissedCount = async () => {
@@ -98,6 +114,7 @@ function CustomDrawer(props) {
     useCallback(() => {
       fetchData();
       fetchMissedCount();
+      fetchFreeCallsAssigned();
     }, []),
   );
   const handleLogout = async () => {
@@ -216,6 +233,15 @@ function CustomDrawer(props) {
             props.navigation.navigate('MissedSessions');
           }}
         />
+        {freeCallsAssigned && (
+          <DrawerItem
+            label={t('drawer.freeCalls')}
+            icon={() => (
+              <Icon name="event-available" size={24} color={COLORS.AstroMaroon} />
+            )}
+            onPress={() => props.navigation.navigate('FreeCalls')}
+          />
+        )}
         <DrawerItem
           label={t('drawer.myCustomers')}
           icon={() => (

@@ -2798,13 +2798,27 @@ module.exports = function registerFreeCallRoutes(app) {
       .order('slot_start', { ascending: true });
 
     if (error) {
-      if (isMissingTable(error)) return res.status(200).json({ success: true, bookings: [] });
+      if (isMissingTable(error)) return res.status(200).json({ success: true, assigned: false, bookings: [] });
       throw new Error(error.message);
     }
 
     const now = Date.now();
+    // `assigned` tells the astrologer app whether to show "My Free Calls" in its
+    // menu at all. The entry was hidden from everybody on 2026-10-02 (most
+    // astrologers never get a booking); it now shows only to the astrologer(s) new
+    // bookings go to, plus anyone still holding an upcoming one. Read from the live
+    // offer, so changing the assignee in admin moves the menu entry with it.
+    let assigned = (data || []).some((b) => new Date(b.slot_start).getTime() >= now - 60 * 60 * 1000);
+    if (!assigned) {
+      try {
+        const offer = await loadOffer();
+        assigned = (offer.assignmentMode === 'single' && offer.assignedAstrologerId === astrologerId)
+          || (offer.assignmentMode === 'pool' && (offer.poolAstrologerIds || []).includes(astrologerId));
+      } catch (_) { /* menu entry simply stays hidden */ }
+    }
     return res.status(200).json({
       success: true,
+      assigned,
       bookings: (data || []).map((b) => ({
         id: b.id,
         slotStart: b.slot_start,
