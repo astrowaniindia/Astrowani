@@ -154,7 +154,7 @@ const lookups = {
   async vendorState(party) {
     const { data } = await db
       .from('astrologers')
-      .select('approval_status, is_suspended, is_available, is_online, is_chat_enabled, is_call_enabled, is_video_call_enabled, chat_charge_per_minute, call_charge_per_minute, video_charge_per_minute, charges_locked_at, today_earnings, wallet_balance')
+      .select('approval_status, is_suspended, first_name, last_name, email, gender, experience, profile_pic_url, languages, is_available, is_online, is_chat_enabled, is_call_enabled, is_video_call_enabled, chat_charge_per_minute, call_charge_per_minute, video_charge_per_minute, charges_locked_at, today_earnings, wallet_balance')
       .eq('id', party.id).maybeSingle();
     return data || null;
   },
@@ -169,6 +169,33 @@ const lookups = {
       .limit(1);
     return (data || [])[0] || null;
   },
+};
+
+// What still keeps an astrologer hidden from customers, in the same terms as
+// src/astrologerVisibility.js (which decides it). Only from this person's own row.
+function profileGaps(v) {
+  const t = (x) => (x == null ? '' : String(x)).trim();
+  const gaps = [];
+  if (!t(v.profile_pic_url)) gaps.push('profile photo');
+  if (!(t(v.first_name) + t(v.last_name))) gaps.push('full name');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t(v.email))) gaps.push('email');
+  if (!t(v.gender)) gaps.push('gender');
+  if (!(Number(v.experience) > 0)) gaps.push('experience');
+  const langs = v.languages;
+  if (!(Array.isArray(langs) ? langs.length : t(langs))) gaps.push('languages');
+  if (!(Number(v.chat_charge_per_minute) > 0 || Number(v.call_charge_per_minute) > 0 || Number(v.video_charge_per_minute) > 0)) {
+    gaps.push('a per-minute rate for chat, call or video');
+  }
+  return gaps;
+}
+const GAP_HI = {
+  'profile photo': 'प्रोफ़ाइल फोटो',
+  'full name': 'पूरा नाम',
+  email: 'ईमेल',
+  gender: 'लिंग',
+  experience: 'अनुभव',
+  languages: 'भाषाएं',
+  'a per-minute rate for chat, call or video': 'चैट, कॉल या वीडियो में से कम से कम एक की प्रति मिनट दर',
 };
 
 // ── The intent catalogue ───────────────────────────────────────────────────
@@ -526,21 +553,43 @@ const INTENTS = [
     id: 'approval_status',
     category: 'account',
     app: 'vendor',
-    any: ['approval', 'approved', 'profile pending', 'verification', 'kab approve', 'स्वीकृति', 'अनुमोदन'],
+    any: ['approval', 'approved', 'profile pending', 'verification', 'kab approve', 'under review', 'account under review',
+      'registration kiya', 'register kiya', 'account active', 'approve nahi', 'स्वीकृति', 'अनुमोदन'],
     async reply(party, lang) {
       const v = await lookups.vendorState(party);
       if (!v) return null;
       if (v.approval_status === 'approved' && !v.is_suspended) {
-        return lang === 'hi' ? 'आपका खाता स्वीकृत और सक्रिय है।' : 'Your account is approved and active.';
+        const gaps = profileGaps(v);
+        if (!gaps.length) return lang === 'hi' ? 'आपका खाता स्वीकृत और सक्रिय है।' : 'Your account is approved and active.';
+        return lang === 'hi'
+          ? `आपका खाता स्वीकृत है, लेकिन ग्राहक आपको तभी देख पाएंगे जब प्रोफ़ाइल पूरी होगी। अभी बाकी है: ${gaps.map((g) => GAP_HI[g]).join(', ')}। इन्हें Profile > Edit Profile में भर दीजिए।`
+          : `Your account is approved, but customers can only see you once your profile is complete. Still missing: ${gaps.join(', ')}. You can fill these in from Profile > Edit Profile.`;
       }
       if (v.is_suspended) {
         return lang === 'hi'
           ? 'आपका खाता अभी निलंबित है। इसका कारण केवल टीम बता सकती है — मैं आपको जोड़ रहा हूं।'
           : 'Your account is currently suspended. Only a person can tell you why, so I am connecting you now.';
       }
-      return lang === 'hi'
-        ? `आपकी स्थिति अभी "${v.approval_status}" है। स्वीकृति के लिए प्रोफ़ाइल पूरी होनी चाहिए — फोटो, अनुभव, भाषाएं और कम से कम एक दर।`
-        : `Your status is currently "${v.approval_status}". Approval needs a complete profile: photo, experience, languages and at least one per-minute rate.`;
+      if (v.approval_status === 'rejected') {
+        return lang === 'hi'
+          ? 'आपका आवेदन अभी स्वीकृत नहीं हुआ है। अगर आप इसके बारे में पूछना चाहते हैं, तो "व्यक्ति से बात" लिखिए, मैं आपको टीम से जोड़ दूंगा।'
+          : 'Your application was not approved. If you would like to ask about it, just say "talk to a person" and I will connect you to the team.';
+      }
+      // Pending: the most common question, and the one people worry about.
+      const gaps = profileGaps(v);
+      const en = [
+        'Your registration has reached us and is under review. Our team looks at every application and contacts the astrologer, so please do not worry and there is no need to register again.',
+        'The team may also call you for a short interview or training before your account is made active.',
+        gaps.length ? `Once you are approved, please complete these in Profile > Edit Profile so customers can see you: ${gaps.join(', ')}.` : 'Your profile details are already complete, so nothing else is needed from you right now.',
+        'You can check the latest status any time with "Check Approval Status" in the app.',
+      ];
+      const hi = [
+        'आपका पंजीकरण हमें मिल गया है और जांच में है। हमारी टीम हर आवेदन देखती है और संपर्क करती है, इसलिए चिंता न करें और दोबारा पंजीकरण करने की ज़रूरत नहीं है।',
+        'खाता सक्रिय होने से पहले टीम आपको एक छोटे इंटरव्यू या ट्रेनिंग के लिए भी बुला सकती है।',
+        gaps.length ? `स्वीकृति मिलने के बाद Profile > Edit Profile में ये पूरा कर लीजिए ताकि ग्राहक आपको देख सकें: ${gaps.map((g) => GAP_HI[g]).join(', ')}।` : 'आपकी प्रोफ़ाइल पूरी है, अभी आपसे और कुछ नहीं चाहिए।',
+        'ऐप में "Check Approval Status" से आप कभी भी स्थिति देख सकते हैं।',
+      ];
+      return (lang === 'hi' ? hi : en).join('\n\n');
     },
   },
   {
@@ -584,10 +633,10 @@ const INTENTS = [
     id: 'become_astrologer',
     category: 'feedback',
     app: 'customer',
-    any: ['become astrologer', 'join as astrologer', 'want to work', 'jobs', 'ज्योतिषी बनना', 'नौकरी'],
+    any: ['become astrologer', 'join as astrologer', 'want to work', 'jobs', 'astrologer banna', 'astrologer join', 'join karna', 'kaam karna hai', 'ज्योतिषी बनना', 'नौकरी'],
     reply: (party, lang) => (lang === 'hi'
-      ? 'ज्योतिषी के रूप में जुड़ने के लिए Astrowani Astrologer ऐप डाउनलोड करके पंजीकरण करें। हमारी टीम आपकी जानकारी देखकर संपर्क करती है।'
-      : 'To join as an astrologer, download the Astrowani Astrologer app and register there. Our team reviews each application and gets in touch.'),
+      ? 'ज्योतिषी के रूप में जुड़ने के लिए Astrowani Astrologer ऐप डाउनलोड करें और वहां पंजीकरण करें: फोटो, नाम, कौशल, अनुभव, भाषाएं, ईमेल और फ़ोन नंबर। हमारी टीम हर आवेदन देखती है और संपर्क करती है। इसमें थोड़ा समय लग सकता है, चिंता न करें और दोबारा पंजीकरण की ज़रूरत नहीं है।'
+      : 'To join as an astrologer, download the Astrowani Astrologer app and register there with your photo, name, skills, experience, languages, email and phone number. Our team reviews every application and gets in touch. It can take a little time, so please do not worry, and there is no need to register again.'),
   },
   {
     id: 'safety',
@@ -972,5 +1021,5 @@ async function factsFor(party) {
 module.exports = {
   generateReply,
   factsFor,
-  _internals: { INTENTS, normalize, scoreIntent, lookups, DISTRESS, languageOf, pickLanguage },
+  _internals: { profileGaps, INTENTS, normalize, scoreIntent, lookups, DISTRESS, languageOf, pickLanguage },
 };

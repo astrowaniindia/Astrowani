@@ -5561,3 +5561,39 @@ everything), 131/131 live minus one gate false-positive fixed after; the admin r
 HTTP on a bare Express app (admin 200, no token 401, customer token 403). The real playbook on
 2026-11-17 had 5 customer rules and 0 astrologer rules (only 2 usable astrologer replies; it needs 3).
 **It improves only as the team answers more handed-over chats. Not deployed.**
+
+### EV5. Same day: the bot knows the whole platform, and refuses answers its sources do not support
+
+Owner: "make it understand everything about our platform … astrologers asking how to join, someone
+said not got a reply, he can say it may come to you, don't worry".
+
+- **`src/supportKnowledge.js`** holds the platform as plain true sentences: 35 customer lines and
+  28 astrologer lines (was 13 and 6), written from both apps' own screen texts, screens and backend
+  rules. It covers signup, birth details, finding astrologers, Unavailable/Busy, consultations,
+  photos, contact masking, sessions, history, voice notes, blocking, the free call, referral, Wani
+  Shop and order statuses, kundli matching (a Home-screen service on Android, hidden on iPhone),
+  notifications, support and policies. On the astrologer side: the full joining flow (register →
+  "Account Under Review" → team review, possible interview/training → approved), what makes a
+  profile visible (the exact `astrologerVisibility` rule), rates locking, online/service switches,
+  missed sessions, ringing, GO LIVE, free intro calls (team-selected only), My Free Calls, WhatsApp
+  customers, payout details, deletion. **No prices, amounts, minutes or turnaround times**, by
+  design. Each side ends with a `TONE:` line: reassure someone who is waiting, never give a date.
+- **`approval_status` (astrologer) now reads the real profile** (`profileGaps`, same rule as
+  `astrologerVisibility`) and reassures: pending → under review, no need to register again, may be
+  asked for an interview/training, what to fill in once approved; approved but incomplete → what is
+  missing; rejected → offer a person. **While pending the app shows only the review screen, so
+  Edit Profile is NOT reachable** — the reply says "once you are approved", not "now".
+  `become_astrologer` (customer app) gives the steps and the same reassurance. Measured: **60
+  astrologers were pending approval on 2026-11-17.**
+- **`unsupportedTopicWords`: an answer may not repeat the thing asked about unless a cited line
+  contains it.** Found by testing: "does a certificate come with the stone?" was answered "yes,
+  every gemstone comes with a lab certificate" citing the Wani Shop line, which says nothing of the
+  sort. Citations were only checked for EXISTING, not for SAYING it. Now refused → handover.
+  Hinglish everyday words are on an ignore list (`FILLER`); "purani" was a false positive.
+- **Found, not fixed: `contactLeakDetector.maskContacts` stars the word "installing"** (treated as
+  an Instagram handle), so a chat message "I am installing the app" reaches the astrologer as
+  "I am ********** the app". It affects real chats; the knowledge line was reworded around it.
+
+Verified: `scripts/supportAiCheck.js` 116/116 offline; live 156/158 with the two misses checked
+by hand (an acceptable handover with reassurance, and a rate-limited Hindi call that passed when
+re-run alone). Approval reply checked on a real pending astrologer, read-only. **Not deployed.**

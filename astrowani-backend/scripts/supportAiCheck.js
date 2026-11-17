@@ -83,6 +83,38 @@ const ok = (name, cond, extra = '') => {
   ok('two shared words are (control)', (await similarReplies('meri chat history kaha hai', 'customer', 5, { semantic: false })).some((n) => /Chat History/.test(n.answer)));
   _setLearned([]);
 
+  console.log('\n1e. Platform knowledge and the astrologer profile checklist (no network)');
+  const PLATFORM = require('../src/supportKnowledge');
+  const { maskContacts: mc } = require('../src/contactLeakDetector');
+  const allLines = [...PLATFORM.CUSTOMER, ...PLATFORM.VENDOR];
+  ok('the customer knowledge covers the platform (30+ lines)', PLATFORM.CUSTOMER.length >= 30);
+  ok('the astrologer knowledge covers joining and daily work (25+ lines)', PLATFORM.VENDOR.length >= 25);
+  ok('every knowledge line passes the money gate, so the bot can actually use it',
+    allLines.every((l) => supportAi._internals.passesGate(l.replace(/\[.*?\]/g, '').slice(0, 690))));
+  ok('no knowledge line contains a number that could go stale', allLines.every((l) => !/\d/.test(l.replace(/6-digit|5 MB/g, ''))));
+  ok('no knowledge line trips the contact masking', allLines.every((l) => !mc(l).masked));
+  ok('the astrologer side explains joining and review', PLATFORM.VENDOR.some((l) => /Account Under Review/.test(l)) && PLATFORM.VENDOR.some((l) => /Register/.test(l)));
+  ok('both sides tell it to reassure without a date', [PLATFORM.CUSTOMER, PLATFORM.VENDOR].every((L) => L.some((l) => /^TONE:.*Never give a date or time/.test(l))));
+  const { unsupportedTopicWords: utw } = supportAi._internals;
+  const shopLine = PLATFORM.CUSTOMER.find((l) => /Wani Shop \(/.test(l));
+  const chatLine = PLATFORM.CUSTOMER.find((l) => /Chat History/.test(l));
+  // Positive controls first: a check that refused everything would pass every
+  // "invented answer is caught" line below and the bot would answer nothing.
+  ok('a supported Hinglish answer passes the source check', utw('purani chat history kaha dikhegi', 'Aapki purani chats Menu > Chat History mein dikhegi.', chatLine).length === 0);
+  ok('a supported English answer passes', utw('can I send a photo of my palm in chat', 'Yes, you can send photos such as a palm.', PLATFORM.CUSTOMER.find((l) => /send photos/.test(l))).length === 0);
+  ok('an invented "certificate" is caught', utw('stone ke sath certificate aata hai', 'Har gemstone ke sath certificate aata hai.', shopLine).includes('certificate'));
+  ok('an invented product is caught', utw('do you have rudraksha mala', 'Yes, the Wani Shop has rudraksha mala.', shopLine).includes('rudraksha'));
+  const { profileGaps } = bot._internals;
+  const full = { profile_pic_url: 'x', first_name: 'A', last_name: 'B', email: 'a@b.co', gender: 'male', experience: 3, languages: ['Hindi'], chat_charge_per_minute: 10 };
+  ok('a complete profile has no gaps (control)', profileGaps(full).length === 0);
+  ok('a missing photo is named', profileGaps({ ...full, profile_pic_url: '' }).includes('profile photo'));
+  ok('no rate anywhere is named', profileGaps({ ...full, chat_charge_per_minute: 0 }).some((g) => /rate/.test(g)));
+  ok('one rate is enough', profileGaps({ ...full, chat_charge_per_minute: 0, video_charge_per_minute: 5 }).length === 0);
+  ok('a bad email is named', profileGaps({ ...full, email: 'nope' }).includes('email'));
+  ok('empty languages are named', profileGaps({ ...full, languages: [] }).includes('languages'));
+  const become = await bot.generateReply({ party: { kind: 'customer', id: '00000000-0000-0000-0000-000000000000' }, history: [], message: 'I want to join as astrologer' });
+  ok('"join as astrologer" explains the steps and reassures', become.intent === 'become_astrologer' && /no need to register again/.test(become.reply));
+
   console.log('\n1d. Which team replies the AI may learn from for its OWN messages (no network)');
   const { safeLesson, validPlaybookRule } = supportAi._internals;
   const L = (answer, extra = {}) => ({ side: 'customer', question: 'q', focus: 'q', answer, hadContact: false, ...extra });
@@ -270,6 +302,30 @@ const ok = (name, cond, extra = '') => {
       ok('a draft comes back for the team', !!d && d.draft.length > 20);
       ok('the draft uses the real amount', !!d && /30/.test(d.draft));
       ok('the draft leaves the money decision to the person', !!d && /\[/.test(d.draft));
+
+      console.log('\n6. Questions about the platform, from both apps');
+      const noMoney = (r) => !r || !r.reply || passesGate(r.reply);
+      const pq = [
+        [v, 'maine registration kiya tha 10 din ho gaye koi call nahi aaya', (r) => isIntent(r, ['approval_status']) || (!!r && ['answer', 'handover'].includes(r.kind) && !/\d/.test(r.reply || ''))],
+        [v, 'live kaise jaate hai', (r) => !!r && r.kind === 'answer' && /live/i.test(r.reply)],
+        [v, 'customer mujhe dekh kyu nahi pa rahe app me', (r) => isIntent(r, ['no_requests', 'approval_status']) || (!!r && r.kind === 'answer' && /profile|online|approv/i.test(r.reply))],
+        [v, 'mujhe free intro call wala option nahi dikh raha', (r) => !!r && (r.kind === 'answer' ? /select|team|chun/i.test(r.reply) : true)],
+        [c, 'astrologer ko block kaise karu', (r) => !!r && r.kind === 'answer' && /three dots|teen|⋮|block/i.test(r.reply)],
+        [c, 'kundli milan kaha milega app me', (r) => !!r && (r.kind !== 'answer' || /service|report/i.test(r.reply))],
+        [c, 'can I send a photo of my palm in chat', (r) => !!r && r.kind === 'answer' && /photo/i.test(r.reply)],
+        [c, 'mera order kaha tak pahucha', (r) => isIntent(r, ['order_status']) || (!!r && r.kind === 'answer' && /My Orders/i.test(r.reply))],
+      ];
+      for (const [party, msg, check] of pq) {
+        const lang = bot._internals.pickLanguage(msg, []);
+        const r = await supportAi.route({ party, message: msg, history: [], intents: I, language: lang });
+        const shown = r ? `${r.kind}${r.id ? `:${r.id}` : ''}${r.reply ? ` "${r.reply.slice(0, 150)}"` : ''}` : 'null';
+        ok(`[${party.kind}] "${msg.slice(0, 44)}" -> ${shown}`, check(r) && noMoney(r));
+      }
+      // Through the real path: the rules catch this one before the model is asked.
+      const join = await bot.generateReply({ party: c, history: [], message: 'mujhe astrologer banna hai registration kiya reply nahi aaya' });
+      console.log(`       join: ${join.intent} "${String(join.reply).slice(0, 160)}"`);
+      ok('someone asking to join as an astrologer gets the steps and reassurance, in Hinglish',
+        join.intent === 'become_astrologer' && bot._internals.languageOf(join.reply) === 'hinglish' && !/\d/.test(join.reply));
 
       console.log('\n5. Learning from the REAL team replies (read-only, production)');
       supportAi._internals._forgetLearned();
