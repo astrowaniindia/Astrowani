@@ -2,7 +2,7 @@
 //
 // A single InCallManager.startRingtone('_DEFAULT_') call is enough — and is the correct,
 // normal-sounding behaviour. Confirmed against the actual installed version's native source
-// (react-native-incall-manager@4.2.1, android/.../InCallManagerModule.java): it plays the
+// (react-native-incall-manager@4.2.2, android/.../InCallManagerModule.java): it plays the
 // device's real ringtone (Settings.System.DEFAULT_RINGTONE_URI) through a local MediaPlayer
 // with setLooping(true) set explicitly, and with no `seconds` argument the JS wrapper passes
 // -1 (loop forever) — so it rings continuously, exactly like a normal phone call, until

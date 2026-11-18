@@ -273,7 +273,7 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
     // interruptions) later recomputes from stale state and silently reverts the
     // astrologer's choice mid-call. setForceSpeakerphoneOn() records the intent
     // and routes THROUGH updateAudioRoute(), so it sticks. Verified against
-    // react-native-incall-manager 4.2.1 ios/RNInCallManager/RNInCallManager.m.
+    // react-native-incall-manager 4.2.2 ios/RNInCallManager/RNInCallManager.m.
     try {
       if (Platform.OS === 'ios') {
         InCallManager.setForceSpeakerphoneOn(next);
