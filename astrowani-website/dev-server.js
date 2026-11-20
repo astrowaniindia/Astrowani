@@ -5,6 +5,9 @@ const path = require('path');
 
 const ROOT = __dirname;
 const PORT = process.env.PORT || 4600;
+// The legal pages answer at their old WordPress addresses, as nginx serves them
+// in production (aw/legal-paths.js).
+const { fileForPath } = require('./aw/legal-paths');
 
 /**
  * LOCAL DEVELOPMENT ONLY. Production serves these files straight from nginx and
@@ -59,7 +62,8 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  let filePath = path.join(ROOT, urlPath === '/' ? '/index.html' : urlPath);
+  const legal = fileForPath(urlPath);
+  let filePath = path.join(ROOT, legal ? `/${legal}` : (urlPath === '/' ? '/index.html' : urlPath));
   if (!filePath.startsWith(ROOT)) {
     res.writeHead(403);
     res.end('Forbidden');

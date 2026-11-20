@@ -37,8 +37,8 @@ jobs:
           exec 9>/tmp/astrowani-deploy.lock
           flock -w 300 9 || { echo "Timed out waiting for another deploy to finish"; exit 1; }
           cd /var/www/astrowani-monorepo
-          node astrowani-website/aw/bake-horoscopes.js --root /var/www/astrowani/shop/test-site
-          chown -R www-data:www-data /var/www/astrowani/shop/test-site
+          node astrowani-website/aw/bake-horoscopes.js --root /var/www/astrowani/site
+          chown -R www-data:www-data /var/www/astrowani/site
           REMOTE
           attempt=1
           until ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/deploy_key "$VPS_USER@$VPS_HOST" 'bash -s' < /tmp/bake.sh; do

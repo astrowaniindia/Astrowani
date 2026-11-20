@@ -21,8 +21,16 @@ const ok = (c, m, x) => { if (c) pass++; else { fail++; console.log(`FAIL  ${m}$
   ok(/^[a-f0-9]{32}$/.test(indexNow.KEY), 'the key is 32 hex characters');
 
   // Only this site's URLs, deduplicated, with the key file under SITE_BASE.
-  const p = indexNow.payload([`${SITE_BASE}/a.html`, `${SITE_BASE}/a.html`, 'https://evil.example/x', `${new URL(SITE_BASE).origin}/outside-the-folder.html`, 'not a url']);
+  // The "outside the folder" URL only exists when SITE_BASE has a path (the
+  // pre-launch preview lived at /test-site); at a domain root every URL on the
+  // host is inside it, so that case is only asserted when it can arise.
+  const inFolder = new URL(SITE_BASE).pathname.replace(/\/+$/, '') !== '';
+  const outside = `${new URL(SITE_BASE).origin}/outside-the-folder.html`;
+  const p = indexNow.payload([`${SITE_BASE}/a.html`, `${SITE_BASE}/a.html`, 'https://evil.example/x', ...(inFolder ? [outside] : []), 'not a url']);
   ok(p && p.urlList.length === 1 && p.urlList[0] === `${SITE_BASE}/a.html`, 'payload keeps only this site\'s URLs under SITE_BASE, once', p && p.urlList);
+  const sub = indexNow.payload(['https://shop.astrowani.com/test-site/a.html'], 'https://shop.astrowani.com/test-site');
+  const subOut = indexNow.payload(['https://shop.astrowani.com/elsewhere.html'], 'https://shop.astrowani.com/test-site');
+  ok(sub && sub.urlList.length === 1 && subOut === null, 'with a folder base, a URL outside the folder is dropped', { sub, subOut });
   ok(p && p.host === new URL(SITE_BASE).host && p.keyLocation === `${SITE_BASE}/${indexNow.KEY}.txt`, 'host and keyLocation match the site');
   ok(indexNow.payload(['https://evil.example/x']) === null, 'nothing for this site -> no request at all');
 

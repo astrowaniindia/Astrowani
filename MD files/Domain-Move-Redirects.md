@@ -22,6 +22,11 @@ and every page Google has indexed.
 Every redirect is a **301 (permanent)**, so Google moves the old page's ranking to the new one.
 Each rule works with or without the trailing slash and in any letter case, the way WordPress did.
 
+> **CHANGED ON LAUNCH DAY (2026-11-20).** The legal pages below are no longer redirected:
+> they are SERVED at these exact old addresses (owner's decision), and the `.html` forms
+> 301 to them. See `MD files/Website-Launch-Runbook-2026-11-20.md` and
+> `astrowani-website/aw/legal-paths.js`. The table is kept as the record of what was planned.
+
 ## The pages that MUST work (apps and store consoles link to these)
 
 | Old address | Goes to |

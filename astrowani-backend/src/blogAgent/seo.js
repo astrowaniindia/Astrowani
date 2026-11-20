@@ -15,15 +15,14 @@ const kw = require('./keywords');
  * blog-post.html, the customer app (BlogScreen.js, via react-native-render-html)
  * and the admin preview. A relative href resolves correctly only in the first.
  *
- * DEFAULT IS THE PREVIEW ORIGIN, deliberately. That is where the new site
- * actually answers 200 today (shop.astrowani.com/test-site/*, all 13 link targets
- * verified 2026-10-13); astrowani.com is still the old WordPress site and those
- * paths would 404 there. When the new site takes over the domain, set
- * BLOG_SITE_BASE_URL=https://astrowani.com and every future article follows. Past
- * articles keep the old absolute links, so plan to run a one-off UPDATE over
- * `blogs.content_en`/`content_hi` at the same time.
+ * DEFAULT IS astrowani.com, since launch day (2026-11-20). Until then it was the
+ * preview origin shop.astrowani.com/test-site, which now 301s to astrowani.com.
+ * BLOG_SITE_BASE_URL still overrides it (no trailing slash). Articles written
+ * before the move carried the preview address in their absolute links; those
+ * were rewritten by the one-off UPDATE in
+ * astrowani-backend/sql/website_launch_blog_links.sql.
  */
-const SITE_BASE = (process.env.BLOG_SITE_BASE_URL || 'https://shop.astrowani.com/test-site').replace(/\/+$/, '');
+const SITE_BASE = (process.env.BLOG_SITE_BASE_URL || 'https://astrowani.com').replace(/\/+$/, '');
 
 const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.astrowanicustomer&hl=en_IN';
 
