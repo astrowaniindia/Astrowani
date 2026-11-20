@@ -1,6 +1,6 @@
 # Astrowani — https://astrowani.com
 #
-# The Sitemap line below points at a BACKEND ROUTE, not a file in this directory.
+# The Sitemap line below is served by nginx from a BACKEND ROUTE, not a file here.
 # The blog agent publishes three articles a day into the `blogs` table and cannot
 # commit to this git-deployed folder, so a static sitemap.xml here would be stale
 # within hours. See astrowani-backend/src/blogSitemap.js.
@@ -89,4 +89,4 @@ Disallow: /call.html
 # A leftover design experiment: reachable, linked from nothing, not in the sitemap.
 Disallow: /concept-hero.html
 
-Sitemap: https://backend.astrowani.com/api/blogs/sitemap.xml
+Sitemap: https://astrowani.com/sitemap.xml

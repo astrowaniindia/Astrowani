@@ -830,7 +830,7 @@ if (fs.existsSync(robotsPath)) {
   const sitemapPages = STATIC_PAGES.map(([pg]) => pg);
   const conflicts = disallowed.filter((d) => sitemapPages.includes(d.replace(/\$$/, '')));
   eq('no page is both submitted and disallowed', conflicts.length, 0);
-  ok('robots.txt points at the sitemap route', /Sitemap:\s*https?:\/\/\S*\/api\/blogs\/sitemap\.xml/.test(robots));
+  ok('robots.txt points at the sitemap route', /Sitemap:\s*https?:\/\/\S*(\/api\/blogs)?\/sitemap\.xml/.test(robots));
   ok('robots.txt allows crawling at all (positive control)', /^Allow:\s*\/$/m.test(robots));
   // Every page we submit must actually exist, or we are spending crawl budget on 404s.
   const siteDir = path.join(__dirname, '..', '..', 'astrowani-website');
