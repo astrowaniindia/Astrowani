@@ -37,6 +37,14 @@ const { SITE_BASE, postUrl } = require('./blogAgent/seo');
  * and the English sitemap is served exactly as before.
  */
 const WEBSITE_ROOT = path.resolve(__dirname, '../../astrowani-website');
+
+// The legal pages answer at their OLD WORDPRESS ADDRESSES (/privacy-policy/,
+// /term_conditions/ …), not at their file names — see
+// astrowani-website/aw/legal-paths.js, the one list everything reads. Listing the
+// .html name here would submit a URL that only 301s. If the website directory
+// cannot be read, every page keeps its file name, as before.
+let publicPath = (rel) => rel;
+try { ({ publicPath } = require(path.join(WEBSITE_ROOT, 'aw/legal-paths.js'))); } catch (_) { /* fails open */ }
 function hindiPages() {
   try {
     return new Set(fs.readdirSync(path.join(WEBSITE_ROOT, 'hi')).filter((f) => f.endsWith('.html')));
@@ -171,14 +179,14 @@ const STORY_SIGNS = ['aries', 'taurus', 'gemini', 'cancer', 'leo', 'virgo', 'lib
 function buildSitemap(posts, hindi = hindiPages(), profiles = [], blogStories = []) {
   const entries = [];
   for (const [page, priority, changefreq] of STATIC_PAGES) {
-    const enLoc = `${SITE_BASE}/${page}`;
+    const enLoc = `${SITE_BASE}/${page ? publicPath(page) : ''}`;
     // The home page is listed as '' but its Hindi counterpart is a real file.
     const file = page || 'index.html';
     if (!hindi.has(file)) {
       entries.push(urlEntry({ loc: enLoc, priority, changefreq }));
       continue;
     }
-    const hiLoc = `${SITE_BASE}/hi/${file}`;
+    const hiLoc = `${SITE_BASE}/${publicPath(`hi/${file}`)}`;
     const alts = altLinks(enLoc, hiLoc);
     entries.push(urlEntry({ loc: enLoc, priority, changefreq, alternates: alts }));
     // Same priority: it is the same page. A lower one would be a claim that the

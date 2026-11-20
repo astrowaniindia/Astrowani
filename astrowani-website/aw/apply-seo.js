@@ -39,12 +39,13 @@
  */
 
 const { fitTitle } = require('./seo-title');
+const { publicPath } = require('./legal-paths');
 const fs = require('fs');
 const path = require('path');
 
 // ---------------------------------------------------------------------------
 // CHANGE THIS ONE LINE AT LAUNCH, then re-run. No trailing slash.
-const SITE_BASE = 'https://shop.astrowani.com/test-site';
+const SITE_BASE = 'https://astrowani.com';
 // ---------------------------------------------------------------------------
 
 const SITE_NAME = 'Astrowani';
@@ -53,6 +54,19 @@ const THEME = '#592A19';
 const OG_DEFAULT = 'assets/og-default.jpg';
 
 const ROOT = path.join(__dirname, '..');
+
+/**
+ * The public URL of a page file. index.html is the bare directory; the legal
+ * pages answer at their old WordPress addresses (aw/legal-paths.js), which is
+ * what their canonical, og:url, hreflang and JSON-LD must name — a canonical
+ * pointing at /privacy-policy.html would tell Google the address the apps and
+ * the store consoles use is a duplicate.
+ */
+function pageUrl(rel) {
+  if (rel === 'index.html') return `${SITE_BASE}/`;
+  if (rel === 'hi/index.html') return `${SITE_BASE}/hi/`;
+  return `${SITE_BASE}/${publicPath(rel)}`;
+}
 
 /**
  * `desc` is the meta description. `noindex` keeps a page out of search while
@@ -314,7 +328,7 @@ function faqGraph(file, html) {
 
   return {
     '@type': 'FAQPage',
-    '@id': `${SITE_BASE}/${file === 'index.html' ? '' : file}#faq`,
+    '@id': `${pageUrl(file)}#faq`,
     mainEntity: usable.map(([q, a]) => ({
       '@type': 'Question',
       name: q,
@@ -374,7 +388,7 @@ function crumbGraph(file, html) {
 
   return {
     '@type': 'BreadcrumbList',
-    '@id': `${SITE_BASE}/${file}#breadcrumb`,
+    '@id': `${pageUrl(file)}#breadcrumb`,
     itemListElement: parts.map((p, i) => {
       const node = { '@type': 'ListItem', position: i + 1, name: p.name };
       if (p.href) {
@@ -430,14 +444,14 @@ function hindiDesc(html) {
 function block(file, cfg, html) {
   // index.html canonicalises to the bare directory, so / and /index.html agree
   // on one address rather than competing.
-  const url = file === 'index.html' ? `${SITE_BASE}/` : `${SITE_BASE}/${file}`;
+  const url = pageUrl(file);
   const isHindi = !!cfg.hindi;
   // The English counterpart of a Hindi page, and vice versa — but only when the
   // other one actually EXISTS. An hreflang pointing at a 404 is worse than no
   // hreflang: Google drops the whole annotation for the pair.
   const base = isHindi ? file.slice(3) : file;
-  const enUrl = base === 'index.html' ? `${SITE_BASE}/` : `${SITE_BASE}/${base}`;
-  const hiUrl = `${SITE_BASE}/hi/${base}`;
+  const enUrl = pageUrl(base);
+  const hiUrl = pageUrl(`hi/${base}`);
   const hasHi = fs.existsSync(path.join(ROOT, 'hi', base));
   const title = titleOf(html, cfg);
   // A Hindi page has no hand-written description: its English one was stripped
@@ -529,6 +543,24 @@ for (const [file, cfg] of Object.entries(PAGES)) {
     const want = `<title>${fitted.replace(/&/g, '&amp;')}</title>`;
     if (/<title[^>]*>[\s\S]*?<\/title>/i.test(html)) {
       html = html.replace(/<title[^>]*>[\s\S]*?<\/title>/i, want);
+    }
+  }
+
+  // The <base> for a page served at a folder-style address (aw/legal-paths.js).
+  // It must be the FIRST thing in <head>: a stylesheet link parsed before it
+  // would already have been resolved against the folder and fetched from the
+  // wrong place. Removed from every other page, which is also what stops
+  // make-hindi-pages.js copying an English page's "/" base into /hi/.
+  {
+    const rel = file;
+    // 404.html too: nginx shows it at whatever address was missing, at any depth.
+    const served = publicPath(rel) !== rel || rel.replace(/^hi\//, '') === '404.html';
+    const dir = new URL(SITE_BASE).pathname.replace(/\/+$/, '');
+    const want = served ? `<base href="${dir}/${rel.startsWith('hi/') ? 'hi/' : ''}" data-aw-base>` : '';
+    html = html.replace(/[ \t]*<base [^>]*data-aw-base>\r?\n?/i, '');
+    if (want) {
+      const nl = html.includes('\r\n') ? '\r\n' : '\n';
+      html = html.replace(/<head>\r?\n?/i, `<head>${nl}${want}${nl}`);
     }
   }
 

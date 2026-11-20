@@ -19,6 +19,7 @@
  * lists every profile. Positive controls precede the refusals.
  */
 const fs = require('fs');
+const { fileForPath } = require('../../astrowani-website/aw/legal-paths.js'); // legal pages are served at their old WordPress addresses
 const path = require('path');
 const http = require('http');
 const vm = require('vm');
@@ -133,8 +134,8 @@ function clientSlugFn() {
     ok(base === `${BASE}/` && page.indexOf('<base ') < page.search(/<link[^>]+stylesheet/), '<base> is the site root and precedes the stylesheets');
     const refs = [...page.matchAll(/\s(?:href|src)="([^"#][^"]*)"/g)].map((m) => m[1]).filter((u) => !/^(https?:|mailto:|tel:|data:|\/\/)/.test(u));
     const missing = refs.filter((u) => {
-      const rel = decodeURIComponent(new URL(u, base).pathname.slice(new URL(BASE).pathname.length + 1)) || 'index.html';
-      return !fs.existsSync(path.join(SITE, rel));
+      const rel = decodeURIComponent(new URL(u, base).pathname.slice((new URL(BASE).pathname === '/' ? 0 : new URL(BASE).pathname.length) + 1)) || 'index.html';
+      return !fs.existsSync(path.join(SITE, fileForPath(rel) || rel));
     });
     ok(refs.length > 10 && missing.length === 0, `every relative asset resolves (${refs.length})`, missing.slice(0, 4).join(','));
 

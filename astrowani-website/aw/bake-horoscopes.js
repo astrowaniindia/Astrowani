@@ -13,7 +13,7 @@
  * and keeps the Today/Tomorrow/Week buttons working.
  *
  * WHERE IT RUNS — the DEPLOYED copy, never the repo. It is pointed with --root at
- * /var/www/astrowani/shop/test-site by deploy-shop.yml (after every website
+ * /var/www/astrowani/site by deploy-shop.yml (after every website
  * deploy) and by daily-horoscope.yml (just after midnight IST). The repo keeps
  * empty BAKED markers, so git does not change every day.
  *

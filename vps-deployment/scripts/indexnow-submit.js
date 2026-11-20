@@ -26,6 +26,7 @@ const { execFileSync } = require('child_process');
 
 const REPO = path.resolve(__dirname, '../..');
 const SITE = path.join(REPO, 'astrowani-website');
+const { publicPath } = require(path.join(SITE, 'aw/legal-paths.js'));
 const args = process.argv.slice(2);
 const dry = args.includes('--dry-run');
 
@@ -42,7 +43,8 @@ function urlFor(rel) {
   if (/<meta name="robots" content="noindex/.test(fs.readFileSync(file, 'utf8'))) return null;
   if (rel === 'index.html') return `${siteBase}/`;
   if (rel === 'hi/index.html') return `${siteBase}/hi/`;
-  return `${siteBase}/${rel}`;
+  // The legal pages are announced at their old WordPress addresses.
+  return `${siteBase}/${publicPath(rel)}`;
 }
 
 let urls;

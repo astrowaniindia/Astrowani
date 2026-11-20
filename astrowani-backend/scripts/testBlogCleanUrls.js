@@ -24,6 +24,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { fileForPath } = require('../../astrowani-website/aw/legal-paths.js'); // legal pages are served at their old WordPress addresses
 const http = require('http');
 if (typeof globalThis.WebSocket === 'undefined') globalThis.WebSocket = require('ws');
 const express = require('express');
@@ -60,10 +61,10 @@ function relativeRefsResolve(html, label) {
   for (const r of refs) {
     const abs = new URL(r, base);
     if (!abs.href.startsWith(`${BASE}/`)) { bad.push(`${r} -> ${abs.href}`); continue; }
-    const rel = decodeURIComponent(abs.pathname.slice(new URL(BASE).pathname.length + 1)) || 'index.html';
+    const rel = decodeURIComponent(abs.pathname.slice((new URL(BASE).pathname === '/' ? 0 : new URL(BASE).pathname.length) + 1)) || 'index.html';
     // The two dynamic page families are served by the backend, not by a file.
     if (/^(hi\/)?blog\/[a-z0-9-]+$/.test(rel)) { checked++; continue; }
-    if (!fs.existsSync(path.join(SITE, rel))) bad.push(`${r} -> ${rel}`);
+    if (!fs.existsSync(path.join(SITE, fileForPath(rel) || rel))) bad.push(`${r} -> ${rel}`);
     checked++;
   }
   ok(checked > 10, `${label}: page has relative assets to check (${checked})`);
