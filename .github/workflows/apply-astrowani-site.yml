@@ -1,0 +1,94 @@
+# Put the website on astrowani.com (launch day, 2026-11-20). MANUAL ONLY.
+#
+#   install           copy the site files to /var/www/astrowani/site, write the
+#                     Cloudflare Origin Certificate, install the nginx site and the
+#                     old-WordPress-address map, `nginx -t`, reload. Restores the
+#                     previous config if the test fails. SAFE BEFORE THE DNS MOVES:
+#                     no visitor reaches this server for astrowani.com until the
+#                     @/www records in Cloudflare point at it.
+#   retire-test-site  301 shop.astrowani.com/test-site/* to astrowani.com/*.
+#                     Run only AFTER astrowani.com is serving the new site.
+#
+# Run it on the branch that carries the launch changes (Actions -> this workflow
+# -> "Use workflow from") so the files it installs are the launch versions, not
+# whatever main holds. The step order and the checks around it are in
+# MD files/Website-Launch-Runbook-2026-11-20.md — follow that, not this header.
+#
+# NOTE: GitHub only offers a workflow_dispatch workflow that exists on the
+# DEFAULT branch, so this file has to reach main before it can be run at all
+# (the runbook pushes it on its own first; on its own it changes nothing).
+
+name: Apply astrowani.com site (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'install | retire-test-site'
+        required: true
+        default: install
+        type: choice
+        options: [install, retire-test-site]
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare the site files (with today's horoscope baked in)
+        if: inputs.action == 'install'
+        run: |
+          set -e
+          mkdir -p /tmp/site
+          rsync -a --delete \
+            --exclude 'dev-server.js' \
+            --exclude 'concept-hero.html' \
+            --exclude 'aw/chat-image-selftest.html' \
+            --exclude 'aw/sync-chat-image-geometry.js' \
+            --exclude 'aw/test-analytics-scrub.mjs' \
+            astrowani-website/ /tmp/site/
+          node astrowani-website/aw/bake-horoscopes.js --root /tmp/site || echo "horoscope bake failed (pages still render by script)"
+          test -f /tmp/site/index.html
+          test -f /tmp/site/privacy-policy.html
+          echo "files: $(find /tmp/site -type f | wc -l)"
+
+      - name: Upload and apply
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          ORIGIN_CERT: ${{ secrets.ASTROWANI_ORIGIN_CERT }}
+          ORIGIN_KEY: ${{ secrets.ASTROWANI_ORIGIN_KEY }}
+          ACTION: ${{ inputs.action }}
+        run: |
+          set -e
+          mkdir -p ~/.ssh
+          echo "$VPS_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          SSH="ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i $HOME/.ssh/deploy_key"
+          TARGET="$VPS_USER@$VPS_HOST"
+
+          $SSH "$TARGET" 'rm -rf /tmp/aw-site && mkdir -p /tmp/aw-site && chmod 700 /tmp/aw-site'
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key \
+            vps-deployment/scripts/apply-astrowani-site.sh \
+            vps-deployment/nginx/astrowani-site.conf \
+            vps-deployment/nginx/wordpress-redirects.conf \
+            "$TARGET:/tmp/aw-site/"
+
+          if [ "$ACTION" = install ]; then
+            # The certificate is optional on a re-run (the server keeps the one
+            # already installed); the script refuses to continue without one.
+            if [ -n "$ORIGIN_CERT" ] && [ -n "$ORIGIN_KEY" ]; then
+              umask 077
+              printf '%s\n' "$ORIGIN_CERT" > /tmp/origin.pem
+              printf '%s\n' "$ORIGIN_KEY" > /tmp/origin.key
+              scp -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key /tmp/origin.pem /tmp/origin.key "$TARGET:/tmp/aw-site/"
+              rm -f /tmp/origin.pem /tmp/origin.key
+            fi
+            $SSH "$TARGET" 'mkdir -p /var/www/astrowani/site'
+            rsync -az --delete -e "$SSH" /tmp/site/ "$TARGET:/var/www/astrowani/site/"
+            $SSH "$TARGET" 'chown -R www-data:www-data /var/www/astrowani/site && bash /tmp/aw-site/apply-astrowani-site.sh install /tmp/aw-site; rc=$?; rm -rf /tmp/aw-site; exit $rc'
+          else
+            $SSH "$TARGET" 'bash /tmp/aw-site/apply-astrowani-site.sh retire-test-site; rc=$?; rm -rf /tmp/aw-site; exit $rc'
+          fi
