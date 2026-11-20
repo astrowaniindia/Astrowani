@@ -5604,3 +5604,35 @@ re-run alone). Approval reply checked on a real pending astrologer, read-only. *
 - **Injection.** A message matching `INJECTION` ("ignore previous instructions", "print your system prompt", "act as", `[INST]`, Hinglish "instructions bhool jao") is never sent to the model; the rules answer it. Anything that slips through still has to pass the money gate, the identity gate, and (for answers) the citation and grounding checks. A clarify must now end in a question.
 - **Offline answers (`offlineAnswer` / `loadBank`).** When the model returns nothing (keys drained, switched off, timed out), the bot repeats an answer it ALREADY gave for a close question: AI answers that passed the gate are stored with their trace in `support_messages`, and are matched by shared words both ways (≥2 words, ≥60% of the new message, ≥40% of the old question), same side, same language. **No model call and no new table.** Never money (those never got an AI answer), never from a conversation rated 1-2. Starts EMPTY in production (0 on 2026-11-18) because the AI layer is not deployed yet; it fills as the AI answers real people.
 - Verified: `scripts/supportAiCheck.js` 142/142 offline; removing the identity check gives 8 failures, removing the injection pre-check 1. Not run with `--live` for this change.
+
+---
+
+## Launched 2026-11-20: the website is on astrowani.com (EW)
+
+The new site moved from `shop.astrowani.com/test-site/` to **https://astrowani.com**. WordPress
+on Hostinger is no longer served (backup: `D:\Backups\wordpress-2026-11-14\`). Runbook and full
+record: [`MD files/Website-Launch-Runbook-2026-11-20.md`](MD%20files/Website-Launch-Runbook-2026-11-20.md).
+
+- **DNS:** `@` A -> 76.13.243.165 and `www` CNAME, both **proxied (orange)**. Email (MX, SPF,
+  DKIM, autoconfig/autodiscover, `_dmarc`) and `ftp` stay on Hostinger: never touch those rows.
+  Rollback = `@` back to 86.38.243.199, grey cloud.
+- **Server:** nginx site `vps-deployment/nginx/astrowani-site.conf` (repo copy IS the live file;
+  Certbot never edits it), root `/var/www/astrowani/site`, TLS = **Cloudflare Origin Certificate**
+  in `/etc/ssl/astrowani/` (valid to 2041; only Cloudflare trusts it, so the records must stay
+  orange). Installed/re-installed by the manual workflow **Apply astrowani.com site** (`install`),
+  which runs `nginx -t` and restores on failure. The cert and key are GitHub secrets
+  `ASTROWANI_ORIGIN_CERT` / `_KEY`; local copies in `D:\secrets\astrowani-origin.*`.
+- **THE LEGAL PAGES KEEP THEIR WORDPRESS ADDRESSES, served in place** (owner's decision):
+  `/privacy-policy/`, `/term_conditions/`, `/refund_cancellation/`, `/delete-account/`,
+  `/child-safety/`, `/safety-guidelines/`, `/report-vulnerability/` (+ `/hi/`). The apps and the
+  store consoles link there and must never need changing. One list: `astrowani-website/aw/legal-paths.js`.
+  Never link them by `.html` name (that form 301s); `aw/apply-legal-links.js` rewrites links.
+  Each carries `<base href="/">` (written by apply-seo) so its relative assets resolve.
+- **Old WordPress addresses** 301 via `wordpress-redirects.conf` (in `/etc/nginx/conf.d/`).
+  `node vps-deployment/scripts/check-wordpress-redirects.js --live` checked 139 addresses, all good.
+- `shop.astrowani.com/test-site/*` 301s to `astrowani.com/*` (one `if` line in the shop's live file).
+- `SITE_BASE` (aw/apply-seo.js) and the backend default (`src/blogAgent/seo.js`) are
+  `https://astrowani.com`. The 8 articles' absolute links were rewritten
+  (`sql/website_launch_blog_links.sql`, applied).
+- Deploys (`deploy-shop.yml`) and the nightly bake write to `/var/www/astrowani/site`.
+- Generator order now starts with `apply-legal-links.js`, then the EQ1 chain.
