@@ -18,7 +18,11 @@ client.interceptors.response.use(
     if (err.response?.status === 401) {
       localStorage.removeItem('admin_token');
       localStorage.removeItem('admin_user');
-      if (location.pathname !== '/admin/login') location.href = '/admin/login';
+      // manu.astrowani.com serves the admin at the root; the backend also mounts the
+      // same build under /admin. Send the user to the login page of whichever one
+      // they are on -- /admin/login at the root is a blank page (two path segments).
+      const login = location.pathname.startsWith('/admin/') ? '/admin/login' : '/login';
+      if (location.pathname !== login) location.href = login;
     }
     return Promise.reject(err);
   }
