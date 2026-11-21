@@ -49,14 +49,23 @@ const WORKSPACES = [
 
 const ALL_GROUPS = [
   {
+    // FIRST SECTION IN THE CONSOLE, and meant to stay there. Every Bird Eye is a screen
+    // that gets left open all day; everything below is somewhere you go to act on what a
+    // Bird Eye showed you. Shown in every workspace, like Executive Center. A new Bird
+    // Eye also goes in BIRD_EYE_SCREENS (components/birdEye/shared.jsx) for its tab.
+    id: 'birdeye',
+    workspace: 'overview',
+    title: 'Bird Eye',
+    items: [
+      { to: '/bird-eye', label: 'Platform', badge: 'Live', end: true },
+      { to: '/bird-eye-free-call', label: 'Free Call Consultation', badge: 'Live' },
+    ],
+  },
+  {
     id: 'overview',
     workspace: 'overview',
     title: 'Executive Center',
     items: [
-      // FIRST ITEM IN THE CONSOLE, and meant to stay there. Bird Eye is the screen that
-      // gets left open all day; everything below it is something you go to in order to
-      // act on what Bird Eye showed you.
-      { to: '/bird-eye', label: 'Bird Eye', badge: 'Live' },
       // Pinned ABOVE Dashboard on purpose (owner, 2026-10-17): this flow is the one
       // being watched day to day while it beds in. Move it down the list once it is
       // no longer the newest thing on the app.
@@ -174,7 +183,7 @@ export default function Layout() {
     }
 
     if (activeWorkspace !== 'all') {
-      groups = groups.filter((g) => g.workspace === activeWorkspace || g.id === 'overview');
+      groups = groups.filter((g) => g.workspace === activeWorkspace || g.id === 'overview' || g.id === 'birdeye');
     }
 
     return groups;

@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
 } from 'recharts';
-import client from '../api/client';
+import {
+  money, num, compactMoney, useLivePoll, Delta, Tile, PANEL, PANEL_TITLE, chartTooltip,
+  useBirdEyeBody, BirdEyeStyles, BirdEyeHeader,
+} from '../components/birdEye/shared';
 
 /**
  * BIRD EYE — the whole platform on ONE SCREEN. No scrolling. Ever.
@@ -41,160 +44,6 @@ const TREND_MS = 120_000;
 // points answers "how has the month gone", which is Analytics' question and reads as a
 // contradiction sitting under twelve tiles that all say "today".
 
-const money = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
-const num = (n) => Number(n || 0).toLocaleString('en-IN');
-const compactMoney = (n) => {
-  const v = Number(n || 0);
-  if (v >= 100000) return `₹${(v / 100000).toFixed(1)}L`;
-  if (v >= 1000) return `₹${(v / 1000).toFixed(1)}k`;
-  return `₹${v}`;
-};
-
-/**
- * A live poller that pauses itself when the tab is hidden and re-fetches on focus.
- *
- * `error` deliberately does not clear the previous data: one failed poll must not blank
- * a working tile on a screen somebody is watching. The band keeps its last good numbers
- * and is dimmed instead.
- */
-function useLivePoll(path, intervalMs, { paused = false, params } = {}) {
-  const [data, setData] = useState(null);
-  const [error, setError] = useState('');
-  const [at, setAt] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const paramsRef = useRef(params);
-  paramsRef.current = params;
-
-  const load = useCallback(async () => {
-    try {
-      const res = await client.get(path, { params: paramsRef.current });
-      if (res.data?.success) {
-        setData(res.data);
-        setError('');
-        setAt(Date.now());
-      } else {
-        setError(res.data?.message || 'Could not load.');
-      }
-    } catch (e) {
-      setError(e?.response?.data?.message || 'Could not reach the server.');
-    } finally {
-      setLoading(false);
-    }
-  }, [path]);
-
-  useEffect(() => {
-    if (paused) return undefined;
-    const tick = () => { if (document.visibilityState === 'visible') load(); };
-    tick();
-    const timer = setInterval(tick, intervalMs);
-    const onVisible = () => { if (document.visibilityState === 'visible') load(); };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => {
-      clearInterval(timer);
-      document.removeEventListener('visibilitychange', onVisible);
-    };
-  }, [load, intervalMs, paused]);
-
-  return { data, error, at, loading, reload: load };
-}
-
-/**
- * The seconds counter, as its own component.
- *
- * It ticks every second, and as a hook in the page it re-rendered everything once a
- * second — including both charts, which makes the lines twitch on a screen meant to be
- * watched for hours. Isolated, the second hand costs one text node.
- */
-function Ago({ at }) {
-  const [, force] = useState(0);
-  useEffect(() => {
-    const t = setInterval(() => force((n) => n + 1), 1000);
-    return () => clearInterval(t);
-  }, []);
-  if (!at) return '—';
-  const secs = Math.max(0, Math.round((Date.now() - at) / 1000));
-  return secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m`;
-}
-
-/**
- * Today against the same elapsed slice of yesterday, as a chip.
- *
- * Compressed to a chip on purpose — the long sentence this used to print ("vs 754 by now
- * yesterday") is good writing and bad dashboard: twelve of them is a wall of prose. The
- * baseline moves into the tooltip, where it is there when wanted and silent otherwise.
- *
- * Yesterday at zero is NOT a percentage: "+100%" off a base of nothing reads as a
- * doubling of something real.
- */
-function Delta({ now, before, format = num }) {
-  const a = Number(now || 0);
-  const b = Number(before || 0);
-  if (!a && !b) return null;
-  if (!b) {
-    return <span style={chipStyle('var(--emerald)')} title="Nothing by this time yesterday">new</span>;
-  }
-  const pct = Math.round(((a - b) / b) * 100);
-  const title = `${format(b)} by this time yesterday`;
-  if (pct === 0) return <span style={chipStyle('var(--text-light)')} title={title}>level</span>;
-  const up = pct > 0;
-  return (
-    <span style={chipStyle(up ? 'var(--emerald)' : 'var(--crimson)')} title={title}>
-      {up ? '▲' : '▼'}{Math.abs(pct)}%
-    </span>
-  );
-}
-
-const chipStyle = (colour) => ({
-  color: colour,
-  fontSize: 10.5,
-  fontWeight: 800,
-  lineHeight: 1,
-  whiteSpace: 'nowrap',
-});
-
-/** One fixed-height tile. Three lines, never four — four is how a band starts growing. */
-function Tile({ label, value, sub, subColour, accent, delta }) {
-  return (
-    <div style={{
-      background: 'var(--surface)',
-      border: '1px solid var(--border)',
-      borderLeft: `3px solid ${accent || 'var(--border-dark)'}`,
-      borderRadius: 10,
-      padding: '7px 10px',
-      display: 'flex',
-      flexDirection: 'column',
-      // flex-start, NOT center. Centring inside a fixed height clips BOTH ends the
-      // moment the content is a pixel too tall, which ate the top of every label.
-      justifyContent: 'flex-start',
-      gap: 1,
-      minWidth: 0,
-      overflow: 'hidden',
-    }}>
-      <div style={{
-        fontSize: 9.5, fontWeight: 800, letterSpacing: 0.4, textTransform: 'uppercase',
-        color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-      }}>
-        {label}
-      </div>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0 }}>
-        <span style={{
-          fontSize: 21, fontWeight: 800, lineHeight: 1.15, color: 'var(--text-primary)',
-          fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
-        }}>
-          {value}
-        </span>
-        {delta}
-      </div>
-      <div style={{
-        fontSize: 10, color: subColour || 'var(--text-light)', whiteSpace: 'nowrap',
-        overflow: 'hidden', textOverflow: 'ellipsis', minHeight: 12,
-      }}>
-        {sub || ''}
-      </div>
-    </div>
-  );
-}
-
 /** The six sign-up-flow lines. Two start off: they sit on top of a neighbour. */
 const SIGNUP_SERIES = [
   { key: 'shown', label: 'Gift shown', colour: '#9aa5b1', on: true },
@@ -222,33 +71,11 @@ const QUEUE_SHORT = {
   orders: 'Orders',
 };
 
-const PANEL = {
-  background: 'var(--surface)',
-  border: '1px solid var(--border)',
-  borderRadius: 10,
-  padding: '8px 10px 4px',
-  display: 'flex',
-  flexDirection: 'column',
-  minWidth: 0,
-  minHeight: 0,
-};
-
-const PANEL_TITLE = {
-  fontSize: 10, fontWeight: 800, letterSpacing: 0.5, textTransform: 'uppercase',
-  color: 'var(--text-muted)', margin: 0,
-};
-
 export default function BirdEye() {
   const [paused, setPaused] = useState(false);
   const [series, setSeries] = useState(() => new Set(SIGNUP_SERIES.filter((s) => s.on).map((s) => s.key)));
 
-  // Neutralise the shell's padding so the grid below can fill the viewport exactly, and
-  // put it back on unmount. Done from here rather than in styles.css so no other page is
-  // touched and nothing is left behind if this screen is removed.
-  useEffect(() => {
-    document.body.classList.add('bird-eye-screen');
-    return () => document.body.classList.remove('bird-eye-screen');
-  }, []);
+  useBirdEyeBody();
 
   const pulse = useLivePoll('/api/admin/bird-eye/pulse', PULSE_MS, { paused });
   const today = useLivePoll('/api/admin/bird-eye/today', TODAY_MS, { paused });
@@ -286,29 +113,9 @@ export default function BirdEye() {
 
   const refreshAll = () => { pulse.reload(); today.reload(); trends.reload(); signup.reload(); };
 
-  const chartTooltip = {
-    contentStyle: {
-      background: 'var(--surface)', border: '1px solid var(--border)',
-      borderRadius: 8, fontSize: 11, padding: '6px 8px',
-    },
-    labelStyle: { fontSize: 11, fontWeight: 700 },
-  };
-
   return (
     <>
-      <style>{`
-        /* Only while Bird Eye is on screen. */
-        body.bird-eye-screen .main-content { padding: 0; height: calc(100vh - 64px); overflow: hidden; }
-        body.bird-eye-screen .content-wrap { overflow: hidden; }
-        /* The escape hatch, set deliberately low. Below this the charts would be a few
-           pixels tall and the screen would be unreadable rather than merely tight — at
-           which point scrolling is the lesser evil. On any real monitor it never fires. */
-        @media (max-height: 620px) {
-          body.bird-eye-screen .main-content { height: auto; overflow: visible; }
-          body.bird-eye-screen .content-wrap { overflow-y: auto; }
-          .bird-eye-grid { height: auto !important; min-height: 620px; }
-        }
-      `}</style>
+      <BirdEyeStyles />
 
       <div
         className="bird-eye-grid"
@@ -324,34 +131,14 @@ export default function BirdEye() {
         }}
       >
         {/* ── Header ───────────────────────────────────────────────────────── */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-          <span style={{ fontSize: 15 }}>🦅</span>
-          <h1 style={{ margin: 0, fontSize: 16, fontWeight: 800, letterSpacing: -0.2, whiteSpace: 'nowrap' }}>
-            Bird Eye
-          </h1>
-          <span style={{ fontSize: 11, color: 'var(--text-light)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            Today so far, against the same hours yesterday
-          </span>
-          <div style={{ flex: 1 }} />
-          <span style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700,
-            color: paused ? 'var(--amber)' : 'var(--emerald)',
-            background: paused ? 'var(--amber-bg)' : 'var(--emerald-bg)',
-            border: `1px solid ${paused ? 'var(--amber-border)' : 'var(--emerald-border)'}`,
-            borderRadius: 20, padding: '3px 10px', whiteSpace: 'nowrap',
-          }}>
-            <span style={{
-              width: 7, height: 7, borderRadius: '50%',
-              background: paused ? 'var(--amber)' : 'var(--emerald)',
-              animation: paused ? 'none' : 'pulse 2s infinite',
-            }} />
-            {paused ? 'Paused' : <>Live · <Ago at={pulse.at} /></>}
-          </span>
-          <button type="button" className="btn secondary sm" style={{ padding: '3px 10px', fontSize: 11 }} onClick={() => setPaused((p) => !p)}>
-            {paused ? '▶' : '⏸'}
-          </button>
-          <button type="button" className="btn sm" style={{ padding: '3px 10px', fontSize: 11 }} onClick={refreshAll}>↻</button>
-        </div>
+        <BirdEyeHeader
+          title="Bird Eye"
+          subtitle="Today so far, against the same hours yesterday"
+          paused={paused}
+          onTogglePause={() => setPaused((p) => !p)}
+          onRefresh={refreshAll}
+          at={pulse.at}
+        />
 
         {/* ── Twelve tiles: four live, eight for today ──────────────────────── */}
         <div style={{

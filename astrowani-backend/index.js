@@ -1127,6 +1127,9 @@ require('./src/newSignupFlowRoutes')(app);
 // postHogRoutes' ENV_FILTER/runHogQL for its signup line chart and newSignupFlowRoutes'
 // LAUNCHED_ON, so it registers after both.
 require('./src/birdEyeRoutes')(app);
+// Bird Eye for the free intro call (/api/admin/bird-eye/free-call/*) — same three-rate
+// polling shape, database only. Reads freeCallRoutes.loadOffer lazily per request.
+require('./src/birdEyeFreeCallRoutes')(app);
 // The whole customer journey in one ordered list (journeyCatalogue.js), one query.
 require('./src/journeyRoutes')(app);
 require('./src/sentryRoutes')(app);

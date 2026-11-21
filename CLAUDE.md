@@ -5636,3 +5636,29 @@ record: [`MD files/Website-Launch-Runbook-2026-11-20.md`](MD%20files/Website-Lau
   (`sql/website_launch_blog_links.sql`, applied).
 - Deploys (`deploy-shop.yml`) and the nightly bake write to `/var/www/astrowani/site`.
 - Generator order now starts with `apply-legal-links.js`, then the EQ1 chain.
+
+---
+
+## Session 2026-11-21: Bird Eye is now its own sidebar section, with a Free Call screen
+
+- Sidebar group **"Bird Eye"** (first, shown in every workspace): **Platform** (`/bird-eye`,
+  the original screen) and **Free Call Consultation** (`/bird-eye-free-call`, new). Each
+  screen's header has tabs to switch between them (`BIRD_EYE_SCREENS` in
+  `astrowani-admin/src/components/birdEye/shared.jsx`, which now holds the shared poller,
+  tiles, delta chip, panel and header). **Routes stay ONE path segment** (vite `base: './'`
+  — `/bird-eye/free-call` would be a blank page on reload).
+- Backend: `src/birdEyeFreeCallRoutes.js` → `GET /api/admin/bird-eye/free-call/{pulse,today,trends}`
+  (10s / 30s / 2min). Database only: instant calls from `free_call_attempts`, scheduled from
+  `free_call_bookings` (kind `scheduled`, keyed on `slot_start`), Shagun from
+  `dakshina_payments`, offer + pool from `freeCallRoutes.loadOffer()` (required lazily).
+  IST days, today vs the same elapsed hours of yesterday, excluded customers dropped.
+  Talk-time buckets are built from the live offer's duration + first payout milestone.
+- Screen: 12 tiles (offer, pool free, ringing, on call, scheduled, signups→rang; rings,
+  picked-up %, real calls, talk minutes, went-paid-after, Shagun vs payout), a LINE chart
+  (today by hour + yesterday's rings dashed), two BAR charts (how rings ended, how long they
+  talked; today vs yesterday), and a per-astrologer answer-rate strip.
+- Verified 2026-11-21 on a bare Express harness against live data (index.js never booted):
+  all 3 endpoints 200, and both screens rendered in the browser with no console errors.
+  **Gotcha:** local `.env` has `FREE_CALL_LOCAL_TEST=true`, which forces the offer ON in
+  memory for any local process that loads freeCallRoutes — run harnesses with
+  `FREE_CALL_LOCAL_TEST=false` or the Offer tile reads the fake value.
