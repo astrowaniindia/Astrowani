@@ -89,7 +89,11 @@ function classifySource({ utm, domain, adClick }) {
 function normalizePageKey(k) {
   const v = String(k || 'unknown').toLowerCase();
   if (v.startsWith('/')) {
-    const p = v.replace(/^\/hi(?=\/|$)/, '') || '/';
+    // Before the 2026-11-20 launch the same website was served under /test-site/.
+    // Those visits count as the page they were on: /test-site/consult.html is consult.
+    const p = v.replace(/^\/test-site(?=\/|$)/, '').replace(/^\/hi(?=\/|$)/, '') || '/';
+    // Files that are not pages (sitemap.xml, robots.txt) are not in the page list.
+    if (/\.(xml|txt|json|js|css)$/.test(p)) return 'unknown';
     if (p === '/' || p === '/index.html') return 'home';
     if (/^\/blog\/./.test(p) || p === '/blog-post.html') return 'blog_article';
     if (/^\/astrologers\/./.test(p)) return 'astrologer_profile';
@@ -336,17 +340,21 @@ module.exports = function registerWebsiteAnalyticsRoutes(app) {
     const scope = `properties.app = 'website' AND ${ENV_FILTER} AND ${dateWhere}`;
     // Pageviews from before device_class existed fall back to PostHog's own guess.
     const DEVICE = "coalesce(nullIf(properties.device_class, ''), if(properties.$device_type = 'Desktop', 'desktop', 'mobile'))";
-    // Events from before page_key existed are matched by their exact address on
-    // astrowani.com (the same rules as normalizePageKey), so traffic from the
-    // pre-launch preview at /test-site/ is not counted as this page. `page` is
-    // validated to [a-z0-9_] above and guessPath only builds from it.
+    // Events from before page_key existed are matched by their address (the same
+    // rules as normalizePageKey), including the pre-launch /test-site/ copy of
+    // the same page. `page` is validated to [a-z0-9_] above and guessPath only
+    // builds from it.
+    const PFX = ['', '/hi', '/test-site', '/test-site/hi'];
+    const like = (tail) => `(${PFX.map((x) => `properties.$pathname LIKE '${x}${tail}'`).join(' OR ')})`;
     let legacyWhere;
-    if (page === 'blog_article') legacyWhere = "(properties.$pathname LIKE '/blog/%' OR properties.$pathname LIKE '/hi/blog/%')";
-    else if (page === 'astrologer_profile') legacyWhere = "properties.$pathname LIKE '/astrologers/%'";
-    else if (page === 'story') legacyWhere = "(properties.$pathname LIKE '/stories/%' OR properties.$pathname LIKE '/hi/stories/%')";
+    if (page === 'blog_article') legacyWhere = `(${like('/blog/%')} OR ${like('/blog-post.html')})`;
+    else if (page === 'astrologer_profile') legacyWhere = like('/astrologers/%');
+    else if (page === 'story') legacyWhere = like('/stories/%');
     else {
       const p = guessPath(page);
-      const list = page === 'home' ? ['/', '/index.html', '/hi/', '/hi/index.html'] : [p, `/hi${p}`];
+      const base = page === 'home' ? ['/', '/index.html'] : [p, p.replace(/\.html$/, '')];
+      const list = [...new Set(PFX.flatMap((x) => base.map((b) => (x && b === '/' ? `${x}/` : `${x}${b}`))))];
+      if (page === 'home') list.push('/test-site', '/hi');
       legacyWhere = `properties.$pathname IN (${list.map((x) => `'${x}'`).join(', ')})`;
     }
     const onPage = `(properties.page_key = '${page}' OR (properties.page_key IS NULL AND ${legacyWhere}))`;
@@ -368,8 +376,8 @@ module.exports = function registerWebsiteAnalyticsRoutes(app) {
           FROM events WHERE event = 'web_scroll' AND ${onPage} AND ${scope}
           GROUP BY d, depth`),
         runHogQL(`
-          SELECT properties.page_path AS p, count()
-          FROM events WHERE event = '$pageview' AND ${onPage} AND ${scope} AND properties.page_path IS NOT NULL
+          SELECT coalesce(nullIf(properties.page_path, ''), replaceRegexpOne(properties.$pathname, '^/test-site', '')) AS p, count()
+          FROM events WHERE event = '$pageview' AND ${onPage} AND ${scope} AND p != '' AND p NOT LIKE '%blog-post.html'
           GROUP BY p ORDER BY count() DESC LIMIT 5`),
         // Where this page's visitors came from to the website, per layout. Same
         // source fields and grouping as the Website Analytics page; counted in
