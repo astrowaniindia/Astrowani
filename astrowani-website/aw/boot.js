@@ -13,14 +13,14 @@
  * and the nav still works. That is why boot never throws past this file.
  */
 
-import { wireAccountUi } from './account.js?v=72';
-import { wireActionButtons } from './consult.js?v=72';
-import { start as startRoster } from './astrologers.js?v=72';
-import { isSignedIn } from './session.js?v=72';
-import { fetchBalance } from './wallet.js?v=72';
-import { showResumeBar } from './resume.js?v=72';
-import { toast } from './ui.js?v=72';
-import { initAnalytics } from './analytics.js?v=72';
+import { wireAccountUi } from './account.js?v=73';
+import { wireActionButtons } from './consult.js?v=73';
+import { start as startRoster } from './astrologers.js?v=73';
+import { isSignedIn } from './session.js?v=73';
+import { fetchBalance } from './wallet.js?v=73';
+import { showResumeBar } from './resume.js?v=73';
+import { toast } from './ui.js?v=73';
+import { initAnalytics } from './analytics.js?v=73';
 
 let started = null;
 
@@ -32,7 +32,7 @@ export function bootScreen() {
       initAnalytics();
       // Admin click map (Website Analytics -> Click map) frames real pages with
       // ?aw_heatmap=1; only then is the overlay code fetched at all.
-      if (/[?&]aw_heatmap=/.test(location.search)) import('./heatmap-view.js?v=72').catch(() => {});
+      if (/[?&]aw_heatmap=/.test(location.search)) import('./heatmap-view.js?v=73').catch(() => {});
       wireAccountUi();
       wireActionButtons();
       flushFlash();
