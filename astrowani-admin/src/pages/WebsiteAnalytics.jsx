@@ -137,7 +137,7 @@ export default function WebsiteAnalytics() {
           <p>Everything that happens on astrowani.com: who visits, where they come from, what they read and click, and how many go on to install the app. Separate from the app numbers.</p>
         </div>
         <div className="wa-range">
-          <Link to="/website-analytics/heatmap" className="wa-heatmap-btn">Open click map →</Link>
+          <Link to="/website-heatmap" className="wa-heatmap-btn">Open click map →</Link>
           {RANGES.map((r) => (
             <button key={r.days} className={r.days === days ? 'active' : ''} onClick={() => setDays(r.days)}>{r.label}</button>
           ))}

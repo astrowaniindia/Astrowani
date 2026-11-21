@@ -103,7 +103,7 @@ export default function App() {
         <Route path="security" element={<Security />} />
         <Route path="acquisition" element={<Acquisition />} />
         <Route path="website-analytics" element={<WebsiteAnalytics />} />
-        <Route path="website-analytics/heatmap" element={<WebsiteHeatmap />} />
+        <Route path="website-heatmap" element={<WebsiteHeatmap />} />
         <Route path="audience" element={<Audience />} />
       </Route>
     </Routes>
