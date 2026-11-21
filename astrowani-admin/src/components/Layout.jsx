@@ -59,6 +59,7 @@ const ALL_GROUPS = [
     items: [
       { to: '/bird-eye', label: 'Platform', badge: 'Live', end: true },
       { to: '/bird-eye-free-call', label: 'Free Call Consultation', badge: 'Live' },
+      { to: '/bird-eye-free-chat', label: 'Free Chat', badge: 'Live' },
     ],
   },
   {

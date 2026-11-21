@@ -5662,3 +5662,11 @@ record: [`MD files/Website-Launch-Runbook-2026-11-20.md`](MD%20files/Website-Lau
   **Gotcha:** local `.env` has `FREE_CALL_LOCAL_TEST=true`, which forces the offer ON in
   memory for any local process that loads freeCallRoutes — run harnesses with
   `FREE_CALL_LOCAL_TEST=false` or the Offer tile reads the fake value.
+- **Free Chat Bird Eye added the same day** (`/bird-eye-free-chat`, third tab/sidebar item).
+  Backend `src/birdEyeFreeChatRoutes.js` → `/api/admin/bird-eye/free-chat/{pulse,today,trends,funnel}`.
+  "Opened" = `customers.free_bot_chat_credited_at` (stamped when the chat screen mounts;
+  offerGuard also stamps it for re-registered numbers, slightly overstating it). Transcripts
+  (`free_bot_chat_messages`) are re-posted after every message, so "chatting now" = a message
+  in the last 3 min — but `created_at` is the PHONE clock. AI replies/fallbacks/per-model come
+  from `freeChatAi.liveStatus()` (in-memory: reset at IST midnight and on restart). The
+  funnel panel is PostHog (people, today vs same minutes yesterday) and fails alone.

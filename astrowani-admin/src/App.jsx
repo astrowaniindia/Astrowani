@@ -37,6 +37,7 @@ import Leaderboard from './pages/Leaderboard';
 import Analytics from './pages/Analytics';
 import BirdEye from './pages/BirdEye';
 import BirdEyeFreeCall from './pages/BirdEyeFreeCall';
+import BirdEyeFreeChat from './pages/BirdEyeFreeChat';
 import Support from './pages/Support';
 import SupportInbox from './pages/SupportInbox';
 import FreeBotChat from './pages/FreeBotChat';
@@ -58,6 +59,7 @@ export default function App() {
         <Route index element={<Dashboard />} />
         <Route path="bird-eye" element={<BirdEye />} />
         <Route path="bird-eye-free-call" element={<BirdEyeFreeCall />} />
+        <Route path="bird-eye-free-chat" element={<BirdEyeFreeChat />} />
         <Route path="analytics" element={<Analytics />} />
         <Route path="blogs" element={<Blogs />} />
         <Route path="banners" element={<Banners />} />

@@ -1130,6 +1130,8 @@ require('./src/birdEyeRoutes')(app);
 // Bird Eye for the free intro call (/api/admin/bird-eye/free-call/*) — same three-rate
 // polling shape, database only. Reads freeCallRoutes.loadOffer lazily per request.
 require('./src/birdEyeFreeCallRoutes')(app);
+// Bird Eye for the free 5-minute AI chat (/api/admin/bird-eye/free-chat/*).
+require('./src/birdEyeFreeChatRoutes')(app);
 // The whole customer journey in one ordered list (journeyCatalogue.js), one query.
 require('./src/journeyRoutes')(app);
 require('./src/sentryRoutes')(app);

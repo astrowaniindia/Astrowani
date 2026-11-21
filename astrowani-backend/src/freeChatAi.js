@@ -796,3 +796,29 @@ module.exports = function registerFreeChatAiRoutes(app) {
     return res.json({ success: true, models: found });
   }));
 };
+
+/**
+ * Read-only snapshot of today's in-memory AI counters, for the free-chat Bird Eye
+ * (src/birdEyeFreeChatRoutes.js). Same numbers GET /api/admin/free-bot-chat/ai reports,
+ * without the config. Per process and reset at IST midnight / on restart — production
+ * runs one pm2 fork, so this is the whole picture there.
+ */
+module.exports.liveStatus = function liveStatus() {
+  const s = stats();
+  const blocks = [];
+  for (const [model] of state.modelBlocks) {
+    if (isBlocked(model)) {
+      const b = state.modelBlocks.get(model);
+      blocks.push({ model, reason: b.reason, until: new Date(b.until).toISOString() });
+    }
+  }
+  return {
+    day: state.statsDay,
+    aiReplies: s.aiReplies,
+    fallbacks: { ...s.fallbacks },
+    byModel: JSON.parse(JSON.stringify(s.byModel)),
+    modelBlocks: blocks,
+    lastError: state.lastError ? { at: state.lastError.at, reason: state.lastError.reason } : null,
+  };
+};
+module.exports.loadConfig = loadConfig;

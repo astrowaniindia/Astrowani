@@ -16,6 +16,7 @@ import client from '../../api/client';
 export const BIRD_EYE_SCREENS = [
   { to: '/bird-eye', label: 'Platform', end: true },
   { to: '/bird-eye-free-call', label: 'Free Call' },
+  { to: '/bird-eye-free-chat', label: 'Free Chat' },
 ];
 
 export const money = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
