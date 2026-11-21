@@ -26,6 +26,72 @@ function astroProfileHref(a) {
   return `${document.documentElement.lang === 'hi' ? '../' : ''}astrologers/${astroProfileSlug(a)}`;
 }
 
+// ---------- tag every Play Store link with where on the website it was tapped ----------
+// The Play Store keeps the `referrer` parameter through the install, the app reads
+// it at signup (Play Install Referrer) and the backend stores its utm_source in
+// customers.acquisition_source. So `web_<page>` is how an app signup gets traced
+// back to the website, and to the page that sent it — Admin -> Acquisition.
+// Rules that matter (astrowani-backend/src/acquisition.js):
+//   - every website source starts with `web_` — that prefix IS the channel;
+//   - only [a-z0-9_-] survive the backend's normaliser, so the page key uses
+//     nothing else, and article/profile/story pages collapse to one key each
+//     rather than one per slug.
+// Android only: iOS has no install referrer, so iPhone installs stay "unknown".
+function awWebPageKey() {
+  let p = (location.pathname || '/').toLowerCase();
+  const hi = /^\/hi(\/|$)/.test(p);
+  if (hi) p = p.replace(/^\/hi/, '') || '/';
+  let key;
+  if (p === '/' || p === '/index.html') key = 'home';
+  else if (/^\/blog\/./.test(p) || p === '/blog-post.html') key = 'blog_article';
+  else if (/^\/astrologers\/./.test(p)) key = 'astrologer_profile';
+  else if (/^\/stories\/./.test(p)) key = 'story';
+  else key = p.replace(/\.html$/, '').replace(/^\/+|\/+$/g, '').replace(/[^a-z0-9]+/g, '_');
+  key = (key || 'home').slice(0, 40).replace(/_+$/, '') || 'home';
+  return `web_${hi ? 'hi_' : ''}${key}`;
+}
+function awTagPlayLink(a) {
+  try {
+    if (!a || !a.href || !/^https:\/\/play\.google\.com\/store\/apps\/details/.test(a.href)) return;
+    const u = new URL(a.href);
+    if (u.searchParams.get('id') !== 'com.astrowanicustomer') return;
+    const want = `utm_source=${awWebPageKey()}&utm_medium=website&utm_campaign=site`;
+    if (u.searchParams.get('referrer') === want) return;
+    u.searchParams.set('referrer', want);
+    a.href = u.toString();
+  } catch (_) { /* a link we cannot parse keeps working untagged */ }
+}
+function awTagAllPlayLinks(root) {
+  (root || document).querySelectorAll('a[href*="play.google.com/store/apps/details"]').forEach(awTagPlayLink);
+}
+// At load for the static links (so long-press / copy-link carry the tag too), and
+// again at the moment of the tap for links rendered later by script.
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => awTagAllPlayLinks());
+else awTagAllPlayLinks();
+['pointerdown', 'click', 'auxclick', 'contextmenu'].forEach((type) => {
+  document.addEventListener(type, (e) => {
+    const a = e.target.closest && e.target.closest('a[href*="play.google.com"]');
+    if (a) awTagPlayLink(a);
+  }, true);
+});
+
+// The whole astrologer card opens the profile, not only the photo and the name:
+// people tap the empty space, the specialties or the rating and expected it to go
+// somewhere (reported 2026-11-21). Delegated, because the cards are rendered and
+// re-rendered by script. The action row (Chat / Call buttons and their "off"
+// labels) and any real link or button keep their own behaviour; a text selection
+// is left alone; Ctrl/Cmd/middle click opens a new tab like a link would.
+document.addEventListener('click', (e) => {
+  const card = e.target.closest && e.target.closest('.astro-card');
+  if (!card) return;
+  if (e.target.closest('a, button, input, select, textarea, label, .astro-actions, [data-aw-action]')) return;
+  const link = card.querySelector('a.astro-name[href]');
+  if (!link) return;
+  if (String(window.getSelection && window.getSelection()).trim()) return;
+  if (e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1) { window.open(link.href, '_blank', 'noopener'); return; }
+  window.location.href = link.href;
+});
+
 // ---------- shared astrologer card renderer (real data, used on every page) ----------
 const ASTROWANI_APP_LINK = 'https://play.google.com/store/apps/details?id=com.astrowanicustomer&hl=en_IN';
 const ASTROWANI_STAR_SVG = '<svg width="15" height="15" viewBox="0 0 24 24" fill="var(--gold-deep)"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.7 7-6.3-3.9-6.3 3.9 1.7-7L2 9.2l7.1-.6z"/></svg>';

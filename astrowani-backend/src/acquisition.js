@@ -31,6 +31,10 @@
 //     campaign with no migration and no new column.
 const QR_PREFIX = 'qr_';
 
+// Every "Get the app" link on astrowani.com carries utm_source=web_<page>
+// (astrowani-website/script.js, awWebPageKey). Like `qr_`, the prefix IS the channel.
+const WEB_PREFIX = 'web_';
+
 // Marks a paid Google Ads install. `google_ads_<campaignId>` when the campaign id is
 // present, bare `google_ads` when only a click id came through.
 const GOOGLE_ADS_PREFIX = 'google_ads';
@@ -149,6 +153,9 @@ function resolveFromRequest({ acquisitionSource, acquisitionRaw } = {}) {
   };
 }
 
+/** True for an install that started from a Play Store link on astrowani.com. */
+const isWebSource = (source) => typeof source === 'string' && source.startsWith(WEB_PREFIX);
+
 /** True for one of our offline QR posters. */
 const isQrSource = (source) => typeof source === 'string' && source.startsWith(QR_PREFIX);
 
@@ -162,6 +169,7 @@ const isQrSource = (source) => typeof source === 'string' && source.startsWith(Q
 function channelOf(source) {
   if (!source) return 'unknown';
   if (isQrSource(source)) return 'qr';
+  if (isWebSource(source)) return 'web';
   // Both paid and organic Google traffic bucket to 'google': `google_ads_<id>` from a
   // paid click (see GOOGLE_ADS_PREFIX above) and `google-play` from organic Play
   // browsing. The prefix test covers both, which is why the paid label was chosen to
@@ -172,6 +180,7 @@ function channelOf(source) {
 
 module.exports = {
   QR_PREFIX,
+  WEB_PREFIX,
   GOOGLE_ADS_PREFIX,
   MAX_SOURCE_LEN,
   MAX_RAW_LEN,
@@ -179,6 +188,7 @@ module.exports = {
   parseReferrer,
   resolveFromRequest,
   isQrSource,
+  isWebSource,
   isGoogleAdsSource,
   campaignIdOf,
   channelOf,

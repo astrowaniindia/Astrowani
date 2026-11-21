@@ -28,7 +28,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const { requireAdmin } = require('./adminRoutes');
 const { pagedSelect, chunkIds } = require('./pagedSelect');
-const { channelOf, campaignIdOf, isQrSource } = require('./acquisition');
+const { channelOf, campaignIdOf, isQrSource, isWebSource, WEB_PREFIX } = require('./acquisition');
 
 const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
@@ -145,7 +145,7 @@ function decorate(source, totals) {
   const real = source === UNKNOWN ? null : source;
   return {
     source,
-    label: LABELS[source] || source,
+    label: LABELS[source] || (isWebSource(real) ? `Website — ${real.slice(WEB_PREFIX.length).replace(/^hi_/, 'Hindi ').replace(/_/g, ' ')}` : source),
     channel: channelOf(real),
     campaignId: campaignIdOf(real),
     isQr: isQrSource(real),

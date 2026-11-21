@@ -1,7 +1,7 @@
-import { esc, toast } from './ui.js?v=70';
-import { isSignedIn, getUser, signOut, onAuthChange } from './session.js?v=70';
-import { requireSignIn } from './auth.js?v=70';
-import { fetchBalance, fetchTransactions, startRecharge, onWalletChange, cachedBalance } from './wallet.js?v=70';
+import { esc, toast } from './ui.js?v=71';
+import { isSignedIn, getUser, signOut, onAuthChange } from './session.js?v=71';
+import { requireSignIn } from './auth.js?v=71';
+import { fetchBalance, fetchTransactions, startRecharge, onWalletChange, cachedBalance } from './wallet.js?v=71';
 
 /**
  * wallet.html — balance, add money, and the full transaction history.

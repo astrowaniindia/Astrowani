@@ -703,6 +703,7 @@ h2.section-title { margin: 0; font-size: 36px; font-weight: 400; color: var(--ma
 @media (max-width: 760px) { .shop-grid { grid-template-columns: 1fr; } }
 
 .astro-card {
+  cursor: pointer;
   background: var(--paper);
   border: 1px solid var(--border-softer);
   border-radius: 24px;

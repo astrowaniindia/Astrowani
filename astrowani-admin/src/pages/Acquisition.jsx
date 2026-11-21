@@ -39,6 +39,7 @@ const MIN_MEANINGFUL_SIGNUPS = 300;
 
 const CHANNEL_STYLE = {
   google: { background: 'var(--indigo-bg)', color: 'var(--indigo)', border: '1px solid var(--indigo-border)' },
+  web: { background: 'var(--sky-bg)', color: 'var(--sky)', border: '1px solid var(--sky-border)' },
   qr: { background: 'var(--emerald-bg)', color: 'var(--emerald)', border: '1px solid var(--emerald-border)' },
   other: { background: 'var(--amber-bg)', color: 'var(--amber)', border: '1px solid var(--amber-border)' },
   unknown: { background: 'var(--surface-muted)', color: 'var(--text-muted)', border: '1px solid var(--border)' },
