@@ -351,7 +351,7 @@ module.exports = function registerWebsiteAnalyticsRoutes(app) {
     }
     const onPage = `(properties.page_key = '${page}' OR (properties.page_key IS NULL AND ${legacyWhere}))`;
     try {
-      const [visits, clicks, scroll, paths] = await Promise.all([
+      const [visits, clicks, scroll, paths, sourceRows] = await Promise.all([
         runHogQL(`
           SELECT ${DEVICE} AS d, count(), uniq(person_id)
           FROM events WHERE event = '$pageview' AND ${onPage} AND ${scope}
@@ -371,9 +371,29 @@ module.exports = function registerWebsiteAnalyticsRoutes(app) {
           SELECT properties.page_path AS p, count()
           FROM events WHERE event = '$pageview' AND ${onPage} AND ${scope} AND properties.page_path IS NOT NULL
           GROUP BY p ORDER BY count() DESC LIMIT 5`),
+        // Where this page's visitors came from to the website, per layout. Same
+        // source fields and grouping as the Website Analytics page; counted in
+        // page views so each column's sources add up to its visit count.
+        runHogQL(`
+          SELECT ${DEVICE} AS d,
+            coalesce(nullIf(properties.utm_source, ''), nullIf(properties.$session_entry_utm_source, ''), '') AS u,
+            coalesce(nullIf(properties.came_from, ''), nullIf(properties.$session_entry_referring_domain, ''), nullIf(properties.$referring_domain, ''), '') AS dom,
+            coalesce(properties.ad_click, '') AS a,
+            count(), uniq(person_id)
+          FROM events WHERE event = '$pageview' AND ${onPage} AND ${scope}
+          GROUP BY d, u, dom, a ORDER BY count() DESC LIMIT 300`),
       ]);
       const devices = {};
-      for (const d of ['desktop', 'mobile']) devices[d] = { visits: 0, visitors: 0, clicks: [], scroll: [], totalClicks: 0 };
+      for (const d of ['desktop', 'mobile']) devices[d] = { visits: 0, visitors: 0, clicks: [], scroll: [], totalClicks: 0, sources: [] };
+      for (const [d, u, dom, a, pv, v] of sourceRows) {
+        if (!devices[d]) continue;
+        const c = classifySource({ utm: u, domain: dom, adClick: a });
+        const list = devices[d].sources;
+        let row = list.find((x) => x.label === c.label);
+        if (!row) { row = { ...c, visits: 0, visitors: 0 }; list.push(row); }
+        row.visits += num(pv); row.visitors += num(v);
+      }
+      for (const d of Object.values(devices)) d.sources.sort((x, y) => y.visits - x.visits);
       for (const [d, pv, v] of visits) if (devices[d]) { devices[d].visits = num(pv); devices[d].visitors = num(v); }
       for (const [d, sel, c, v, rx, ry, py, label, section] of clicks) {
         if (!devices[d]) continue;

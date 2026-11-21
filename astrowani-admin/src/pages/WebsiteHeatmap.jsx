@@ -106,6 +106,37 @@ function PageFrame({ kind, src, device, onStatus }) {
   );
 }
 
+// One card per layout: how many visits this page had on that kind of screen,
+// and where those visitors came from to the website.
+function DeviceSummary({ kind, device, loading }) {
+  const cfg = FRAMES[kind];
+  const sources = device?.sources || [];
+  const max = Math.max(1, ...sources.map((s) => s.visits));
+  return (
+    <div className="hm-dev">
+      <div className="hm-dev-head">
+        <strong>{kind === 'desktop' ? '🖥️' : '📱'} {cfg.label}</strong>
+        <span className="hm-dev-num">{loading ? '…' : fmt(device?.visits)}<small> visits</small></span>
+      </div>
+      <p className="muted hm-dev-sub">
+        {loading ? '…' : `${fmt(device?.visitors)} visitors · ${fmt(device?.totalClicks)} clicks`}
+      </p>
+      <h4>Where they came from</h4>
+      {loading ? <p className="muted">Loading…</p> : sources.length === 0 ? <p className="muted">No visits in this period.</p> : (
+        <div className="hm-src">
+          {sources.map((s) => (
+            <div key={s.label} className="hm-src-row" title={s.group}>
+              <span className="hm-src-label">{s.label}</span>
+              <span className="hm-track"><span style={{ width: `${(s.visits / max) * 100}%` }} /></span>
+              <strong>{fmt(s.visits)}</strong>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ScrollTable({ rows }) {
   const r = (rows || []).filter((s) => s.depth > 0);
   return (
@@ -233,7 +264,14 @@ export default function WebsiteHeatmap() {
         <div className="stat"><span className="label">Clicks per visit</span><span className="value">{loading || !t?.visits ? '—' : (t.clicks / t.visits).toFixed(1)}</span></div>
       </div>
 
+      <div className="hm-devs">
+        <DeviceSummary kind="desktop" device={data?.devices?.desktop} loading={loading} />
+        <DeviceSummary kind="mobile" device={data?.devices?.mobile} loading={loading} />
+      </div>
+
       <div className="hm-note">
+        "Where they came from" is how each visitor first reached the website: Direct means they typed the address,
+        used a bookmark, or tapped a link inside an app such as WhatsApp (those send no source).
         Red circles are click spots: the bigger and redder, the more clicks, with the count on the tag. Blue dashed lines
         show what share of visitors scrolled that far. Clicks and scroll are recorded from 21 Nov 2026.
       </div>
@@ -262,6 +300,18 @@ export default function WebsiteHeatmap() {
         .hm-frame-wrap { position:relative; overflow:hidden; border:1px solid var(--border); border-radius:10px; background:#fff; }
         .hm-frame { border:0; transform-origin:0 0; position:absolute; left:0; top:0; background:#fff; }
         .hm-status { font-size:12px; margin:8px 0 0; }
+        .hm-devs { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin:0 0 20px; }
+        @media (max-width: 900px) { .hm-devs { grid-template-columns:1fr; } }
+        .hm-dev { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:16px; min-width:0; }
+        .hm-dev-head { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+        .hm-dev-head strong { font-size:16px; }
+        .hm-dev-num { font-size:28px; font-weight:800; color:var(--maroon); }
+        .hm-dev-num small { font-size:13px; font-weight:600; color:var(--text-muted); }
+        .hm-dev-sub { margin:2px 0 12px; font-size:13px; }
+        .hm-dev h4 { margin:0 0 8px; font-size:14px; }
+        .hm-src { display:flex; flex-direction:column; gap:6px; }
+        .hm-src-row { display:grid; grid-template-columns:minmax(0, 170px) 1fr auto; gap:8px; align-items:center; font-size:13px; }
+        .hm-src-label { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .hm-mini { margin-top:16px; }
         .hm-mini h4 { margin:0 0 8px; font-size:14px; }
         .hm-scroll { display:flex; flex-direction:column; gap:6px; }
