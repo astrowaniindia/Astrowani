@@ -19,6 +19,7 @@ import {
   mediaDevices,
 } from 'react-native-webrtc';
 import InCallManager from 'react-native-incall-manager';
+import {awaitRingtoneTeardown} from '../../utils/incomingRingtone';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import io from 'socket.io-client';
@@ -192,6 +193,11 @@ const GoLiveScreen = ({route, navigation}: any) => {
       // the route survives InCallManager's own updateAudioRoute() recomputations,
       // which otherwise revert it from stale _forceSpeakerOn state on any audio
       // interruption mid-broadcast.
+      // Going live never follows a ringtone, so this resolves immediately — it is here to
+      // cover declining a call and going live in the same breath. See awaitRingtoneTeardown()
+      // in incomingRingtone.js.
+      await awaitRingtoneTeardown();
+      if (cancelled) return;
       try {
         InCallManager.start({media: 'video'});
         if (Platform.OS === 'ios') {

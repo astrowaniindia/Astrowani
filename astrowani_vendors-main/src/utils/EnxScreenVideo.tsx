@@ -20,6 +20,7 @@ import {
   mediaDevices,
 } from 'react-native-webrtc';
 import InCallManager from 'react-native-incall-manager';
+import {awaitRingtoneTeardown} from './incomingRingtone';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import io from 'socket.io-client';
@@ -314,6 +315,13 @@ const EnxScreenVideo: React.FC<Props> = ({route, navigation}) => {
       // reconfigure it underneath WebRTC. The speaker route is still ours to set either
       // way — that is a route change, not a session activation.
       const callKitAudio = await awaitCallKitAudioSession();
+      // Same ringtone-teardown race as in EnxScreenVoice.tsx — see awaitRingtoneTeardown()
+      // in incomingRingtone.js. Awaited before the try because the crash it guards against
+      // is thrown on the native module thread, where a JS catch never sees it.
+      if (!callKitAudio) {
+        await awaitRingtoneTeardown();
+        if (cancelled) return;
+      }
       try {
         if (!callKitAudio) {
           InCallManager.start({media: 'video'});
