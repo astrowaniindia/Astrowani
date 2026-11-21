@@ -64,6 +64,10 @@ for (const file of fs.readdirSync(AW).filter((f) => f.endsWith('.js') && f !== '
   const after = before.replace(
     /(from\s+'\.\/[a-zA-Z0-9_-]+\.js)(\?v=\d+)?(')/g,
     `$1?v=${V}$3`,
+  ).replace(
+    // Dynamic imports too (boot.js loads heatmap-view.js only in click-map mode).
+    /(import\(\s*'\.\/[a-zA-Z0-9_-]+\.js)(\?v=\d+)?(')/g,
+    `$1?v=${V}$3`,
   );
   if (after !== before) {
     fs.writeFileSync(p, after);

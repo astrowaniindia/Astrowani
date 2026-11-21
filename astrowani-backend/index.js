@@ -1138,6 +1138,9 @@ require('./src/qrTrackingRoutes')(app); // public: GET /q/:source (scan log + re
 // Ads campaigns, organic Play, posters and unknown, with activation and revenue per
 // signup. Separate from qrRoutes above, which is scoped to `qr_%` by design.
 require('./src/acquisitionRoutes')(app);
+// Website analytics (/api/admin/website-analytics): astrowani.com traffic, clicks,
+// sources and app installs from the site. Reuses postHogRoutes' ENV_FILTER/runHogQL.
+require('./src/websiteAnalyticsRoutes')(app);
 
 // Notification management (admin broadcast/personal send + history)
 require('./src/notificationRoutes')(app);

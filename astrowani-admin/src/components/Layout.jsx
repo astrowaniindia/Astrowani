@@ -63,6 +63,7 @@ const ALL_GROUPS = [
       { to: '/new-signup-flow', label: 'New Signup Flow 17th Oct', badge: 'New' },
       { to: '/', label: 'Dashboard', end: true },
       { to: '/analytics', label: 'Analytics' },
+      { to: '/website-analytics', label: 'Website Analytics', badge: 'New' },
       { to: '/reports', label: 'Financial Reports' },
       { to: '/admin-wallet', label: 'Platform Wallet' },
       { to: '/security', label: 'Security (2FA)' },

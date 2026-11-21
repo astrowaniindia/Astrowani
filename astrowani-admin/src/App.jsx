@@ -45,6 +45,8 @@ import GuideAvatar from './pages/GuideAvatar';
 import QrCodes from './pages/QrCodes';
 import Security from './pages/Security';
 import Acquisition from './pages/Acquisition';
+import WebsiteAnalytics from './pages/WebsiteAnalytics';
+import WebsiteHeatmap from './pages/WebsiteHeatmap';
 import Audience from './pages/Audience';
 
 export default function App() {
@@ -100,6 +102,8 @@ export default function App() {
         <Route path="qr-codes" element={<QrCodes />} />
         <Route path="security" element={<Security />} />
         <Route path="acquisition" element={<Acquisition />} />
+        <Route path="website-analytics" element={<WebsiteAnalytics />} />
+        <Route path="website-analytics/heatmap" element={<WebsiteHeatmap />} />
         <Route path="audience" element={<Audience />} />
       </Route>
     </Routes>
