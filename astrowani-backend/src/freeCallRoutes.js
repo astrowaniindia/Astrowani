@@ -2498,6 +2498,11 @@ module.exports = function registerFreeCallRoutes(app) {
       .from('free_call_bookings')
       .select('*, assignee:astrologer_id (id, first_name, last_name, phone_number), customer:customer_id (id, name, mobile, dob, time_of_birth, place_of_birth, gender)', { count: 'exact' });
     if (status && status !== 'all') query = query.eq('status', status);
+    // `kind` separates the two offers that share this table. The Free Call Booking Offer
+    // page asks for 'scheduled' only (owner, 2026-11-21): listing instant calls there
+    // read as if they were bookings. Instant calls are still reported on the Free
+    // Instant Call Offer page and its Bird Eye. No `kind` = both, as before.
+    if (req.query.kind === 'scheduled' || req.query.kind === 'instant') query = query.eq('kind', req.query.kind);
     if (req.query.astrologerId === 'unassigned') query = query.is('astrologer_id', null);
     else if (req.query.astrologerId) query = query.eq('astrologer_id', req.query.astrologerId);
     if (from) query = query.gte('slot_start', new Date(from).toISOString());

@@ -118,7 +118,9 @@ export default function FreeCallBookings() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const params = {};
+      // Booked calls ONLY. Instant calls live in the same table but belong to the Free
+      // Instant Call Offer page; mixing them in here made them look like bookings.
+      const params = { kind: 'scheduled' };
       if (statusFilter) params.status = statusFilter;
       if (from) params.from = from;
       if (to) params.to = to;
