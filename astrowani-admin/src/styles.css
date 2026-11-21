@@ -2131,3 +2131,6 @@ table td:first-child img {
   pointer-events: none;
   font-size: 14px;
 }
+
+/* Astrologer full-history window (Astrologers Directory -> Details). */
+.modal.modal-xl { max-width: 1240px; }

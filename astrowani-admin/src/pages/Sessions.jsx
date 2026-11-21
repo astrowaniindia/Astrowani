@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import client from '../api/client';
-import Modal from '../components/Modal';
 import { ChipGroup, SortableTh, sortRows, chipStyle } from '../components/filters';
+import ConsultationList from '../components/ConsultationList';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The consultation record: every chat / audio / video session, what the customer
@@ -37,16 +37,6 @@ const STATUS_FILTERS = [
   { key: 'connectivity', label: '📶⚠️ Connectivity issue' },
 ];
 
-const SESSION_SORT = {
-  startedAt: (r) => (r.startedAt ? new Date(r.startedAt).getTime() : null),
-  astrologer: (r) => (r.astrologer?.name || '').toLowerCase(),
-  customer: (r) => (r.customer?.name || '').toLowerCase(),
-  durationMinutes: (r) => r.durationMinutes,
-  customerPaid: (r) => r.customerPaid,
-  astrologerEarned: (r) => r.astrologerEarned,
-  platformKept: (r) => r.platformKept,
-  messageCount: (r) => r.messageCount,
-};
 
 const EARNINGS_SORT = {
   name: (r) => r.name.toLowerCase(),
@@ -62,132 +52,6 @@ const rupees = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFrac
 const fmt = (d) => (d ? new Date(d).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—');
 const fmtDay = (d) => (d ? new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
 
-const TYPE_ICON = { chat: '💬', audio: '📞', voice: '📞', video: '🎥' };
-
-// ── Transcript popup ──────────────────────────────────────────────────────────
-function TranscriptModal({ sessionId, onClose, onDeleted }) {
-  const [state, setState] = useState({ loading: true });
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    let dead = false;
-    client.get(`/api/admin/consultations/${sessionId}/chat`)
-      .then(({ data }) => { if (!dead) setState({ ...data }); })
-      .catch((e) => { if (!dead) setState({ error: e.response?.data?.message || e.message }); });
-    return () => { dead = true; };
-  }, [sessionId]);
-
-  const s = state.session;
-
-  const deleteChat = async () => {
-    if (!window.confirm('Delete this conversation permanently?\n\nThe session itself, the money and any off-platform flag stay. The messages cannot be recovered — there are no database backups.')) return;
-    setBusy(true);
-    try {
-      const { data } = await client.delete(`/api/admin/consultations/${sessionId}/chat`);
-      alert(`${data.deleted} message(s) deleted.`);
-      onDeleted?.(sessionId);
-      onClose();
-    } catch (e) {
-      alert(e.response?.data?.message || e.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Modal title="Session transcript" onClose={onClose}>
-      {state.loading && <div className="muted">Loading…</div>}
-      {state.error && <div style={{ color: 'var(--red, #c0392b)' }}>{state.error}</div>}
-
-      {s && (
-        <>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
-            {[
-              ['Astrologer', s.astrologer.name],
-              ['Customer', s.customer.name],
-              ['Type', `${TYPE_ICON[s.type] || ''} ${s.type}`],
-              ['Started', fmt(s.startedAt)],
-              ['Duration', s.durationMinutes != null ? `${s.durationMinutes} min` : '—'],
-              ['Rate', `${rupees(s.perMinuteCharge)}/min`],
-              ['Customer paid', rupees(s.customerPaid)],
-              ['Astrologer earned', rupees(s.astrologerEarned)],
-              ['Platform kept', rupees(s.platformKept)],
-            ].map(([k, v]) => (
-              <div key={k} style={{ minWidth: 120 }}>
-                <div className="muted" style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.4 }}>{k}</div>
-                <div style={{ fontWeight: 700, fontSize: 13.5 }}>{v}</div>
-              </div>
-            ))}
-          </div>
-
-          {s.type !== 'chat' && (
-            <div className="muted" style={{ fontSize: 12.5, padding: '10px 12px', borderRadius: 8, background: 'var(--maroon-50)', marginBottom: 12 }}>
-              This was a {s.type} call. Calls are peer-to-peer, so the server never sees the audio
-              and there is no transcript to show — only the money and timing above.
-            </div>
-          )}
-
-          {state.retention?.enabled && (
-            <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
-              Chat retention is on: conversations are deleted {state.retention.days} days after they happen
-              {state.retention.keepFlagged ? ', except flagged ones' : ''}.
-            </div>
-          )}
-
-          <div style={{ maxHeight: 420, overflowY: 'auto', border: '1px solid var(--border-light)', borderRadius: 10, padding: 12 }}>
-            {state.messages?.length === 0 && (
-              <div className="muted" style={{ textAlign: 'center', padding: 24 }}>
-                No messages stored for this session.
-              </div>
-            )}
-            {state.messages?.map((m) => {
-              const astro = m.from === 'astrologer';
-              return (
-                <div
-                  key={m.id}
-                  style={{
-                    display: 'flex',
-                    justifyContent: astro ? 'flex-start' : 'flex-end',
-                    marginBottom: 8,
-                  }}
-                >
-                  <div
-                    style={{
-                      maxWidth: '78%',
-                      padding: '8px 11px',
-                      borderRadius: 12,
-                      background: astro ? 'var(--maroon-50)' : 'var(--border-light)',
-                      border: m.flagged ? '1.5px solid var(--crimson, #c0392b)' : '1px solid transparent',
-                    }}
-                  >
-                    <div className="muted" style={{ fontSize: 10.5, fontWeight: 700, marginBottom: 2 }}>
-                      {m.name} · {fmt(m.at)} {m.flagged ? '· 🚩 flagged' : ''}
-                    </div>
-                    <div style={{ fontSize: 13, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{m.message}</div>
-                    {/* Contact details are starred out before saving, so the flag's copy is
-                        the only record of what was actually typed. */}
-                    {m.originalText && (
-                      <div style={{ fontSize: 11.5, marginTop: 4, color: 'var(--crimson, #c0392b)' }}>
-                        As typed: {m.originalText}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="actions" style={{ marginTop: 16, display: 'flex', justifyContent: 'space-between' }}>
-            <button className="btn danger sm" onClick={deleteChat} disabled={busy || !state.messages?.length}>
-              {busy ? 'Deleting…' : 'Delete this conversation'}
-            </button>
-            <button className="btn secondary" onClick={onClose}>Close</button>
-          </div>
-        </>
-      )}
-    </Modal>
-  );
-}
 
 // ── Chat retention panel ──────────────────────────────────────────────────────
 function RetentionPanel() {
@@ -405,31 +269,16 @@ export default function Sessions() {
   const [includeTest, setIncludeTest] = useState(false);
   const [testCount, setTestCount] = useState(0);
 
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [typeFilter, setTypeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [search, setSearch] = useState('');
-  const [sort, setSort] = useState({ key: 'startedAt', dir: 'desc' });
-  const [transcript, setTranscript] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   const [earnings, setEarnings] = useState([]);
   const [earningsLoading, setEarningsLoading] = useState(false);
   const [earningsSort, setEarningsSort] = useState({ key: 'earnedInWindow', dir: 'desc' });
   const [earningsSearch, setEarningsSearch] = useState('');
-
-  const loadSessions = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const { data } = await client.get('/api/admin/consultations', { params: { days: windowKey, includeTest: includeTest ? '1' : undefined } });
-      setRows(data.data || []);
-      setTestCount(data.testCount || 0);
-    } catch (e) {
-      setError(e.response?.data?.message || e.message);
-    } finally { setLoading(false); }
-  };
 
   const loadEarnings = async () => {
     setEarningsLoading(true);
@@ -442,40 +291,7 @@ export default function Sessions() {
     } finally { setEarningsLoading(false); }
   };
 
-  useEffect(() => { if (view === 'sessions') loadSessions(); }, [windowKey, view, includeTest]);
   useEffect(() => { if (view === 'earnings') loadEarnings(); }, [windowKey, view, includeTest]);
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return rows.filter((r) => {
-      if (typeFilter !== 'all') {
-        const t = r.type === 'voice' ? 'audio' : r.type;
-        if (t !== typeFilter) return false;
-      }
-      if (statusFilter === 'live' && !r.isActive) return false;
-      if (statusFilter === 'ended' && r.isActive) return false;
-      if (statusFilter === 'paid' && !(r.astrologerEarned > 0)) return false;
-      if (statusFilter === 'zero' && r.astrologerEarned > 0) return false;
-      if (statusFilter === 'flagged' && !r.flagged) return false;
-      if (statusFilter === 'connectivity' && !r.hadConnectivityIssue) return false;
-      if (!q) return true;
-      return (
-        (r.astrologer?.name || '').toLowerCase().includes(q) ||
-        (r.customer?.name || '').toLowerCase().includes(q) ||
-        (r.customer?.mobile || '').includes(q) ||
-        (r.astrologer?.phone || '').includes(q)
-      );
-    });
-  }, [rows, typeFilter, statusFilter, search]);
-
-  const sorted = useMemo(() => sortRows(filtered, sort, SESSION_SORT), [filtered, sort]);
-
-  const totals = useMemo(() => filtered.reduce((acc, r) => ({
-    paid: acc.paid + r.customerPaid,
-    earned: acc.earned + r.astrologerEarned,
-    kept: acc.kept + r.platformKept,
-    minutes: acc.minutes + (r.durationMinutes || 0),
-  }), { paid: 0, earned: 0, kept: 0, minutes: 0 }), [filtered]);
 
   const earningsFiltered = useMemo(() => {
     const q = earningsSearch.trim().toLowerCase();
@@ -495,7 +311,7 @@ export default function Sessions() {
             earned from it, and the chat itself.
           </p>
         </div>
-        <button className="btn secondary sm" onClick={() => (view === 'earnings' ? loadEarnings() : loadSessions())}>
+        <button className="btn secondary sm" onClick={() => (view === 'earnings' ? loadEarnings() : setReloadKey((k) => k + 1))}>
           🔄 Refresh
         </button>
       </div>
@@ -567,92 +383,15 @@ export default function Sessions() {
           {error && <div className="card" style={{ color: 'var(--red, #c0392b)', marginBottom: 16 }}>{error}</div>}
 
           {view === 'sessions' ? (
-            <>
-              <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', marginBottom: 18 }}>
-                <div className="stat">
-                  <div className="stat-header"><span className="label">Sessions</span></div>
-                  <div className="value">{loading ? '…' : filtered.length.toLocaleString('en-IN')}</div>
-                  <div className="stat-footer"><span className="muted">{Math.round(totals.minutes)} minutes talked</span></div>
-                </div>
-                <div className="stat">
-                  <div className="stat-header"><span className="label">Customers paid</span></div>
-                  <div className="value">{loading ? '…' : rupees(totals.paid)}</div>
-                </div>
-                <div className="stat">
-                  <div className="stat-header"><span className="label">Astrologers earned</span></div>
-                  <div className="value" style={{ color: 'var(--emerald)' }}>{loading ? '…' : rupees(totals.earned)}</div>
-                </div>
-                <div className="stat">
-                  <div className="stat-header"><span className="label">Platform kept</span></div>
-                  <div className="value">{loading ? '…' : rupees(totals.kept)}</div>
-                  {/* The 50/50 split only started on 30 Sept 2026 — before that the
-                      astrologer was credited the whole charge, so an older period shows a
-                      platform figure far below half and that is the history, not a bug. */}
-                  <div className="stat-footer"><span className="muted">50% of each billed minute since 30 Sept 2026</span></div>
-                </div>
-              </div>
-
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Type</th>
-                      <SortableTh label="Astrologer" sortKey="astrologer" sort={sort} setSort={setSort} />
-                      <SortableTh label="Customer" sortKey="customer" sort={sort} setSort={setSort} />
-                      <SortableTh label="Started" sortKey="startedAt" sort={sort} setSort={setSort} numeric />
-                      <SortableTh label="Duration" sortKey="durationMinutes" sort={sort} setSort={setSort} numeric />
-                      <SortableTh label="Customer paid" sortKey="customerPaid" sort={sort} setSort={setSort} numeric />
-                      <SortableTh label="Astrologer earned" sortKey="astrologerEarned" sort={sort} setSort={setSort} numeric />
-                      <SortableTh label="Platform" sortKey="platformKept" sort={sort} setSort={setSort} numeric />
-                      <SortableTh label="Chat" sortKey="messageCount" sort={sort} setSort={setSort} numeric title="Messages stored" />
-                      <th style={{ textAlign: 'right' }}>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {loading && <tr><td colSpan={10} className="empty">Loading sessions…</td></tr>}
-                    {!loading && sorted.length === 0 && <tr><td colSpan={10} className="empty">No sessions match these filters.</td></tr>}
-                    {!loading && sorted.map((r) => (
-                      <tr key={r.id}>
-                        <td title={r.type}>
-                          {TYPE_ICON[r.type] || '💬'}{' '}
-                          {r.isActive && <span className="pill-badge green">Live</span>}
-                          {r.isFree && <span className="pill-badge">Free</span>}
-                          {r.flagged && <span className="pill-badge" title="Off-platform contact flag">🚩</span>}
-                          {r.hadConnectivityIssue && (
-                            <span className="pill-badge" title="One side's connection dropped during this session — duration/earnings may look short because billing paused">📶⚠️</span>
-                          )}
-                        </td>
-                        <td>
-                          <div style={{ fontWeight: 700 }}>{r.astrologer.name}</div>
-                          <div className="muted" style={{ fontSize: 11.5 }}>{r.astrologer.phone || '—'}</div>
-                        </td>
-                        <td>
-                          <div style={{ fontWeight: 600 }}>{r.customer.name}</div>
-                          <div className="muted" style={{ fontSize: 11.5 }}>{r.customer.mobile || '—'}</div>
-                        </td>
-                        <td className="muted" style={{ fontSize: 12.5 }}>{fmt(r.startedAt)}</td>
-                        <td>{r.durationMinutes != null ? `${r.durationMinutes} min` : '—'}</td>
-                        <td>{rupees(r.customerPaid)}</td>
-                        <td style={{ fontWeight: 700, color: r.astrologerEarned > 0 ? '#059669' : undefined }}>
-                          {rupees(r.astrologerEarned)}
-                        </td>
-                        <td className="muted">{rupees(r.platformKept)}</td>
-                        <td>{r.messageCount || '—'}</td>
-                        <td style={{ textAlign: 'right' }}>
-                          <button
-                            className="btn ghost sm"
-                            onClick={() => setTranscript(r.id)}
-                            title={r.type === 'chat' ? 'Read this conversation' : 'Calls are not recorded — shows timing and money only'}
-                          >
-                            {r.type === 'chat' ? 'View chat' : 'Details'}
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
+            <ConsultationList
+              windowKey={windowKey}
+              includeTest={includeTest}
+              typeFilter={typeFilter}
+              statusFilter={statusFilter}
+              search={search}
+              reloadKey={reloadKey}
+              onMeta={(m) => setTestCount(m.testCount)}
+            />
           ) : (
             <div className="table-wrap">
               <table>
@@ -718,13 +457,6 @@ export default function Sessions() {
 
       <IntroBannerPanel />
 
-      {transcript && (
-        <TranscriptModal
-          sessionId={transcript}
-          onClose={() => setTranscript(null)}
-          onDeleted={(id) => setRows((prev) => prev.map((r) => (r.id === id ? { ...r, messageCount: 0 } : r)))}
-        />
-      )}
     </div>
   );
 }

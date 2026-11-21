@@ -19,6 +19,7 @@
 // split shows up here as the truth instead of as a plausible-looking estimate.
 
 const { createClient } = require('@supabase/supabase-js');
+const { isUuid } = require('./pgrstFilter');
 
 const db = createClient(
   process.env.SUPABASE_URL || 'https://fxpoustnddrgumhwdcma.supabase.co',
@@ -224,78 +225,151 @@ module.exports = function registerConsultationRoutes(app) {
   if (timer.unref) timer.unref();
 
   // ── The session record ───────────────────────────────────────────────────────
+  // One PAGE at a time. Filtering, search, sort and the totals all run in the
+  // database over the whole period (sql/admin_consultations_rpc.sql). This used to
+  // load the newest 500 rows and do the rest in the browser, so every period read
+  // "500 sessions" and every total was the total of those 500 only.
+  const TYPES = new Set(['all', 'chat', 'audio', 'video']);
+  const STATUSES = new Set(['all', 'live', 'ended', 'paid', 'zero', 'flagged', 'connectivity']);
+  const SORTS = new Set(['startedAt', 'astrologer', 'customer', 'durationMinutes', 'customerPaid', 'astrologerEarned', 'platformKept', 'messageCount']);
+
   app.get('/api/admin/consultations', requireAdmin, h(async (req, res) => {
-    const days = req.query.days === 'all' ? null : Math.min(Number(req.query.days) || 30, 365);
-    const limit = Math.min(Number(req.query.limit) || 500, 1000);
-
-    let q = db
-      .from('chat_sessions')
-      .select('id, call_type, vendor_id, caller_id, per_minute_charge, started_at, ended_at, is_active, is_free, had_connectivity_issue')
-      .order('started_at', { ascending: false })
-      .limit(limit);
-    if (days) q = q.gte('started_at', new Date(Date.now() - days * 86400000).toISOString());
-
-    const { data: sessions, error } = await q;
-    if (error) throw error;
-    const rows = sessions || [];
-    const ids = rows.map((s) => s.id);
-
-    const [customerPaid, astroEarned, platformKept, msgs, flagged] = await Promise.all([
-      sumBySession('wallet_transactions', ids, { type: 'debit' }),
-      sumBySession('vendor_wallet_transactions', ids, { type: 'credit' }),
-      sumBySession('admin_wallet_transactions', ids),
-      messageStats(ids),
-      flaggedSessionIds(ids),
-    ]);
-
-    const vendorIds = [...new Set(rows.map((s) => s.vendor_id).filter(Boolean))];
-    const callerIds = [...new Set(rows.map((s) => s.caller_id).filter(Boolean))];
-
-    const astros = new Map();
-    for (const c of chunk(vendorIds)) {
-      const { data } = await db.from('astrologers').select('id, first_name, last_name, phone_number').in('id', c);
-      for (const a of data || []) astros.set(a.id, a);
+    const days = req.query.days === 'all' ? null : Math.min(Number(req.query.days) || 30, 3650);
+    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
+    const page = Math.max(Math.floor(Number(req.query.page)) || 1, 1);
+    const type = TYPES.has(req.query.type) ? req.query.type : 'all';
+    const status = STATUSES.has(req.query.status) ? req.query.status : 'all';
+    const sort = SORTS.has(req.query.sort) ? req.query.sort : 'startedAt';
+    const dir = req.query.dir === 'asc' ? 'asc' : 'desc';
+    const search = String(req.query.search || '').trim().slice(0, 80) || null;
+    const includeTest = req.query.includeTest === '1';
+    const astrologerId = req.query.astrologerId ? String(req.query.astrologerId) : null;
+    if (astrologerId && !isUuid(astrologerId)) {
+      return res.status(400).json({ success: false, message: 'Bad astrologer id' });
     }
+
+    const { data: out, error } = await db.rpc('admin_consultations', {
+      p_since: days ? new Date(Date.now() - days * 86400000).toISOString() : null,
+      p_type: type,
+      p_status: status,
+      p_search: search,
+      p_include_test: includeTest,
+      p_sort: sort,
+      p_dir: dir,
+      p_limit: limit,
+      p_offset: (page - 1) * limit,
+      p_astrologer: astrologerId,
+    });
+    if (error) throw error;
+
+    const total = Number(out?.total || 0);
+    return res.json({
+      success: true,
+      data: out?.rows || [],
+      total,
+      page,
+      limit,
+      pages: Math.max(1, Math.ceil(total / limit)),
+      summary: out?.summary || { sessions: 0, minutes: 0, paid: 0, earned: 0, kept: 0 },
+      testCount: Number(out?.testCount || 0),
+      windowDays: days,
+      includeTest,
+    });
+  }));
+
+  // ── One astrologer's full history (Astrologers Directory -> Details) ─────────
+  app.get('/api/admin/astrologers/:id/history-summary', requireAdmin, h(async (req, res) => {
+    const id = req.params.id;
+    if (!isUuid(id)) return res.status(400).json({ success: false, message: 'Bad astrologer id' });
+    const [{ data: sum, error }, { data: astro, error: aErr }] = await Promise.all([
+      db.rpc('admin_astrologer_ledger_summary', { p_vendor: id }),
+      db.from('astrologers').select('wallet_balance, today_earnings, total_earnings').eq('id', id).maybeSingle(),
+    ]);
+    if (error) throw error;
+    if (aErr) throw aErr;
+    if (!astro) return res.status(404).json({ success: false, message: 'Astrologer not found' });
+    return res.json({
+      success: true,
+      data: {
+        ...(sum || {}),
+        walletBalance: Number(astro.wallet_balance || 0),
+        todayEarnings: Number(astro.today_earnings || 0),
+        totalEarnings: Number(astro.total_earnings || 0),
+      },
+    });
+  }));
+
+  // Every wallet movement, newest first, one page at a time.
+  app.get('/api/admin/astrologers/:id/transactions', requireAdmin, h(async (req, res) => {
+    const id = req.params.id;
+    if (!isUuid(id)) return res.status(400).json({ success: false, message: 'Bad astrologer id' });
+    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
+    const page = Math.max(Math.floor(Number(req.query.page)) || 1, 1);
+    const from = (page - 1) * limit;
+    let q = db
+      .from('vendor_wallet_transactions')
+      .select('id, type, amount, description, session_id, request_id, customer_id, created_at', { count: 'exact' })
+      .eq('vendor_id', id)
+      .order('created_at', { ascending: false })
+      .range(from, from + limit - 1);
+    if (req.query.type === 'credit' || req.query.type === 'debit') q = q.eq('type', req.query.type);
+    const { data: txns, error, count } = await q;
+    if (error) throw error;
+    const rows = txns || [];
+
+    // Name the customer and the kind of session, so a row reads
+    // "Chat · Akshara" rather than a bare billing description.
+    const sessionIds = [...new Set(rows.map((t) => t.session_id).filter(Boolean))];
+    const sessions = new Map();
+    for (const c of chunk(sessionIds)) {
+      const { data, error: sErr } = await db.from('chat_sessions').select('id, call_type, caller_id, is_free').in('id', c);
+      if (sErr) throw sErr;
+      for (const s of data || []) sessions.set(s.id, s);
+    }
+    const custIds = [...new Set([
+      ...rows.map((t) => t.customer_id),
+      ...[...sessions.values()].map((s) => s.caller_id),
+    ].filter(Boolean))];
     const custs = new Map();
-    for (const c of chunk(callerIds)) {
-      const { data } = await db.from('customers').select('id, name, mobile').in('id', c);
+    for (const c of chunk(custIds)) {
+      const { data, error: cErr } = await db.from('customers').select('id, name').in('id', c);
+      if (cErr) throw cErr;
       for (const u of data || []) custs.set(u.id, u);
     }
 
-    const includeTest = req.query.includeTest === '1';
-    const visibleRows = includeTest
-      ? rows
-      : rows.filter((s) => !isTestParticipant(astros.get(s.vendor_id), custs.get(s.caller_id)));
-    const testCount = rows.length - visibleRows.length;
-
-    const data = visibleRows.map((s) => {
-      const a = astros.get(s.vendor_id);
-      const u = custs.get(s.caller_id);
-      const m = msgs.get(s.id) || { count: 0, lastAt: null };
+    const data = rows.map((t) => {
+      const s = t.session_id ? sessions.get(t.session_id) : null;
+      const custId = t.customer_id || s?.caller_id || null;
       return {
-        id: s.id,
-        type: s.call_type || 'chat',
-        isActive: !!s.is_active,
-        isFree: !!s.is_free,
-        hadConnectivityIssue: !!s.had_connectivity_issue,
-        startedAt: s.started_at,
-        endedAt: s.ended_at,
-        durationMinutes: durationMinutes(s.started_at, s.ended_at),
-        perMinuteCharge: Number(s.per_minute_charge || 0),
-        customerPaid: customerPaid.get(s.id) || 0,
-        astrologerEarned: astroEarned.get(s.id) || 0,
-        platformKept: platformKept.get(s.id) || 0,
-        messageCount: m.count,
-        lastMessageAt: m.lastAt,
-        flagged: flagged.has(s.id),
-        astrologer: a ? { id: a.id, name: astroName(a), phone: a.phone_number } : { id: s.vendor_id, name: 'Unknown astrologer' },
-        customer: u
-          ? { id: u.id, name: u.name || 'Customer', mobile: /^deleted:/.test(String(u.mobile || '')) ? null : u.mobile }
-          : { id: s.caller_id, name: 'Deleted customer', mobile: null },
+        id: t.id,
+        type: t.type,
+        amount: Number(t.amount) || 0,
+        description: t.description || '',
+        at: t.created_at,
+        sessionId: t.session_id,
+        sessionType: s ? (s.call_type === 'voice' ? 'audio' : (s.call_type || 'chat')) : null,
+        isFree: !!s?.is_free,
+        withdrawalId: t.request_id || null,
+        customer: custId ? (custs.get(custId)?.name || 'Customer') : null,
       };
     });
+    const total = count || 0;
+    return res.json({ success: true, data, total, page, limit, pages: Math.max(1, Math.ceil(total / limit)) });
+  }));
 
-    return res.json({ success: true, data, windowDays: days, truncated: rows.length >= limit, testCount, includeTest });
+  // Withdrawal requests. Bank details are left out on purpose: they belong on the
+  // Payout Requests page, where a withdrawal is actually processed.
+  app.get('/api/admin/astrologers/:id/withdrawals', requireAdmin, h(async (req, res) => {
+    const id = req.params.id;
+    if (!isUuid(id)) return res.status(400).json({ success: false, message: 'Bad astrologer id' });
+    const { data, error } = await db
+      .from('withdrawal_requests')
+      .select('id, amount, status, admin_note, requested_at, processed_at, tds_amount, net_amount')
+      .eq('astrologer_id', id)
+      .order('requested_at', { ascending: false })
+      .limit(500);
+    if (error) throw error;
+    return res.json({ success: true, data: data || [] });
   }));
 
   // ── Per-astrologer earnings + current balance ────────────────────────────────
@@ -313,10 +387,22 @@ module.exports = function registerConsultationRoutes(app) {
       .order('wallet_balance', { ascending: false });
     if (error) throw error;
 
-    let ledger = db.from('vendor_wallet_transactions').select('vendor_id, amount, type, session_id, created_at');
-    if (since) ledger = ledger.gte('created_at', since);
-    const { data: txns, error: tErr } = await ledger.limit(10000);
-    if (tErr) throw tErr;
+    // Paged: PostgREST returns at most 1,000 rows per request whatever .limit() says,
+    // and this ledger holds several thousand, so a single read silently dropped most
+    // of the period's earnings.
+    const txns = [];
+    for (let from = 0; ; from += 1000) {
+      let ledger = db.from('vendor_wallet_transactions')
+        .select('vendor_id, amount, type, session_id, created_at')
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: true })
+        .range(from, from + 999);
+      if (since) ledger = ledger.gte('created_at', since);
+      const { data: pageRows, error: tErr } = await ledger;
+      if (tErr) throw tErr;
+      txns.push(...(pageRows || []));
+      if (!pageRows || pageRows.length < 1000 || from > 200000) break;
+    }
 
     // Split consultation earnings from everything else in the ledger. A vendor's credits
     // also include GIFTS (and the ledger carries withdrawal debits), none of which carry a

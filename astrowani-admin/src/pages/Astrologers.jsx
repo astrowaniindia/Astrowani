@@ -3,6 +3,7 @@ import client from '../api/client';
 import Modal from '../components/Modal';
 import ImageField from '../components/ImageField';
 import ActionMenu from '../components/ActionMenu';
+import AstrologerHistory from '../components/AstrologerHistory';
 
 function StatusBadge({ s, isSuspended }) {
   if (isSuspended) return <span className="badge red"><span className="badge-dot" /> Suspended</span>;
@@ -74,6 +75,10 @@ export default function Astrologers() {
   const [creating, setCreating] = useState(null);
   const [categories, setCategories] = useState([]);
   const [viewing, setViewing] = useState(null);
+  // Which part of the Details window is open: 'consultations' | 'transactions' | 'withdrawals' | 'profile'.
+  const [viewTab, setViewTab] = useState('consultations');
+  const [sortBy, setSortBy] = useState('default'); // 'default' | 'balance'
+  const openDetails = (r, tab = 'consultations') => { setViewTab(tab); setViewing(r); };
 
   const load = async () => {
     setLoading(true);
@@ -90,16 +95,19 @@ export default function Astrologers() {
       .catch(() => setCategories([]));
   }, []);
 
-  useEffect(() => { setPage(1); }, [search, statusFilter]);
+  useEffect(() => { setPage(1); }, [search, statusFilter, sortBy]);
 
   const counts = useMemo(() => {
     const approved = rows.filter((r) => r.approval_status === 'approved' && !r.is_suspended).length;
     const pending = rows.filter((r) => r.approval_status === 'pending').length;
     const suspended = rows.filter((r) => !!r.is_suspended).length;
-    return { all: rows.length, approved, pending, suspended };
+    const withMoney = rows.filter((r) => Number(r.wallet_balance) > 0);
+    const held = withMoney.reduce((sum, r) => sum + Number(r.wallet_balance), 0);
+    return { all: rows.length, approved, pending, suspended, withMoney: withMoney.length, held };
   }, [rows]);
 
   const matchesFilter = (r) => {
+    if (statusFilter === 'money') return Number(r.wallet_balance) > 0;
     if (statusFilter === 'suspended') return !!r.is_suspended;
     if (statusFilter === 'approved') return r.approval_status === 'approved' && !r.is_suspended;
     if (statusFilter === 'pending') return r.approval_status === 'pending' && !r.is_suspended;
@@ -117,6 +125,10 @@ export default function Astrologers() {
   };
 
   const filteredRows = rows.filter((r) => matchesFilter(r) && matchesSearch(r));
+  // 'Has money' always lists the biggest balance first.
+  if (sortBy === 'balance' || statusFilter === 'money') {
+    filteredRows.sort((a, b) => Number(b.wallet_balance || 0) - Number(a.wallet_balance || 0));
+  }
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
   const pageRows = filteredRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
@@ -298,6 +310,11 @@ export default function Astrologers() {
           <div className="label">Suspended</div>
           <div className="value" style={{ fontSize: 26, marginTop: 4, color: 'var(--crimson)' }}>{counts.suspended}</div>
         </div>
+        <div className="stat" style={{ padding: '16px 20px', cursor: 'pointer' }} onClick={() => setStatusFilter('money')} title="Show astrologers with money in their wallet">
+          <div className="label">Money in wallets</div>
+          <div className="value" style={{ fontSize: 26, marginTop: 4, color: 'var(--emerald)' }}>₹{counts.held.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</div>
+          <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{counts.withMoney} astrologer{counts.withMoney === 1 ? '' : 's'}</div>
+        </div>
       </div>
 
       {/* Search & Segmented Filter Tabs */}
@@ -344,7 +361,19 @@ export default function Astrologers() {
           >
             Suspended <span className="tab-count">{counts.suspended}</span>
           </button>
+          <button
+            type="button"
+            className={`tab-btn${statusFilter === 'money' ? ' active' : ''}`}
+            onClick={() => setStatusFilter('money')}
+            title="Wallet balance above ₹0, biggest first"
+          >
+            💰 Has money <span className="tab-count">{counts.withMoney}</span>
+          </button>
         </div>
+        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} style={{ maxWidth: 210 }} title="Sort order">
+          <option value="default">Sort: newest first</option>
+          <option value="balance">Sort: wallet balance, high to low</option>
+        </select>
       </div>
 
       {/* ── CARD VIEW (Intuitive & Human-Friendly) ── */}
@@ -358,7 +387,7 @@ export default function Astrologers() {
             <div className="astro-card" key={r.id}>
               <div>
                 <div className="astro-card-top">
-                  <div className="astro-card-avatar">
+                  <div className="astro-card-avatar" style={{ cursor: 'pointer' }} onClick={() => openDetails(r)} title="Open full history">
                     {r.profile_pic_url ? (
                       <img src={r.profile_pic_url} alt="" style={{ width: '100%', height: '100%', borderRadius: 12, objectFit: 'cover' }} />
                     ) : (
@@ -367,7 +396,7 @@ export default function Astrologers() {
                   </div>
                   <div className="astro-card-info">
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
-                      <div className="astro-card-name" style={{ cursor: 'pointer' }} onClick={() => setViewing(r)}>{name(r)}</div>
+                      <div className="astro-card-name" style={{ cursor: 'pointer' }} onClick={() => openDetails(r)} title="Open full history">{name(r)}</div>
                       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                         <StatusBadge s={r.approval_status} isSuspended={r.is_suspended} />
                         <HiddenBadge hidden={r.hidden_from_customers} />
@@ -430,7 +459,7 @@ export default function Astrologers() {
 
               {/* Card Footer */}
               <div className="astro-card-footer">
-                <div className="wallet-badge-clean">
+                <div className="wallet-badge-clean" style={{ cursor: 'pointer' }} onClick={() => openDetails(r, 'transactions')} title="See every transaction">
                   ₹{(r.wallet_balance ?? 0).toLocaleString('en-IN')}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -456,7 +485,7 @@ export default function Astrologers() {
                   <button
                     type="button"
                     className="btn sm secondary"
-                    onClick={() => setViewing(r)}
+                    onClick={() => openDetails(r)}
                   >
                     Details
                   </button>
@@ -694,8 +723,8 @@ export default function Astrologers() {
 
       {/* Details Modal: everything the astrologer submitted */}
       {viewing && (
-        <Modal title={name(viewing)} onClose={() => setViewing(null)}>
-          <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 16 }}>
+        <Modal title={name(viewing)} onClose={() => setViewing(null)} className="modal-xl">
+          <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
             <div className="astro-card-avatar" style={{ width: 72, height: 72, fontSize: 28 }}>
               {viewing.profile_pic_url ? (
                 <img src={viewing.profile_pic_url} alt="" style={{ width: '100%', height: '100%', borderRadius: 12, objectFit: 'cover' }} />
@@ -705,9 +734,17 @@ export default function Astrologers() {
             </div>
             <div>
               <StatusBadge s={viewing.approval_status} isSuspended={viewing.is_suspended} />
-              <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>Signed up {fmtDate(viewing.created_at)}</div>
+              <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>Signed up {fmtDate(viewing.created_at)} · {viewing.phone_number || 'No phone'}</div>
+            </div>
+            <div className="btn-group" style={{ marginLeft: 'auto' }}>
+              <button className={`btn sm ${viewTab !== 'profile' ? '' : 'secondary'}`} onClick={() => setViewTab('consultations')}>📋 Full history</button>
+              <button className={`btn sm ${viewTab === 'profile' ? '' : 'secondary'}`} onClick={() => setViewTab('profile')}>👤 Profile</button>
             </div>
           </div>
+          {viewTab !== 'profile' ? (
+            <AstrologerHistory key={viewing.id + viewTab} astrologerId={viewing.id} initialTab={viewTab} />
+          ) : (
+          <>
           {missingForCustomers(viewing).length > 0 ? (
             <div style={{ background: 'rgba(192,57,43,0.08)', color: 'var(--crimson)', borderRadius: 8, padding: '10px 12px', fontSize: 13, marginBottom: 16 }}>
               <strong>Hidden from customers</strong> even if approved. Missing: {missingForCustomers(viewing).join(', ')}.
@@ -741,6 +778,8 @@ export default function Astrologers() {
             <label>Bio</label>
             <div style={{ whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.5 }}>{viewing.bio || 'Not written yet.'}</div>
           </div>
+          </>
+          )}
           <div className="modal-actions actions">
             <button className="btn secondary" onClick={() => setViewing(null)}>Close</button>
             <button className="btn" onClick={() => { const r = viewing; setViewing(null); openEdit(r); }}>Edit</button>
