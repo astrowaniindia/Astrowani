@@ -481,8 +481,8 @@ function block(file, cfg, html) {
     `<meta name="twitter:title" content="${esc(title)}">`,
     `<meta name="twitter:description" content="${esc(desc)}">`,
     `<meta name="twitter:image" content="${img}">`,
-    `<link rel="icon" href="${isHindi ? '../' : ''}assets/favicon-32.png" sizes="32x32">`,
-    `<link rel="icon" href="${isHindi ? '../' : ''}assets/favicon-16.png" sizes="16x16">`,
+    `<link rel="icon" href="${isHindi ? '../' : ''}assets/favicon-32.png?v=round" sizes="32x32">`,
+    `<link rel="icon" href="${isHindi ? '../' : ''}assets/favicon-16.png?v=round" sizes="16x16">`,
     `<link rel="apple-touch-icon" href="${isHindi ? '../' : ''}assets/apple-touch-icon.png">`,
     `<link rel="manifest" href="${isHindi ? '../' : ''}site.webmanifest">`,
   );

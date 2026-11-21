@@ -55,7 +55,15 @@ async function main() {
   // JPEG ringing is visible at 16px.
   for (const size of [16, 32]) {
     const f = `favicon-${size}.png`;
-    await sharp(SRC).resize(size, size, { fit: 'cover' }).png({ compressionLevel: 9 }).toFile(out(f));
+    // ROUND, with transparent corners: the site shows this logo as a circle
+    // everywhere (the nav's .logo-mark has border-radius: 50%), and a square
+    // maroon tile in the browser tab read as a different mark. Drawn at 8x and
+    // scaled down so the circle's edge is anti-aliased rather than stepped.
+    const big = size * 8;
+    const mask = Buffer.from(`<svg width="${big}" height="${big}"><circle cx="${big / 2}" cy="${big / 2}" r="${big / 2}" fill="#fff"/></svg>`);
+    const round = await sharp(SRC).resize(big, big, { fit: 'cover' })
+      .composite([{ input: mask, blend: 'dest-in' }]).png().toBuffer();
+    await sharp(round).resize(size, size).png({ compressionLevel: 9 }).toFile(out(f));
     made.push(f);
   }
 

@@ -63,10 +63,16 @@ const check = process.argv.includes('--check');
  * derived from it with a little headroom, so a change of a few pixels in the
  * layout does not make every variant subtly too small.
  */
+// THE THREE HERO PHONES are sized for the CENTRE slot, not the slot they start
+// in: the carousel (style.css .ch-phone-cycle) rotates every phone through the
+// 320x640 centre box every 5s, and object-fit: cover fills its 300x620 screen.
+// A 1:2 promo then renders ~310 CSS px wide and the 2:3 app screenshot ~414.
+// They were first measured mid-entrance-animation (scale .35-.55), which gave
+// 83/165 and made all three visibly blurry once the animation ended.
 const IMAGES = [
-  { file: 'promo-free-7min-woman.webp', css: 165 },
-  { file: 'promo-free-5min-guru.webp', css: 83 },
-  { file: 'app-screenshot-home-2.webp', css: 83 },
+  { file: 'promo-free-7min-woman.webp', css: 310 },
+  { file: 'promo-free-5min-guru.webp', css: 310 },
+  { file: 'app-screenshot-home-2.webp', css: 414 },
   { file: 'google-play-badge.png', css: 134 },
   { file: 'testimonial-rohit.png', css: 38 },
   { file: 'svc-horoscope.png', css: 140 },
