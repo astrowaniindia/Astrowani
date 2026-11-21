@@ -42,6 +42,7 @@ import {joinSessionWithRetry} from '../../utils/sessionRoom';
 import SessionConnectionNotice, {useSessionConnection, billableSeconds} from '../../components/SessionConnectionNotice';
 import {createPreConnectWatchdog} from '../../utils/preConnectWatchdog';
 import {getIceServers} from '../../utils/iceServers';
+import {switchCamera} from '../../utils/switchCamera';
 
 type CallState = 'connecting' | 'ringing' | 'in_call';
 
@@ -322,7 +323,7 @@ const VideoCallScreen = ({route, navigation}: any) => {
   const flipCamera = useCallback(() => {
     if (localStreamRef.current) {
       const videoTrack = localStreamRef.current.getVideoTracks()[0];
-      if (videoTrack) { try { (videoTrack as any)._switchCamera(); } catch (_) {} }
+      if (videoTrack) { switchCamera(videoTrack, '[Customer/Video]'); }
     }
   }, []);
 
@@ -763,9 +764,11 @@ const VideoCallScreen = ({route, navigation}: any) => {
           <Text style={[styles.ctrlLabel, videoMuted && styles.ctrlLabelRed]}>{videoMuted ? t('call.videoOff') : t('call.camera')}</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.ctrlBtn} onPress={flipCamera} activeOpacity={0.75}>
-          <VectorIcon name="flip-camera-android" type="MaterialIcons" size={24} color="#fff" />
-          <Text style={styles.ctrlLabel}>{t('call.flip')}</Text>
+        {/* Disabled while the camera is off: disabling a video track stops the capturer,
+            so there is no running camera to flip. */}
+        <TouchableOpacity style={[styles.ctrlBtn, videoMuted && styles.ctrlBtnDim]} onPress={flipCamera} activeOpacity={0.75} disabled={videoMuted}>
+          <VectorIcon name="flip-camera-android" type="MaterialIcons" size={24} color={videoMuted ? 'rgba(255,255,255,0.35)' : '#fff'} />
+          <Text style={[styles.ctrlLabel, videoMuted && styles.ctrlLabelDim]}>{t('call.flip')}</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -901,8 +904,10 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   ctrlBtnRed: {backgroundColor: 'rgba(255,59,48,0.2)'},
+  ctrlBtnDim: {backgroundColor: 'rgba(255,255,255,0.05)'},
   ctrlLabel: {fontSize: 10, color: 'rgba(255,255,255,0.85)', fontWeight: '500'},
   ctrlLabelRed: {color: '#FF3B30'},
+  ctrlLabelDim: {color: 'rgba(255,255,255,0.35)'},
   endBtn: {
     width: 68,
     height: 68,
