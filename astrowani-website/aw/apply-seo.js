@@ -87,6 +87,10 @@ const PAGES = {
     title: 'Talk to Verified Astrologers Online | Astrowani',
     desc: "Chat, call or video with India's verified astrologers for love, career, marriage and family guidance — in your own language, available around the clock.",
   },
+  'astrologer-registration.html': {
+    title: 'Astrologer Registration — Join Astrowani',
+    desc: 'Are you an astrologer? Register on Astrowani through the Astrowani Astrologer app on Google Play, complete your profile and start taking consultations.',
+  },
   'about.html': {
     title: 'About Astrowani — Verified Astrologers Online',
     desc: 'Learn about Astrowani consultations, astrologer profiles, learning resources and support. Review how to choose a service and where to find our policies.',

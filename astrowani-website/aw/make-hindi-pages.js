@@ -54,7 +54,7 @@ const PAGES = [
   'kundli-reading.html', 'marriage.html', 'tarot-reading.html', 'numerology.html',
   'career-astrology.html', 'vastu.html', 'lal-kitab.html', 'palmistry.html', 'what-india-asks-an-astrologer.html',
   'horoscope.html', 'panchang.html', 'calculators.html', 'free-services.html',
-  'courses.html', 'about.html', 'blog.html', 'blog-post.html',
+  'courses.html', 'about.html', 'astrologer-registration.html', 'blog.html', 'blog-post.html',
   'privacy-policy.html', 'terms-and-conditions.html', 'refund-cancellation.html',
   'safety-guidelines.html', 'child-safety.html', 'delete-account.html',
   'report-vulnerability.html', '404.html',

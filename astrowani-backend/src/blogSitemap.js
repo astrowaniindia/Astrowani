@@ -121,6 +121,7 @@ const STATIC_PAGES = [
   // for that intent is consult.html, already listed above at 0.8.
   ['book-call.html', '0.6', 'monthly'],
   ['about.html', '0.4', 'monthly'],
+  ['astrologer-registration.html', '0.4', 'monthly'],
   ['privacy-policy.html', '0.2', 'yearly'],
   ['terms-and-conditions.html', '0.2', 'yearly'],
   ['refund-cancellation.html', '0.2', 'yearly'],

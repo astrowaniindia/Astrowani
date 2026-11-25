@@ -510,7 +510,9 @@ function wireDelegatedClicks() {
         const link = e.target.closest && e.target.closest('a[href]');
         if (link) {
           const href = link.getAttribute('href') || '';
-          if (href.includes('play.google.com')) track('app_store_click', { store: 'play' });
+          // The astrologer (vendor) app is a different install; keep it out of
+          // the customer-app install count.
+          if (href.includes('play.google.com')) track('app_store_click', { store: 'play', app: href.includes('com.astrowaniVendor') ? 'astrologer' : 'customer' });
           else if (href.includes('apps.apple.com')) track('app_store_click', { store: 'apple' });
         }
         const lang = e.target.closest && e.target.closest('.nav-util-btn[data-role="lang"]');
