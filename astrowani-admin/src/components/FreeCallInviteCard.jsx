@@ -26,6 +26,19 @@ export default function FreeCallInviteCard() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
 
+  // ── "Grant another free call" — a single already-used customer, not a batch ──
+  // The invite flow above deliberately skips anyone with a live booking (that's
+  // the whole point of a bulk send). This is the opposite case: one specific
+  // customer who already had their free call and needs it back, without deleting
+  // their account. It cancels their existing booking row AND writes the invite.
+  const [regrantOpen, setRegrantOpen] = useState(false);
+  const [regrantQuery, setRegrantQuery] = useState('');
+  const [regrantCustomers, setRegrantCustomers] = useState([]);
+  const [regrantTarget, setRegrantTarget] = useState(null);
+  const [regranting, setRegranting] = useState(false);
+  const [regrantResult, setRegrantResult] = useState(null);
+  const [regrantError, setRegrantError] = useState('');
+
   const loadSummary = () => {
     client.get('/api/admin/free-call-invites/summary')
       .then(({ data }) => setSummary(data))
@@ -58,6 +71,35 @@ export default function FreeCallInviteCard() {
   }, [customers, filter]);
 
   const toggle = (id) => setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+
+  useEffect(() => {
+    if (regrantOpen && regrantCustomers.length === 0) {
+      client.get('/api/admin/customers').then(({ data }) => setRegrantCustomers(data.data || [])).catch(() => {});
+    }
+  }, [regrantOpen, regrantCustomers.length]);
+
+  const regrantFiltered = useMemo(() => {
+    const q = regrantQuery.trim().toLowerCase();
+    if (!q) return [];
+    return regrantCustomers.filter((c) => customerLabel(c).toLowerCase().includes(q)).slice(0, 20);
+  }, [regrantCustomers, regrantQuery]);
+
+  const regrant = async () => {
+    if (!regrantTarget) return;
+    setRegrantError('');
+    setRegrantResult(null);
+    if (!window.confirm(`Give ${customerLabel(regrantTarget)} another free call? This cancels their old booking (keeping its history) and puts the free-call bubble back on their Home screen.`)) return;
+    setRegranting(true);
+    try {
+      const { data } = await client.post('/api/admin/free-call-invites/regrant', { customerId: regrantTarget.id });
+      setRegrantResult(data);
+      loadSummary();
+    } catch (e) {
+      setRegrantError(e.response?.data?.message || 'Could not grant another free call.');
+    } finally {
+      setRegranting(false);
+    }
+  };
 
   const send = async () => {
     setError('');
@@ -179,6 +221,61 @@ export default function FreeCallInviteCard() {
           </button>
         </div>
       )}
+
+      <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+          <div>
+            <h3 style={{ margin: 0 }}>🔁 Grant another free call</h3>
+            <p className="muted" style={{ margin: '4px 0 0' }}>
+              For a customer who already used their free call. Cancels their old booking
+              (keeps its history, deletes nothing) and puts the gift bubble back on their Home
+              screen — no need to delete their account and have them sign up again.
+            </p>
+          </div>
+          <button className="btn secondary sm" onClick={() => setRegrantOpen((v) => !v)}>
+            {regrantOpen ? 'Close' : 'Grant another free call'}
+          </button>
+        </div>
+
+        {regrantOpen && (
+          <div style={{ marginTop: 14 }}>
+            <input
+              type="text"
+              value={regrantQuery}
+              onChange={(e) => { setRegrantQuery(e.target.value); setRegrantTarget(null); setRegrantResult(null); setRegrantError(''); }}
+              placeholder="Search customer by name or phone…"
+              style={{ width: '100%', marginBottom: 8 }}
+            />
+            {regrantQuery.trim() && !regrantTarget && (
+              <div style={{ border: '1px solid var(--border)', borderRadius: 8, maxHeight: 180, overflowY: 'auto', marginBottom: 10 }}>
+                {regrantFiltered.map((c) => (
+                  <div
+                    key={c.id}
+                    onClick={() => { setRegrantTarget(c); setRegrantQuery(customerLabel(c)); }}
+                    style={{ padding: '6px 10px', cursor: 'pointer' }}
+                  >
+                    {customerLabel(c)}
+                  </div>
+                ))}
+                {!regrantFiltered.length && <div className="muted" style={{ padding: 10 }}>No customers found.</div>}
+              </div>
+            )}
+
+            {regrantError && <p style={{ color: '#c0392b', margin: '0 0 10px' }}>{regrantError}</p>}
+            {regrantResult && (
+              <p style={{ color: '#1e8449', margin: '0 0 10px' }}>
+                Done. Released {regrantResult.cancelledBookings} old booking(s). Push delivered {regrantResult.pushSuccess},
+                failed {regrantResult.pushFailure}, no push token {regrantResult.noPushToken}.
+                Valid until {new Date(regrantResult.expiresAt).toLocaleString()}.
+              </p>
+            )}
+
+            <button className="btn" onClick={regrant} disabled={!regrantTarget || regranting}>
+              {regranting ? 'Granting…' : regrantTarget ? `Grant to ${regrantTarget.name || regrantTarget.mobile}` : 'Pick a customer first'}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

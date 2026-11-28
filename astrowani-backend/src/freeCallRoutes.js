@@ -2459,6 +2459,107 @@ module.exports = function registerFreeCallRoutes(app) {
     });
   }));
 
+  /**
+   * Admin: give ONE customer another free call, without touching their account.
+   *
+   * Before this, the only way to undo "already used their free call" was to delete
+   * the customer and have them sign up again (subsystem CY's offer guard then
+   * remembers the number and blocks even that). This is the supported alternative:
+   * it releases whatever is blocking THIS account — any live free_call_bookings row
+   * — and, since releasing the booking alone is not enough for a customer who has
+   * since had a real paid session (isNewCustomer would then refuse them), it also
+   * writes the same free_call_invites row the bulk invite flow uses, which is what
+   * bypasses the "new customers only" rule and (per usedByEarlierAccount) requires
+   * nothing more. offerGuard's delete-and-reclaim guard is untouched — it only ever
+   * blocks a DIFFERENT, re-registered account on this number, never this one.
+   */
+  app.post('/api/admin/free-call-invites/regrant', requireAdmin, h(async (req, res) => {
+    const customerId = String(req.body?.customerId || '').trim();
+    if (!customerId) {
+      return res.status(400).json({ success: false, message: 'customerId is required' });
+    }
+    const validDays = clampInt(req.body?.validDays, 1, 60, 7);
+    const title = String(req.body?.title || '').trim() || 'Your free call is back!';
+    const body = String(req.body?.body || '').trim()
+      || 'An admin has given you another free 7-minute call. Tap to use it.';
+
+    const { data: customer, error: custError } = await db
+      .from('customers')
+      .select('id, name, mobile, fcm_token')
+      .eq('id', customerId)
+      .maybeSingle();
+    if (custError) throw custError;
+    if (!customer || String(customer.mobile || '').startsWith('deleted:')) {
+      return res.status(404).json({ success: false, message: 'Customer not found' });
+    }
+
+    // Release whatever is blocking this account — findLiveBooking() treats any
+    // non-cancelled row as "already used", so this is exactly what makes them
+    // eligible again. Cancelling (not deleting) keeps the call's own history intact.
+    const { data: released, error: releaseError } = await db
+      .from('free_call_bookings')
+      .update({ status: 'cancelled' })
+      .eq('customer_id', customerId)
+      .neq('status', 'cancelled')
+      .select('id');
+    if (releaseError) {
+      if (!isMissingTable(releaseError)) throw releaseError;
+    }
+
+    const expiresAt = new Date(Date.now() + validDays * 86400000).toISOString();
+    const invitedBy = req.admin?.email || req.admin?.id || 'admin';
+    const { error: inviteError } = await db.from('free_call_invites').upsert(
+      [{ customer_id: customerId, invited_at: new Date().toISOString(), expires_at: expiresAt, invited_by: String(invitedBy) }],
+      { onConflict: 'customer_id' },
+    );
+    if (inviteError) {
+      if (isMissingTable(inviteError)) {
+        return res.status(503).json({ success: false, message: 'Run sql/free_call_invites.sql first.' });
+      }
+      throw inviteError;
+    }
+
+    // Same delivery as the bulk invite: in-app notification (so the bubble has
+    // somewhere to point even before the app re-checks /api/free-call/offer),
+    // a foregrounded-app socket nudge, and FCM.
+    const type = 'free_call_invite';
+    const { error: notifError } = await db.from('notifications')
+      .insert([{ customer_id: customerId, astrologer_id: null, title, body, type }]);
+    if (notifError) console.warn('[freeCallRoutes] regrant notification insert failed:', notifError.message);
+
+    const io = app.locals.io;
+    if (io) io.to(String(customerId)).emit('new_notification', { title, body, type, recipient_type: 'customer' });
+
+    let pushSuccess = 0;
+    let pushFailure = 0;
+    if (customer.fcm_token) {
+      const result = await sendPush([customer.fcm_token], { data: { type, title, body } });
+      pushSuccess = result.successCount || 0;
+      pushFailure = result.failureCount || 0;
+    }
+
+    await db.from('notification_broadcasts').insert([{
+      audience: 'free_call_invite:regrant',
+      target_id: customerId,
+      target_name: customer.name || 'Customer',
+      title,
+      body,
+      recipient_count: 1,
+      push_success: pushSuccess,
+      push_failure: pushFailure,
+    }]);
+
+    return res.json({
+      success: true,
+      customerId,
+      cancelledBookings: (released || []).length,
+      pushSuccess,
+      pushFailure,
+      noPushToken: customer.fcm_token ? 0 : 1,
+      expiresAt,
+    });
+  }));
+
   app.get('/api/admin/free-call-invites/summary', requireAdmin, h(async (req, res) => {
     const nowIso = new Date().toISOString();
     const { count: active, error } = await db
