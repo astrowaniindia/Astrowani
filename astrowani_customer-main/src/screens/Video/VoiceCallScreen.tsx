@@ -607,7 +607,7 @@ const VoiceCallScreen = ({route, navigation}: any) => {
     // route from that stale state and silently reverts the customer's choice
     // mid-call. setForceSpeakerphoneOn() records the intent and routes THROUGH
     // updateAudioRoute(), so it survives those events.
-    // (Verified against react-native-incall-manager 4.2.1's
+    // (Verified against react-native-incall-manager 4.2.2's
     // ios/RNInCallManager/RNInCallManager.m, not assumed.)
     try {
       if (Platform.OS === 'ios') {
